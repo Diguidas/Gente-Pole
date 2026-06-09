@@ -34,7 +34,10 @@ class AppColors {
   static const pretoOp04 = Color(0x0A000000);    // 0.04
   static const pretoOp08 = Color(0x14000000);    // 0.08
 
-    static const LinearGradient gradientePrincipal = LinearGradient(
+  // CinzaTexto com opacidade
+  static const cinzaTextoOp30 = Color(0x4D6B7280); // 0.30
+
+  static const LinearGradient gradientePrincipal = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [

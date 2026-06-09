@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/aniversariante_screen.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../models/aniversariante_model.dart';
 import '../models/comunicado_model.dart';
 import '../services/api_service.dart';
+import '../widgets/avatar_colaborador.dart';
 import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -62,20 +62,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Text(
                               'Olá, ${colaborador?.primeiroNome ?? ''} 👋',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: AppTextStyles.tituloBranco,
                             ),
                             Text(
                               [colaborador?.cargo, colaborador?.setor]
                                   .where((e) => e != null && e!.isNotEmpty)
                                   .join(' · '),
-                              style: GoogleFonts.poppins(
-                                color: Colors.white.withOpacity(0.8),
-                                fontSize: 12,
-                              ),
+                              style: AppTextStyles.corpoBrancoOpaco,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -164,11 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       onPressed: widget.onVerComunicados,
                                       child: Text(
                                         'Ver todos',
-                                        style: GoogleFonts.poppins(
-                                          color: AppColors.magenta,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                        style: AppTextStyles.corpoCinza.copyWith(color: AppColors.magenta, fontWeight: FontWeight.w600),
                                       ),
                                     ),
                                   ],
@@ -256,11 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text(
                     'Ver mais',
-                    style: GoogleFonts.poppins(
-                      color: AppColors.magenta,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: AppTextStyles.corpoCinza.copyWith(color: AppColors.magenta, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -291,14 +276,11 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: ehHoje
-            ? Border.all(
-                color: AppColors.magenta.withOpacity(0.5), width: 1.5)
+            ? Border.all(color: AppColors.magentaOp50, width: 1.5)
             : null,
         boxShadow: [
           BoxShadow(
-            color: ehHoje
-                ? AppColors.magenta.withOpacity(0.15)
-                : Colors.black.withOpacity(0.04),
+            color: ehHoje ? AppColors.magentaOp15 : AppColors.pretoOp04,
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -311,23 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.laranja.withOpacity(0.15),
-                backgroundImage: a.colaborador.fotoUrl != null
-                    ? NetworkImage(a.colaborador.fotoUrl!)
-                    : null,
-                child: a.colaborador.fotoUrl == null
-                    ? Text(
-                        iniciais,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.laranja,
-                        ),
-                      )
-                    : null,
-              ),
+              AvatarColaborador(fotoUrl: a.colaborador.fotoUrl, nome: a.colaborador.nome, raio: 22),
               if (ehHoje)
                 const Text('🎂', style: TextStyle(fontSize: 12)),
             ],
@@ -338,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ehHoje
                 ? 'Hoje'
                 : 'Dia ${a.diaNascimento.toString().padLeft(2, '0')}',
-            style: GoogleFonts.poppins(
+            style: AppTextStyles.corpoMinimo.copyWith(
               fontSize: 9,
               fontWeight: FontWeight.w700,
               color: ehHoje ? AppColors.magenta : AppColors.cinzaTexto,
@@ -349,11 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               a.colaborador.primeiroNome,
-              style: GoogleFonts.poppins(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppColors.dark,
-              ),
+              style: AppTextStyles.corpoMinimo.copyWith(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.dark),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -370,11 +332,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: AppColors.magenta.withOpacity(0.18),
+            color: AppColors.magentaOp18,
             blurRadius: 16,
-            offset: const Offset(0, 6),
+            offset: Offset(0, 6),
           ),
         ],
       ),
@@ -404,11 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     c.titulo,
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: AppColors.dark,
-                    ),
+                    style: AppTextStyles.tituloPequeno,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -416,22 +374,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 4),
                     Text(
                       c.descricao!,
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: AppColors.cinzaTexto,
-                      ),
+                      style: AppTextStyles.corpoCinza,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                   const SizedBox(height: 8),
-                  Text(
-                    c.dataFormatada,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: AppColors.cinzaTexto,
-                    ),
-                  ),
+                  Text(c.dataFormatada, style: AppTextStyles.corpoMinimo),
                 ],
               ),
             ),
@@ -479,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 44,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                color: AppColors.laranja.withOpacity(0.1),
+                color: AppColors.laranjaOp10,
               ),
               child: c.fotoUrl != null && c.fotoUrl!.isNotEmpty
                   ? ClipRRect(
@@ -503,21 +452,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     c.titulo,
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: AppColors.dark,
-                    ),
+                    style: AppTextStyles.corpoMedio,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    c.dataFormatada,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: AppColors.cinzaTexto,
-                    ),
-                  ),
+                  Text(c.dataFormatada, style: AppTextStyles.corpoMinimo),
                 ],
               ),
             ),
@@ -538,17 +477,13 @@ class _HomeScreenState extends State<HomeScreen> {
       height: 48,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.25),
+        color: AppColors.brancoOp25,
         border: Border.all(color: Colors.white, width: 2),
       ),
       child: Center(
         child: Text(
           iniciais,
-          style: GoogleFonts.poppins(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTextStyles.corpoBranco.copyWith(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -577,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
         padding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.18),
+          color: AppColors.brancoOp18,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -590,18 +525,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     label,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 10,
-                    ),
+                    style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.brancoOp70, fontSize: 10),
                   ),
                   Text(
                     valor,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: AppTextStyles.corpoMenor.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -616,11 +544,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _labelSecao(String texto) => Text(
         texto,
-        style: GoogleFonts.poppins(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: AppColors.dark,
-        ),
+        style: AppTextStyles.labelSecao,
       );
 
   Widget _semComunicados() => Center(
@@ -631,11 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const Icon(Icons.campaign_outlined,
                   size: 52, color: AppColors.cinzaTexto),
               const SizedBox(height: 12),
-              Text(
-                'Nenhum comunicado ainda',
-                style: GoogleFonts.poppins(
-                    fontSize: 15, color: AppColors.cinzaTexto),
-              ),
+              Text('Nenhum comunicado ainda', style: AppTextStyles.corpoCinza.copyWith(fontSize: 15)),
             ],
           ),
         ),
@@ -672,25 +592,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.cinzaTexto.withOpacity(0.3),
+                      color: AppColors.cinzaTextoOp30,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text(
-                  '🔒 Alterar senha',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.dark,
-                  ),
-                ),
+                Text('🔒 Alterar senha', style: AppTextStyles.tituloMedio),
                 const SizedBox(height: 20),
                 TextField(
                   controller: senhaAtualCtrl,
                   obscureText: true,
-                  style: GoogleFonts.poppins(),
+                  style: AppTextStyles.corpoNormal,
                   decoration: const InputDecoration(
                     labelText: 'Senha atual',
                     prefixIcon: Icon(Icons.lock_outline_rounded),
@@ -700,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextField(
                   controller: novaSenhaCtrl,
                   obscureText: true,
-                  style: GoogleFonts.poppins(),
+                  style: AppTextStyles.corpoNormal,
                   decoration: const InputDecoration(
                     labelText: 'Nova senha',
                     prefixIcon: Icon(Icons.lock_reset_rounded),
@@ -721,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 SnackBar(
                                   content: Text(
                                     'Nova senha deve ter pelo menos 6 caracteres.',
-                                    style: GoogleFonts.poppins(),
+                                    style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
                                   ),
                                   backgroundColor: Colors.red,
                                   behavior: SnackBarBehavior.floating,
@@ -742,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ok
                                       ? 'Senha alterada com sucesso!'
                                       : 'Senha atual incorreta.',
-                                  style: GoogleFonts.poppins(),
+                                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
                                 ),
                                 backgroundColor:
                                     ok ? AppColors.magenta : Colors.red,
@@ -767,10 +680,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           )
                         : Text(
                             'Salvar',
-                            style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: Colors.white),
+                            style: AppTextStyles.botaoPrimario,
                           ),
                   ),
                 ),
@@ -788,30 +698,23 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20)),
-        title: Text('Sair da conta?',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        content: Text(
-            'Você precisará digitar sua matrícula e senha novamente.',
-            style: GoogleFonts.poppins(fontSize: 14)),
+        title: Text('Sair da conta?', style: AppTextStyles.tituloPequeno.copyWith(fontWeight: FontWeight.w600)),
+        content: Text('Você precisará digitar sua matrícula e senha novamente.', style: AppTextStyles.corpoNormal),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar',
-                style:
-                    GoogleFonts.poppins(color: AppColors.cinzaTexto)),
+            child: Text('Cancelar', style: AppTextStyles.corpoCinza),
           ),
           ElevatedButton(
             onPressed: () {
               _api.limparSessao();
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => const LoginScreen()),
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
                 (_) => false,
               );
             },
-            child: Text('Sair',
-                style: GoogleFonts.poppins(color: Colors.white)),
+            child: Text('Sair', style: AppTextStyles.botaoPrimario),
           ),
         ],
       ),

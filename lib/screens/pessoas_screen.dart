@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
+import '../widgets/avatar_colaborador.dart';
 
 class PessoasScreen extends StatefulWidget {
   const PessoasScreen({super.key});
@@ -54,11 +54,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                     padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
                     child: Row(children: [
                       Expanded(
-                        child: Text('Meu Perfil',
-                            style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700)),
+                        child: Text('Meu Perfil', style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                       ),
                     ]),
                   ),
@@ -72,10 +68,10 @@ class _PessoasScreenState extends State<PessoasScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
+                          const BoxShadow(
+                              color: AppColors.pretoOp08,
                               blurRadius: 20,
-                              offset: const Offset(0, 6))
+                              offset: Offset(0, 6))
                         ],
                       ),
                       child: Column(
@@ -85,19 +81,13 @@ class _PessoasScreenState extends State<PessoasScreen> {
                           _avatar(c, raio: 40),
                           const SizedBox(height: 14),
                           Text(c.nome,
-                              style: GoogleFonts.poppins(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.dark),
+                              style: AppTextStyles.tituloMedio.copyWith(fontSize: 17),
                               textAlign: TextAlign.center,
                               maxLines: 2),
                           if (c.cargo != null)
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
-                              child: Text(c.cargo!,
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      color: AppColors.cinzaTexto)),
+                              child: Text(c.cargo!, style: AppTextStyles.corpoCinza),
                             ),
                           const SizedBox(height: 20),
                           const Divider(height: 1, color: Color(0xFFF1F5F9)),
@@ -130,10 +120,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(_supervisor!.nome,
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          color: AppColors.dark),
+                                      style: AppTextStyles.corpoMedio,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
                                 ),
@@ -156,28 +143,11 @@ class _PessoasScreenState extends State<PessoasScreen> {
   }
 
   Widget _avatar(ColaboradorModel c, {double raio = 22}) {
-    final iniciais = _iniciais(c.nome);
-    return CircleAvatar(
-      radius: raio,
-      backgroundColor: AppColors.laranja.withOpacity(0.15),
-      backgroundImage: c.fotoUrl != null ? NetworkImage(c.fotoUrl!) : null,
-      child: c.fotoUrl == null
-          ? Text(iniciais,
-              style: GoogleFonts.poppins(
-                  fontSize: raio * 0.55,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.laranja))
-          : null,
-    );
+    return AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: raio);
   }
 
   Widget _itemInfo(IconData icon, String label, String valor) =>
-      _itemInfoWidget(icon, label,
-          Text(valor,
-              style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.dark)));
+      _itemInfoWidget(icon, label, Text(valor, style: AppTextStyles.corpoMedio));
 
   Widget _itemInfoWidget(IconData icon, String label, Widget valor) =>
       Padding(
@@ -188,7 +158,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                  color: AppColors.laranja.withOpacity(0.08),
+                  color: AppColors.laranjaOp08,
                   borderRadius: BorderRadius.circular(10)),
               child: Icon(icon, size: 18, color: AppColors.laranja),
             ),
@@ -197,9 +167,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: GoogleFonts.poppins(
-                          fontSize: 11, color: AppColors.cinzaTexto)),
+                  Text(label, style: AppTextStyles.corpoMinimo),
                   const SizedBox(height: 2),
                   valor,
                 ],

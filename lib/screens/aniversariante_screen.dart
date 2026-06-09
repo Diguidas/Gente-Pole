@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../models/aniversariante_model.dart';
 import '../services/api_service.dart';
+import '../widgets/avatar_colaborador.dart';
 
 class AniversariantesScreen extends StatefulWidget {
   const AniversariantesScreen({super.key});
@@ -70,18 +70,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                           children: [
                             Text(
                               '🎂 Aniversariantes',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: AppTextStyles.tituloBranco,
                             ),
                             Text(
                               _mesAtual(),
-                              style: GoogleFonts.poppins(
-                                color: Colors.white.withOpacity(0.8),
-                                fontSize: 13,
-                              ),
+                              style: AppTextStyles.corpoBranco,
                             ),
                           ],
                         ),
@@ -102,13 +95,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: TabBar(
                     controller: _tabCtrl,
-                    labelStyle: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                    unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13),
+                    labelStyle: AppTextStyles.corpoBranco.copyWith(fontWeight: FontWeight.w600),
+                    unselectedLabelStyle: AppTextStyles.corpoBranco,
                     labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white.withOpacity(0.55),
+                    unselectedLabelColor: const Color(0x8CFFFFFF),
                     indicatorColor: Colors.white,
                     indicatorWeight: 3,
                     tabs: const [
@@ -202,11 +192,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(
-                          color: const Color(0xFF9B5DE5).withOpacity(0.35),
+                          color: Color(0x599B5DE5),
                           blurRadius: 20,
-                          offset: const Offset(0, 8),
+                          offset: Offset(0, 8),
                         ),
                       ],
                     ),
@@ -220,27 +210,16 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                             children: [
                               Text(
                                 'Parabéns pelo seu dia,',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.85),
-                                  fontSize: 13,
-                                ),
+                                style: AppTextStyles.corpoBranco.copyWith(color: const Color(0xD9FFFFFF)),
                               ),
                               Text(
                                 '${_api.colaboradorAtual?.primeiroNome ?? 'Polevalente'}! 🎉',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                style: AppTextStyles.tituloGrande.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 'Que este novo ciclo seja incrível! ✨',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                ),
+                                style: AppTextStyles.corpoMenor.copyWith(color: AppColors.brancoOp80, fontStyle: FontStyle.italic),
                               ),
                             ],
                           ),
@@ -258,11 +237,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
                     child: Text(
                       'Hoje 🎉',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark,
-                      ),
+                      style: AppTextStyles.labelSecao,
                     ),
                   ),
                 ),
@@ -281,11 +256,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
                     child: Text(
                       'Este mês',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark,
-                      ),
+                      style: AppTextStyles.labelSecao,
                     ),
                   ),
                 ),
@@ -371,18 +342,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                               children: [
                                 Text(
                                   'Feliz aniversário! 🎉',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
+                                  style: AppTextStyles.corpoBranco.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
                                 ),
                                 Text(
                                   '${mensagens.length} pessoa${mensagens.length != 1 ? 's' : ''} te parabenizou!',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white.withOpacity(0.85),
-                                    fontSize: 13,
-                                  ),
+                                  style: AppTextStyles.corpoBranco.copyWith(color: const Color(0xD9FFFFFF)),
                                 ),
                               ],
                             ),
@@ -393,11 +357,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     const SizedBox(height: 20),
                     Text(
                       'Mensagens recebidas',
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark,
-                      ),
+                      style: AppTextStyles.labelSecao,
                     ),
                     const SizedBox(height: 4),
                   ],
@@ -429,18 +389,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: AppColors.laranja.withOpacity(0.15),
-                      child: Text(
-                        _iniciais(remetente),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.laranja,
-                        ),
-                      ),
-                    ),
+                    AvatarColaborador(fotoUrl: null, nome: remetente, raio: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -451,40 +400,20 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                               Expanded(
                                 child: Text(
                                   remetente,
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                    color: AppColors.dark,
-                                  ),
+                                  style: AppTextStyles.corpoMedio,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               if (hora.isNotEmpty)
-                                Text(
-                                  hora,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11,
-                                    color: AppColors.cinzaTexto,
-                                  ),
-                                ),
+                                Text(hora, style: AppTextStyles.corpoMinimo),
                             ],
                           ),
                           if (setor != null)
-                            Text(
-                              setor,
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                color: AppColors.cinzaTexto,
-                              ),
-                            ),
+                            Text(setor, style: AppTextStyles.corpoMinimo),
                           const SizedBox(height: 6),
                           Text(
                             texto,
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              color: AppColors.dark,
-                              height: 1.4,
-                            ),
+                            style: AppTextStyles.corpoCinza.copyWith(color: AppColors.dark, height: 1.4),
                           ),
                         ],
                       ),
@@ -536,8 +465,8 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             Container(
               width: 80,
               height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.magenta.withOpacity(0.08),
+              decoration: const BoxDecoration(
+                color: AppColors.magentaOp15,
                 shape: BoxShape.circle,
               ),
               child: const Center(
@@ -545,25 +474,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Aguarde seu dia!',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.dark,
-              ),
-            ),
+            Text('Aguarde seu dia!', style: AppTextStyles.tituloMedio),
             const SizedBox(height: 8),
             Text(
               dataFormatada.isNotEmpty
                   ? 'Seu aniversário é dia $dataFormatada.\nQuando chegar, você verá as mensagens aqui! 🎂'
                   : 'No seu aniversário, as mensagens dos seus colegas aparecerão aqui.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.cinzaTexto,
-                height: 1.5,
-              ),
+              style: AppTextStyles.corpoCinza.copyWith(height: 1.5),
             ),
           ],
         ),
@@ -586,38 +504,26 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             Text(
               'Feliz aniversário, $nome!',
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppColors.dark,
-              ),
+              style: AppTextStyles.tituloGrande.copyWith(fontSize: 20),
             ),
             const SizedBox(height: 12),
             Text(
               'Que este novo ciclo traga muita saúde,\nalegria e conquistas. Você merece! ✨',
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: AppColors.cinzaTexto,
-                height: 1.6,
-              ),
+              style: AppTextStyles.corpoNormal.copyWith(color: AppColors.cinzaTexto, height: 1.6),
             ),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.magenta.withOpacity(0.08),
+                color: AppColors.magentaOp15,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.magenta.withOpacity(0.2)),
+                border: Border.all(color: AppColors.magentaOp18),
               ),
               child: Text(
                 'As mensagens dos seus colegas\naparecerão aqui ao longo do dia.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: AppColors.magenta,
-                  height: 1.5,
-                ),
+                style: AppTextStyles.corpoMenor.copyWith(color: AppColors.magenta, height: 1.5),
               ),
             ),
           ],
@@ -640,11 +546,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: AppColors.magenta.withOpacity(0.25),
+            color: Color(0x40E91E8C),
             blurRadius: 16,
-            offset: const Offset(0, 6),
+            offset: Offset(0, 6),
           ),
         ],
       ),
@@ -660,42 +566,28 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 children: [
                   Text(
                     a.colaborador.nome,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                    style: AppTextStyles.tituloPequeno.copyWith(color: Colors.white),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (a.colaborador.setor != null)
                     Text(
                       a.colaborador.setor!,
-                      style: GoogleFonts.poppins(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 12,
-                      ),
+                      style: AppTextStyles.corpoMenor.copyWith(color: AppColors.brancoOp80),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   const SizedBox(height: 4),
                   Text(
                     'Hoje é dia de celebrar! 🎊',
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
+                    style: AppTextStyles.corpoMenor.copyWith(color: const Color(0xE6FFFFFF), fontStyle: FontStyle.italic),
                   ),
                   if (a.totalParabens > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
                         '${a.totalParabens} parabéns recebidos',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 11,
-                        ),
+                        style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.brancoOp70),
                       ),
                     ),
                 ],
@@ -712,19 +604,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: jaParabenisei
-                      ? Colors.white.withOpacity(0.2)
-                      : Colors.white,
+                  color: jaParabenisei ? AppColors.brancoOp20 : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   jaParabenisei ? '✓ Enviado' : '🎉 Parabenizar',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
+                  style: AppTextStyles.corpoMenor.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: jaParabenisei
-                        ? Colors.white.withOpacity(0.7)
-                        : AppColors.magenta,
+                    color: jaParabenisei ? AppColors.brancoOp70 : AppColors.magenta,
                   ),
                 ),
               ),
@@ -762,17 +649,13 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.magenta.withOpacity(0.1),
+              color: AppColors.magentaOp15,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: Text(
                 dia.toString().padLeft(2, '0'),
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  color: AppColors.magenta,
-                ),
+                style: AppTextStyles.tituloMedio.copyWith(color: AppColors.magenta),
               ),
             ),
           ),
@@ -780,20 +663,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             pessoas.length == 1
                 ? pessoas.first.colaborador.primeiroNome
                 : '${pessoas.length} aniversariantes',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-              color: AppColors.dark,
-            ),
+            style: AppTextStyles.corpoNormal.copyWith(fontWeight: FontWeight.w600),
           ),
           subtitle: pessoas.length == 1
-              ? Text(
-                  pessoas.first.colaborador.setor ?? '',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: AppColors.cinzaTexto,
-                  ),
-                )
+              ? Text(pessoas.first.colaborador.setor ?? '', style: AppTextStyles.corpoMenor)
               : null,
           // Sem botão parabenizar nos itens do mês — só em hoje
           children: pessoas.map((a) => _itemDentroGrupo(a)).toList(),
@@ -818,21 +691,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               children: [
                 Text(
                   a.colaborador.nome,
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: AppColors.dark,
-                  ),
+                  style: AppTextStyles.corpoNormal.copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (a.colaborador.setor != null)
                   Text(
                     a.colaborador.setor!,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: AppColors.cinzaTexto,
-                    ),
+                    style: AppTextStyles.corpoMenor,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -872,7 +738,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               SnackBar(
                 content: Text(
                   'Parabéns enviado para ${a.colaborador.primeiroNome}! 🎊',
-                  style: GoogleFonts.poppins(),
+                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
                 ),
                 backgroundColor: AppColors.magenta,
                 behavior: SnackBarBehavior.floating,
@@ -886,7 +752,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               SnackBar(
                 content: Text(
                   'Erro ao enviar. Tente novamente.',
-                  style: GoogleFonts.poppins(),
+                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
                 ),
                 backgroundColor: Colors.red,
                 behavior: SnackBarBehavior.floating,
@@ -901,24 +767,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   Widget _avatar(colaborador, {double raio = 22, bool fonteGrande = false}) {
-    final iniciais = _iniciais(colaborador.nome);
-    return CircleAvatar(
-      radius: raio,
-      backgroundColor: AppColors.laranja.withOpacity(0.2),
-      backgroundImage: colaborador.fotoUrl != null
-          ? NetworkImage(colaborador.fotoUrl!)
-          : null,
-      child: colaborador.fotoUrl == null
-          ? Text(
-              iniciais,
-              style: GoogleFonts.poppins(
-                fontSize: fonteGrande ? 18 : 12,
-                fontWeight: FontWeight.w700,
-                color: AppColors.laranja,
-              ),
-            )
-          : null,
-    );
+    return AvatarColaborador(fotoUrl: colaborador.fotoUrl, nome: colaborador.nome, raio: raio);
   }
 
   // Helper no _AniversariantesScreenState:
@@ -972,10 +821,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           size: 48,
         ),
         const SizedBox(height: 12),
-        Text(
-          'Erro ao carregar',
-          style: GoogleFonts.poppins(color: AppColors.cinzaTexto),
-        ),
+        Text('Erro ao carregar', style: AppTextStyles.corpoCinza),
         TextButton(
           onPressed: _recarregar,
           child: const Text('Tentar novamente'),
@@ -990,10 +836,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
       children: [
         const Text('🎂', style: TextStyle(fontSize: 48)),
         const SizedBox(height: 12),
-        Text(
-          'Nenhum aniversariante este mês',
-          style: GoogleFonts.poppins(color: AppColors.cinzaTexto),
-        ),
+        Text('Nenhum aniversariante este mês', style: AppTextStyles.corpoCinza),
       ],
     ),
   );
@@ -1049,7 +892,7 @@ class _ModalParabensState extends State<_ModalParabens> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.cinzaTexto.withOpacity(0.3),
+                  color: AppColors.cinzaTextoOp30,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1057,18 +900,7 @@ class _ModalParabensState extends State<_ModalParabens> {
             const SizedBox(height: 20),
             Row(
               children: [
-                CircleAvatar(
-                  radius: 26,
-                  backgroundColor: AppColors.laranja.withOpacity(0.15),
-                  child: Text(
-                    _iniciais(a.colaborador.nome),
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.laranja,
-                    ),
-                  ),
-                ),
+                AvatarColaborador(fotoUrl: null, nome: a.colaborador.nome, raio: 26),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -1076,34 +908,17 @@ class _ModalParabensState extends State<_ModalParabens> {
                     children: [
                       Text(
                         'Parabenizar ${a.colaborador.primeiroNome}',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 17,
-                          color: AppColors.dark,
-                        ),
+                        style: AppTextStyles.tituloMedio.copyWith(fontSize: 17),
                       ),
                       if (a.colaborador.setor != null)
-                        Text(
-                          a.colaborador.setor!,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: AppColors.cinzaTexto,
-                          ),
-                        ),
+                        Text(a.colaborador.setor!, style: AppTextStyles.corpoMenor),
                     ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            Text(
-              'Sugestões',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: AppColors.cinzaTexto,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            Text('Sugestões', style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             SizedBox(
               height: 36,
@@ -1120,18 +935,13 @@ class _ModalParabensState extends State<_ModalParabens> {
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.magenta.withOpacity(0.08),
+                      color: AppColors.magentaOp15,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.magenta.withOpacity(0.2),
-                      ),
+                      border: Border.all(color: AppColors.magentaOp18),
                     ),
                     child: Text(
                       _sugestoes[i],
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.magenta,
-                      ),
+                      style: AppTextStyles.corpoMenor.copyWith(color: AppColors.magenta),
                     ),
                   ),
                 ),
@@ -1142,10 +952,10 @@ class _ModalParabensState extends State<_ModalParabens> {
               controller: widget.controller,
               maxLines: 3,
               maxLength: 280,
-              style: GoogleFonts.poppins(fontSize: 14),
+              style: AppTextStyles.corpoNormal,
               decoration: InputDecoration(
                 hintText: 'Escreva sua mensagem...',
-                hintStyle: GoogleFonts.poppins(color: AppColors.cinzaTexto),
+                hintStyle: AppTextStyles.corpoCinza,
                 filled: true,
                 fillColor: AppColors.cinzaClaro,
                 border: OutlineInputBorder(
@@ -1184,14 +994,7 @@ class _ModalParabensState extends State<_ModalParabens> {
                           strokeWidth: 2,
                         ),
                       )
-                    : Text(
-                        '🎉 Enviar parabéns',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                          color: Colors.white,
-                        ),
-                      ),
+                    : Text('🎉 Enviar parabéns', style: AppTextStyles.botaoPrimario),
               ),
             ),
           ],

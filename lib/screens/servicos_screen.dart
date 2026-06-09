@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
@@ -61,21 +60,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '⚡ Serviços',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Benefícios para você',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('⚡ Serviços', style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
+                      Text('Benefícios para você', style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),
                     ],
                   ),
                 ),
@@ -99,8 +85,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           if (!_loadingGestor && _ehGestor) ...[
                             Text(
                               'Painel do Gestor',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
+                              style: AppTextStyles.corpoMenor.copyWith(
                                 color: AppColors.laranja,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.5,
@@ -125,21 +110,13 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             const SizedBox(height: 24),
                             Text(
                               'Serviços para Colaboradores',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.cinzaTexto,
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w500),
                             ),
                           ] else ...[
                             const SizedBox(height: 4),
                             Text(
                               'Serviços para Colaboradores',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.cinzaTexto,
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w500),
                             ),
                           ],
                           const SizedBox(height: 16),
@@ -205,10 +182,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
           () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  '$titulo estará disponível em breve! 🚀',
-                  style: GoogleFonts.poppins(),
-                ),
+                content: Text('$titulo estará disponível em breve! 🚀', style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
                 backgroundColor: cor,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
@@ -255,10 +229,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                       Flexible(
                         child: Text(
                           titulo,
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.dark,
+                          style: AppTextStyles.labelSecao.copyWith(fontSize: 16,
                           ),
                         ),
                       ),
@@ -275,11 +246,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           ),
                           child: Text(
                             'Em breve',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: cor,
-                            ),
+                            style: AppTextStyles.corpoMinimo.copyWith(fontSize: 10, fontWeight: FontWeight.w600, color: cor),
                           ),
                         ),
                       ],
@@ -288,10 +255,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                   const SizedBox(height: 2),
                   Text(
                     subtitulo,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: AppColors.cinzaTexto,
-                    ),
+                    style: AppTextStyles.corpoCinza,
                   ),
                 ],
               ),
