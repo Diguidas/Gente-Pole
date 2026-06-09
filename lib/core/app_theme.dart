@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
   AppColors._();
@@ -11,11 +12,43 @@ class AppColors {
   static const cinzaClaro = Color(0xFFF1F5F9);
   static const branco = Color(0xFFFFFFFF);
 
-  static const gradientePrincipal = LinearGradient(
+    // Laranja com opacidade (evita withOpacity() no build)
+  static const laranjaOp08 = Color(0x14FF6B00);  // 0.08
+  static const laranjaOp10 = Color(0x1AFF6B00);  // 0.10
+  static const laranjaOp15 = Color(0x26FF6B00);  // 0.15
+
+  // Magenta com opacidade
+  static const magentaOp15 = Color(0x26E91E8C);  // 0.15
+  static const magentaOp18 = Color(0x2EE91E8C);  // 0.18
+  static const magentaOp50 = Color(0x80E91E8C);  // 0.50
+
+  // Branco com opacidade
+  static const brancoOp18 = Color(0x2EFFFFFF);   // 0.18
+  static const brancoOp20 = Color(0x33FFFFFF);   // 0.20
+  static const brancoOp25 = Color(0x40FFFFFF);   // 0.25
+  static const brancoOp30 = Color(0x4DFFFFFF);   // 0.30
+  static const brancoOp70 = Color(0xB3FFFFFF);   // 0.70
+  static const brancoOp80 = Color(0xCCFFFFFF);   // 0.80
+
+  // Preto com opacidade (sombras)
+  static const pretoOp04 = Color(0x0A000000);    // 0.04
+  static const pretoOp08 = Color(0x14000000);    // 0.08
+
+    static const LinearGradient gradientePrincipal = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFFFFD000), // amarelo vibrante
+      Color(0xFFFF8000), // laranja médio
+      Color(0xFFE84E00), // laranja queimado
+    ],
+  );
+
+/*   static const gradientePrincipal = LinearGradient(
     colors: [laranja, magenta],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-  );
+  ); */
 
   static const gradienteVertical = LinearGradient(
     colors: [laranja, magenta],
@@ -79,4 +112,55 @@ class AppTheme {
           labelStyle: const TextStyle(color: AppColors.cinzaTexto),
         ),
       );
+}
+
+class AppTextStyles {
+  AppTextStyles._();
+
+  // Títulos
+  static final tituloGrande = GoogleFonts.poppins(
+    fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.dark,
+  );
+  static final tituloMedio = GoogleFonts.poppins(
+    fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.dark,
+  );
+  static final tituloPequeno = GoogleFonts.poppins(
+    fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dark,
+  );
+
+  // Corpo
+  static final corpoNormal = GoogleFonts.poppins(
+    fontSize: 14, fontWeight: FontWeight.w400, color: AppColors.dark,
+  );
+  static final corpoMedio = GoogleFonts.poppins(
+    fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.dark,
+  );
+  static final corpoCinza = GoogleFonts.poppins(
+    fontSize: 13, color: AppColors.cinzaTexto,
+  );
+  static final corpoMenor = GoogleFonts.poppins(
+    fontSize: 12, color: AppColors.cinzaTexto,
+  );
+  static final corpoMinimo = GoogleFonts.poppins(
+    fontSize: 11, color: AppColors.cinzaTexto,
+  );
+
+  // Branco (para usar sobre gradiente/fundo colorido)
+  static final tituloBranco = GoogleFonts.poppins(
+    fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white,
+  );
+  static final corpoBranco = GoogleFonts.poppins(
+    fontSize: 13, color: Colors.white,
+  );
+  static final corpoBrancoOpaco = GoogleFonts.poppins(
+    fontSize: 12, color: Color(0xCCFFFFFF), // white com 80% opacidade
+  );
+
+  // Botões
+  static final botaoPrimario = GoogleFonts.poppins(
+    fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
+  );
+  static final labelSecao = GoogleFonts.poppins(
+    fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.dark,
+  );
 }

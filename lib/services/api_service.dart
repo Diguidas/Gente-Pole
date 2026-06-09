@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:gentepole/models/comunicado_model.dart';
+import 'package:gentepole/models/lojinha_model.dart';
+import 'package:gentepole/models/massoterapia_model.dart';
 import 'package:gentepole/models/vaga_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/colaborador_model.dart';
@@ -218,9 +220,9 @@ class ApiService {
   }
 
   // ─── FASE 5 — Gestor ──────────────────────────────────────────────────────────
-// Adicione estes métodos dentro da classe ApiService, em api_service.dart
-// Imports necessários no topo do arquivo:
-//   import '../models/vaga_model.dart';
+  // Adicione estes métodos dentro da classe ApiService, em api_service.dart
+  // Imports necessários no topo do arquivo:
+  //   import '../models/vaga_model.dart';
 
   // ─── Vagas do gestor ──────────────────────────────────────────────────────────
 
@@ -251,12 +253,18 @@ class ApiService {
 
   /// Candidatos na fase ENTREV_GESTOR de uma vaga
   Future<List<CandidaturaGestorModel>> listarCandidatosGestor(
-      int vagaId) async {
+    int vagaId,
+  ) async {
     final data = await _client
         .from('candidaturas')
         .select('*, candidatos(*)')
         .eq('vaga_id', vagaId)
-        .inFilter('status', ['ENTREV_GESTOR', 'PROPOSTA', 'APROVADO', 'REPROVADO'])
+        .inFilter('status', [
+          'ENTREV_GESTOR',
+          'PROPOSTA',
+          'APROVADO',
+          'REPROVADO',
+        ])
         .order('created_at', ascending: false);
 
     return (data as List)
@@ -273,7 +281,8 @@ class ApiService {
     try {
       await _client
           .from('candidaturas')
-          .update({'status': 'PROPOSTA'}).eq('id', candidaturaId);
+          .update({'status': 'PROPOSTA'})
+          .eq('id', candidaturaId);
 
       await _client.from('candidatura_historico').insert({
         'candidatura_id': candidaturaId,
@@ -296,10 +305,10 @@ class ApiService {
     required String motivo,
   }) async {
     try {
-      await _client.from('candidaturas').update({
-        'status': 'REPROVADO',
-        'motivo_reprovacao': motivo,
-      }).eq('id', candidaturaId);
+      await _client
+          .from('candidaturas')
+          .update({'status': 'REPROVADO', 'motivo_reprovacao': motivo})
+          .eq('id', candidaturaId);
 
       await _client.from('candidatura_historico').insert({
         'candidatura_id': candidaturaId,
@@ -340,7 +349,8 @@ class ApiService {
     try {
       await _client
           .from('candidaturas')
-          .update({'status': 'APROVADO'}).eq('id', candidaturaId);
+          .update({'status': 'APROVADO'})
+          .eq('id', candidaturaId);
 
       await _client.from('candidatura_historico').insert({
         'candidatura_id': candidaturaId,
@@ -360,10 +370,257 @@ class ApiService {
   Future<Map<String, dynamic>?> buscarStatusAdmissao(int candidaturaId) async {
     final data = await _client
         .from('admissoes')
-        .select('status, cargo_admitido, setor_admitido, data_inicio, salario_acordado')
+        .select(
+          'status, cargo_admitido, setor_admitido, data_inicio, salario_acordado',
+        )
         .eq('candidatura_id', candidaturaId)
         .maybeSingle();
     return data;
   }
-  
+
+  // ─── Lojinha ──────────────────────────────────────────────────────────────────
+
+  /// Busca produtos ativos com estoque > 0
+ 
+
+
+  // ─── Massoterapia ─────────────────────────────────────────────────────────────
+  // Adicione estes métodos dentro da classe ApiService, em api_service.dart
+  // Import necessário no topo do arquivo:
+  //   import '../models/massoterapia_model.dart';
+
+  /// Dias disponíveis para massoterapia nas próximas 4 semanas,
+  /// baseado nos dias_semana configurados pelo admin.
+  Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
+    // Busca os dias da semana ativos (1=seg … 5=sex)
+    final configDias = await _client
+        .from('massoterapia_dias_disponiveis')
+        .select('dia_semana')
+        .eq('ativo', true);
+
+    final diasAtivos = (configDias as List)
+        .map((e) => e['dia_semana'] as int)
+        .toSet();
+
+    if (diasAtivos.isEmpty) return [];
+
+    // Gera as próximas 4 semanas de datas válidas (a partir de hoje)
+    final hoje = DateTime.now();
+    final datas = <String>[];
+    // Encontra a segunda-feira da semana atual
+    final inicioSemana = hoje.subtract(Duration(days: hoje.weekday - 1));
+    for (var i = 0; i < 5; i++) {
+      final d = inicioSemana.add(Duration(days: i));
+      if (diasAtivos.contains(d.weekday)) {
+        final str =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        datas.add(str);
+      }
+    }
+    return datas;
+  }
+
+  /// Todos os agendamentos com status AGENDADO nas próximas 4 semanas.
+  /// Inclui join com colaboradores para exibir nome, matrícula e setor.
+  Future<List<MassoterapiaAgendamentoModel>>
+  buscarAgendamentosMassoterapia() async {
+    final hoje = DateTime.now();
+    final fim = hoje.add(const Duration(days: 27));
+    final hojeStr =
+        '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
+    final fimStr =
+        '${fim.year}-${fim.month.toString().padLeft(2, '0')}-${fim.day.toString().padLeft(2, '0')}';
+
+    final data = await _client
+        .from('massoterapia_agendamentos')
+        .select('*, colaboradores(nome, matricula, setor)')
+        .neq('status', 'CANCELADO')
+        .gte('data', hojeStr)
+        .lte('data', fimStr)
+        .order('data', ascending: true)
+        .order('horario', ascending: true);
+
+    return (data as List)
+        .map(
+          (e) =>
+              MassoterapiaAgendamentoModel.fromJson(e as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  /// Configuração de vagas por setor. Retorna null se o setor não tiver config.
+  Future<MassoterapiaConfigSetorModel?> buscarConfigSetorMassoterapia(
+    String setor,
+  ) async {
+    final data = await _client
+        .from('massoterapia_config_setor')
+        .select()
+        .eq('setor', setor)
+        .eq('ativo', true)
+        .maybeSingle();
+    if (data == null) return null;
+    return MassoterapiaConfigSetorModel.fromJson(data);
+  }
+
+  /// Cria um agendamento para o colaborador logado.
+  /// Retorna false se o slot já estiver ocupado ou o setor estiver lotado.
+  Future<bool> agendarMassoterapia({
+    required String data,
+    required String horario,
+  }) async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) return false;
+    try {
+      await _client.from('massoterapia_agendamentos').insert({
+        'colaborador_id': colaborador.id,
+        'data': data,
+        'horario': horario,
+        'status': 'AGENDADO',
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Cancela um agendamento (muda status para CANCELADO).
+  Future<bool> cancelarMassoterapia(int agendamentoId) async {
+    try {
+      await _client
+          .from('massoterapia_agendamentos')
+          .update({'status': 'CANCELADO'})
+          .eq('id', agendamentoId)
+          .eq('colaborador_id', colaboradorAtual!.id); // segurança: só o dono
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Retorna true se o colaborador logado tem role de gestor na tabela usuarios_web.
+  Future<bool> verificarSeEhGestor() async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) return false;
+    try {
+      final res = await _client
+          .from('usuarios_web')
+          .select('id')
+          .eq('colaborador_id', colaborador.id)
+          .eq('role', 'gestor')
+          .eq('ativo', true)
+          .maybeSingle();
+      return res != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Busca as mensagens de parabéns recebidas pelo colaborador logado hoje.
+  Future<List<Map<String, dynamic>>> buscarMensagensParabens() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+
+    final res = await _client
+        .from('parabens')
+        .select('*, colaboradores!remetente_id(nome, setor)')
+        .eq('destinatario_id', meuId)
+        .order('criado_em', ascending: true);
+
+    return (res as List).map((m) {
+      final map = Map<String, dynamic>.from(m as Map); // ← cast aqui
+      final col = map['colaboradores'] as Map?;
+      return {
+        ...map,
+        'remetente_nome': col?['nome'] ?? 'Colega',
+        'remetente_setor': col?['setor'],
+      };
+    }).toList();
+  }
+
+  // Cole estes métodos dentro da classe ApiService, na seção de Lojinha.
+  // Imports necessários no topo do api_service.dart:
+  //   import '../models/lojinha_model.dart';
+
+  // ─── Lojinha ──────────────────────────────────────────────────────────────────
+
+  /// Busca produtos ativos com estoque > 0
+  Future<List<LojinhaProdutoModel>> buscarProdutosLojinha() async {
+    final data = await _client
+        .from('lojinha_produtos')
+        .select()
+        .eq('ativo', true)
+        .gt('estoque', 0)
+        .order('descricao', ascending: true);
+
+    return (data as List)
+        .map((e) => LojinhaProdutoModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Dados do funcionário no SAP: limites + histórico de pedidos
+  Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
+    final clienteSap = colaboradorAtual?.clienteSap;
+    if (clienteSap == null) return null;
+
+    try {
+      // Remove zeros à esquerda para o parâmetro da URL
+      final codCliente = clienteSap.replaceAll(RegExp(r'^0+'), '');
+      final res = await _client.functions.invoke(
+        'lojinha-funcionario',
+        method: HttpMethod.get,
+        queryParameters: {'codcliente': codCliente},
+      );
+      final map = res.data as Map<String, dynamic>;
+      if (map['ok'] != true) return null;
+      return LojinhaFuncionarioModel.fromJson(
+        map['data'] as Map<String, dynamic>,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Itens de um pedido específico
+  Future<LojinhaPedidoDetalheModel?> buscarItensPedido(String ordem) async {
+    try {
+      final res = await _client.functions.invoke(
+        'lojinha-itens-pedido',
+        method: HttpMethod.get,
+        queryParameters: {'ordem': ordem},
+      );
+      final map = res.data as Map<String, dynamic>;
+      if (map['ok'] != true) return null;
+      return LojinhaPedidoDetalheModel.fromJson(
+        map['data'] as Map<String, dynamic>,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Envia pedido via Edge Function
+  Future<({bool ok, String retorno, String? numeroPedido})>
+  finalizarPedidoLojinha({required List<CarrinhoItem> itens}) async {
+    final colaborador = colaboradorAtual!;
+    final hoje = DateTime.now();
+    final datacriacao =
+        '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
+
+    final res = await _client.functions.invoke(
+      'lojinha-pedido',
+      body: {
+        'colaborador_id': colaborador.id,
+        'cliente_sap': colaborador.clienteSap,
+        'datacriacao': datacriacao,
+        'itens': itens.map((i) => i.toSapItem()).toList(),
+      },
+    );
+
+    final data = res.data as Map<String, dynamic>;
+    return (
+      ok: data['ok'] as bool,
+      retorno: data['retorno'] as String,
+      numeroPedido: data['numeroPedido'] as String?,
+    );
+  }
 }

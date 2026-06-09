@@ -1,26 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
+import 'package:gentepole/screens/lojinha/lojinha_screen.dart';
+import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
-import 'gestor/gestor_screen.dart'; // nova tela do gestor
+import 'gestor/gestor_screen.dart';
 
-class ServicosScreen extends StatelessWidget {
+class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
 
   @override
+  State<ServicosScreen> createState() => _ServicosScreenState();
+}
+
+class _ServicosScreenState extends State<ServicosScreen> {
+  final _api = ApiService();
+  bool _ehGestor = false;
+  bool _loadingGestor = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _verificarGestor();
+  }
+
+  Future<void> _verificarGestor() async {
+    final resultado = await _api.verificarSeEhGestor();
+    if (mounted)
+      setState(() {
+        _ehGestor = resultado;
+        _loadingGestor = false;
+      });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Verifica se o colaborador logado é gestor (tem supervisorId de alguém
-    // ou, como definido no projeto, se tem role de gestor via usuarios_web).
-    // No app mobile, usamos o campo supervisor_id da tabela colaboradores —
-    // se o colaborador É supervisor de outros, ele é um gestor.
     final api = ApiService();
     final colaborador = api.colaboradorAtual;
-
-    // Um colaborador é gestor se ele aparece como supervisor_id de outros,
-    // mas no mobile a forma mais simples é verificar se ele tem o campo
-    // supervisor_id nulo (ou seja, NÃO tem supervisor = é o topo da hierarquia).
-    // Ajuste esta lógica conforme a regra de negócio real.
-    final ehGestor = colaborador != null && colaborador.supervisorId == null;
 
     return Scaffold(
       body: Stack(
@@ -37,8 +54,10 @@ class ServicosScreen extends StatelessWidget {
               children: [
                 // ── Header ────────────────────────────────────────────────
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 20,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -67,16 +86,17 @@ class ServicosScreen extends StatelessWidget {
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(28)),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
                     ),
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ── Painel do Gestor (condicional) ────────────────
-                          if (ehGestor) ...[
+                          if (_loadingGestor) const SizedBox.shrink(),
+                          if (!_loadingGestor && _ehGestor) ...[
                             Text(
                               'Painel do Gestor',
                               style: GoogleFonts.poppins(
@@ -104,7 +124,7 @@ class ServicosScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 24),
                             Text(
-                              'Disponíveis em breve',
+                              'Serviços para Colaboradores',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: AppColors.cinzaTexto,
@@ -114,7 +134,7 @@ class ServicosScreen extends StatelessWidget {
                           ] else ...[
                             const SizedBox(height: 4),
                             Text(
-                              'Disponíveis em breve',
+                              'Serviços para Colaboradores',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: AppColors.cinzaTexto,
@@ -131,8 +151,13 @@ class ServicosScreen extends StatelessWidget {
                             titulo: 'Lojinha',
                             subtitulo: 'Produtos e benefícios exclusivos',
                             cor: AppColors.laranja,
-                            emBreve: true,
-                            onTap: null,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LojinhaHomeScreen(),
+                              ),
+                            ),
                           ),
 
                           const SizedBox(height: 14),
@@ -144,8 +169,13 @@ class ServicosScreen extends StatelessWidget {
                             titulo: 'Massoterapia',
                             subtitulo: 'Agende sua sessão de bem-estar',
                             cor: AppColors.magenta,
-                            emBreve: true,
-                            onTap: null,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MassoterapiaScreen(),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -170,7 +200,8 @@ class ServicosScreen extends StatelessWidget {
     required VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: onTap ??
+      onTap:
+          onTap ??
           () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -181,7 +212,8 @@ class ServicosScreen extends StatelessWidget {
                 backgroundColor: cor,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             );
           },
@@ -234,7 +266,9 @@ class ServicosScreen extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: cor.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
@@ -263,8 +297,11 @@ class ServicosScreen extends StatelessWidget {
               ),
             ),
 
-            Icon(Icons.chevron_right_rounded,
-                color: AppColors.cinzaTexto, size: 22),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.cinzaTexto,
+              size: 22,
+            ),
           ],
         ),
       ),

@@ -9,6 +9,7 @@ class ColaboradorModel {
   final String? dataAdmissao;
   final int? supervisorId;
   final String? fotoUrl;
+  final String? clienteSap;
 
   ColaboradorModel({
     required this.id,
@@ -20,7 +21,7 @@ class ColaboradorModel {
     this.dataNascimento,
     this.dataAdmissao,
     this.supervisorId,
-    this.fotoUrl,
+    this.fotoUrl, this.clienteSap,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +36,7 @@ class ColaboradorModel {
       dataAdmissao: json['data_admissao'],
       supervisorId: json['supervisor_id'],
       fotoUrl: json['foto_url'],
+      clienteSap: json['cliente_sap'],
     );
   }
 

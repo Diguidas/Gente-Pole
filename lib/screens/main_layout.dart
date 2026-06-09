@@ -15,32 +15,50 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
+  final Set<int> _visitadas = {0}; // Home já abre na primeira vez
 
-  // HomeScreen recebe callback para navegar até Comunicados
-  late final List<Widget> _pages;
+  void _onTabTap(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _visitadas.add(index);
+    });
+  }
 
-  @override
-  void initState() {
-    super.initState();
-    _pages = [
-      HomeScreen(onVerComunicados: () => setState(() => _selectedIndex = 1)),
-      const ComunicadosScreen(),
-      const AniversariantesScreen(),
-      const ServicosScreen(),
-      const PessoasScreen(),
-    ];
+  Widget _buildPage(int index) {
+    if (!_visitadas.contains(index)) return const SizedBox.shrink();
+
+    switch (index) {
+      case 0:
+        return HomeScreen(
+          onVerComunicados: () => _onTabTap(1),
+        );
+      case 1:
+        return const ComunicadosScreen();
+      case 2:
+        return const AniversariantesScreen();
+      case 3:
+        return const ServicosScreen();
+      case 4:
+        return const PessoasScreen();
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
+      body: Stack(
+        children: List.generate(5, (index) {
+          return Offstage(
+            offstage: _selectedIndex != index,
+            child: _buildPage(index),
+          );
+        }),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: _onTabTap,
         selectedItemColor: AppColors.magenta,
         unselectedItemColor: AppColors.cinzaTexto,
         type: BottomNavigationBarType.fixed,
@@ -61,7 +79,6 @@ class _MainLayoutState extends State<MainLayout> {
             activeIcon: Icon(Icons.cake_rounded),
             label: 'Parabéns',
           ),
-          
           BottomNavigationBarItem(
             icon: Icon(Icons.grid_view_rounded),
             activeIcon: Icon(Icons.grid_view_rounded),

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:gentepole/screens/aniversariante_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
+import '../models/aniversariante_model.dart';
 import '../models/comunicado_model.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  /// Callback para navegar para a aba de Comunicados no MainLayout
   final VoidCallback? onVerComunicados;
-
   const HomeScreen({super.key, this.onVerComunicados});
 
   @override
@@ -18,14 +18,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _api = ApiService();
   late Future<List<ComunicadoModel>> _futureComunicados;
+  late Future<List<AniversarianteModel>> _futureAniversariantes;
 
   @override
   void initState() {
     super.initState();
     _futureComunicados = _api.buscarUltimosComunicados();
+    _futureAniversariantes = _api.buscarAniversariantesMes();
   }
 
-  // ── Build principal ──────────────────────────────────────────────────────────
+  void _recarregar() => setState(() {
+        _futureComunicados = _api.buscarUltimosComunicados();
+        _futureAniversariantes = _api.buscarAniversariantesMes();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -34,29 +39,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Gradiente de fundo no topo
           Container(
             height: 240,
             decoration: const BoxDecoration(
               gradient: AppColors.gradientePrincipal,
             ),
           ),
-
           SafeArea(
             child: Column(
               children: [
-                // ── Header: dados do usuário ─────────────────────────────────
+                // ── Header ──────────────────────────────────────────────────
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   child: Row(
                     children: [
-                      // Avatar
                       _avatarUsuario(colaborador?.nome ?? ''),
-
                       const SizedBox(width: 14),
-
-                      // Nome + cargo·setor
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,15 +82,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-
-                      // Botão alterar senha
                       _headerIconButton(
                         icon: Icons.lock_outline_rounded,
                         tooltip: 'Alterar senha',
                         onTap: () => _abrirAlterarSenha(context),
                       ),
-
-                      // Botão sair
                       _headerIconButton(
                         icon: Icons.logout_rounded,
                         tooltip: 'Sair',
@@ -101,29 +96,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // Informações do colaborador (matrícula + admissão)
+                // Chips matrícula + admissão
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      _chipInfo(
-                        Icons.badge_outlined,
-                        'Matrícula',
-                        colaborador?.matricula ?? '—',
-                      ),
+                      _chipInfo(Icons.badge_outlined, 'Matrícula',
+                          colaborador?.matricula ?? '—'),
                       const SizedBox(width: 10),
-                      _chipInfo(
-                        Icons.calendar_today_outlined,
-                        'Admissão',
-                        colaborador?.dataAdmissaoFormatada ?? '—',
-                      ),
+                      _chipInfo(Icons.calendar_today_outlined, 'Admissão',
+                          colaborador?.dataAdmissaoFormatada ?? '—'),
                     ],
                   ),
                 ),
 
                 const SizedBox(height: 16),
 
-                // ── Corpo (fundo branco arredondado) ────────────────────────
+                // ── Corpo ────────────────────────────────────────────────────
                 Expanded(
                   child: Container(
                     width: double.infinity,
@@ -134,33 +123,35 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: FutureBuilder<List<ComunicadoModel>>(
                       future: _futureComunicados,
-                      builder: (context, snap) {
-                        if (snap.connectionState == ConnectionState.waiting) {
+                      builder: (context, snapCom) {
+                        if (snapCom.connectionState ==
+                            ConnectionState.waiting) {
                           return const Center(
                             child: CircularProgressIndicator(
                                 color: AppColors.magenta),
                           );
                         }
 
-                        final lista = snap.data ?? [];
+                        final lista = snapCom.data ?? [];
 
                         return RefreshIndicator(
                           color: AppColors.magenta,
-                          onRefresh: () async => setState(() {
-                            _futureComunicados =
-                                _api.buscarUltimosComunicados();
-                          }),
+                          onRefresh: () async => _recarregar(),
                           child: ListView(
                             padding:
                                 const EdgeInsets.fromLTRB(16, 24, 16, 32),
                             children: [
-                              // ── Comunicado em destaque ───────────────────
+                              // ── Comunicado destaque ──────────────────────
                               if (lista.isNotEmpty) ...[
                                 _labelSecao('📢 Em destaque'),
                                 const SizedBox(height: 10),
                                 _cardDestaque(lista.first),
                                 const SizedBox(height: 24),
                               ],
+
+                              // ── Aniversariantes ──────────────────────────
+                              _buildSecaoAniversariantes(),
+                              const SizedBox(height: 24),
 
                               // ── Últimos comunicados ──────────────────────
                               if (lista.length > 1) ...[
@@ -189,9 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     .map(_cardComunicadoSimples),
                               ],
 
-                              // Sem comunicados
-                              if (lista.isEmpty)
-                                _semComunicados(),
+                              if (lista.isEmpty) _semComunicados(),
                             ],
                           ),
                         );
@@ -207,7 +196,175 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Card de destaque ─────────────────────────────────────────────────────────
+  // ── Seção aniversariantes ────────────────────────────────────────────────────
+
+  Widget _buildSecaoAniversariantes() {
+    return FutureBuilder<List<AniversarianteModel>>(
+      future: _futureAniversariantes,
+      builder: (context, snap) {
+        // Carregando — mostra esqueleto leve
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _labelSecao('🎂 Aniversariantes'),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, __) => Container(
+                    width: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final todos = snap.data ?? [];
+        if (todos.isEmpty) return const SizedBox.shrink();
+
+        final now = DateTime.now();
+        // Hoje primeiro, depois os próximos do mês
+        final hoje = todos.where((a) => a.ehHoje).toList();
+        final proximos = todos
+            .where((a) => !a.ehHoje && a.diaNascimento > now.day)
+            .take(10)
+            .toList();
+        final exibir = [...hoje, ...proximos];
+        if (exibir.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _labelSecao('🎂 Aniversariantes'),
+                TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AniversariantesScreen()),
+                  ),
+                  child: Text(
+                    'Ver mais',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.magenta,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 96,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: exibir.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) => _cardAniversarianteHorizontal(exibir[i]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _cardAniversarianteHorizontal(AniversarianteModel a) {
+    final ehHoje = a.ehHoje;
+    final iniciais = _iniciais(a.colaborador.nome);
+
+    return Container(
+      width: 72,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: ehHoje
+            ? Border.all(
+                color: AppColors.magenta.withOpacity(0.5), width: 1.5)
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: ehHoje
+                ? AppColors.magenta.withOpacity(0.15)
+                : Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Avatar
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: AppColors.laranja.withOpacity(0.15),
+                backgroundImage: a.colaborador.fotoUrl != null
+                    ? NetworkImage(a.colaborador.fotoUrl!)
+                    : null,
+                child: a.colaborador.fotoUrl == null
+                    ? Text(
+                        iniciais,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.laranja,
+                        ),
+                      )
+                    : null,
+              ),
+              if (ehHoje)
+                const Text('🎂', style: TextStyle(fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Dia
+          Text(
+            ehHoje
+                ? 'Hoje'
+                : 'Dia ${a.diaNascimento.toString().padLeft(2, '0')}',
+            style: GoogleFonts.poppins(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: ehHoje ? AppColors.magenta : AppColors.cinzaTexto,
+            ),
+          ),
+          // Primeiro nome
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              a.colaborador.primeiroNome,
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppColors.dark,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Card destaque ────────────────────────────────────────────────────────────
 
   Widget _cardDestaque(ComunicadoModel c) {
     return Container(
@@ -226,12 +383,12 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Foto (se tiver) ou banner colorido
+            // Imagem — se adapta ao tamanho real sem cortar
             if (c.fotoUrl != null && c.fotoUrl!.isNotEmpty)
               Image.network(
                 c.fotoUrl!,
-                height: 180,
                 width: double.infinity,
+                // sem height fixo — a imagem define sua própria altura
                 fit: BoxFit.fitWidth,
                 errorBuilder: (_, __, ___) => _bannerSemFoto(),
               )
@@ -291,11 +448,12 @@ class _HomeScreenState extends State<HomeScreen> {
           gradient: AppColors.gradientePrincipal,
         ),
         child: const Center(
-          child: Icon(Icons.campaign_rounded, color: Colors.white, size: 48),
+          child:
+              Icon(Icons.campaign_rounded, color: Colors.white, size: 48),
         ),
       );
 
-  // ── Card simples (lista) ─────────────────────────────────────────────────────
+  // ── Card comunicado simples ──────────────────────────────────────────────────
 
   Widget _cardComunicadoSimples(ComunicadoModel c) {
     return Container(
@@ -312,10 +470,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            // Mini ícone ou miniatura
             Container(
               width: 44,
               height: 44,
@@ -328,7 +486,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(10),
                       child: Image.network(
                         c.fotoUrl!,
-                        fit: BoxFit.fitWidth,
+                        fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Icon(
                             Icons.campaign_outlined,
                             color: AppColors.laranja,
@@ -338,9 +496,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   : const Icon(Icons.campaign_outlined,
                       color: AppColors.laranja, size: 22),
             ),
-
             const SizedBox(width: 12),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,7 +521,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-
             const Icon(Icons.chevron_right_rounded,
                 color: AppColors.cinzaTexto, size: 18),
           ],
@@ -419,7 +574,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _chipInfo(IconData icon, String label, String valor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.18),
           borderRadius: BorderRadius.circular(12),
@@ -503,14 +659,14 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius:
+                  BorderRadius.vertical(top: Radius.circular(28)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Handle
                 Center(
                   child: Container(
                     width: 40,
@@ -522,7 +678,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 Text(
                   '🔒 Alterar senha',
                   style: GoogleFonts.poppins(
@@ -532,7 +687,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 TextField(
                   controller: senhaAtualCtrl,
                   obscureText: true,
@@ -553,7 +707,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -595,7 +748,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ok ? AppColors.magenta : Colors.red,
                                 behavior: SnackBarBehavior.floating,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                    borderRadius:
+                                        BorderRadius.circular(12)),
                               ),
                             );
                           },
@@ -632,24 +786,27 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         title: Text('Sair da conta?',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-        content: Text('Você precisará digitar sua matrícula e senha novamente.',
+        content: Text(
+            'Você precisará digitar sua matrícula e senha novamente.',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancelar',
-                style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
+                style:
+                    GoogleFonts.poppins(color: AppColors.cinzaTexto)),
           ),
           ElevatedButton(
             onPressed: () {
               _api.limparSessao();
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                MaterialPageRoute(
+                    builder: (_) => const LoginScreen()),
                 (_) => false,
               );
             },
