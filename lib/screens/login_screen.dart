@@ -4,6 +4,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_layout.dart';
+import 'massoterapia/admin_massoterapia_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen>
   int _etapa = 0;
   bool _carregando = false;
   bool _senhaVisivel = false;
+  bool _ehFornecedor = false;
 
   late final AnimationController _animController;
   late final Animation<double> _fadeAnim;
@@ -68,6 +70,12 @@ class _LoginScreenState extends State<LoginScreen>
       switch (resultado.status) {
         case 'NAO_ENCONTRADO':
           _mostrarErro('Matrícula não encontrada.');
+        case 'FORNECEDOR':
+          setState(() {
+            _etapa = 2;
+            _ehFornecedor = true;
+          });
+          _animController.forward(from: 0);
         case 'PRIMEIRO_ACESSO':
           setState(() => _etapa = 1);
           _animController.forward(from: 0);
@@ -120,6 +128,24 @@ class _LoginScreenState extends State<LoginScreen>
       if (_senhaController.text.isEmpty) return;
       setState(() => _carregando = true);
 
+      if (_ehFornecedor) {
+        final fornecedor = await _api.loginFornecedor(
+          matricula: matricula,
+          senha: _senhaController.text,
+        );
+        setState(() => _carregando = false);
+        if (fornecedor == null) {
+          _mostrarErro('Senha incorreta.');
+          return;
+        }
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminMassoterapiaScreen()),
+        );
+        return;
+      }
+
       final ok = await _api.validarLogin(
         matricula: matricula,
         senha: _senhaController.text,
@@ -147,6 +173,7 @@ class _LoginScreenState extends State<LoginScreen>
     _animController.reverse().then((_) {
       setState(() {
         _etapa = 0;
+        _ehFornecedor = false;
         _matriculaController.clear();
         _senhaController.clear();
         _dataController.clear();

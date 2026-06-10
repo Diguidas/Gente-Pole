@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:gentepole/models/comunicado_model.dart';
 import 'package:gentepole/models/lojinha_model.dart';
@@ -34,6 +35,16 @@ class ApiService {
         .maybeSingle();
 
     if (resultColaborador == null) {
+      // Verifica se é um fornecedor (ex: massoterapeuta) cadastrado em usuarios_app
+      final resultFornecedor = await _client
+          .from('usuarios_app')
+          .select('id')
+          .eq('matricula', matricula.trim())
+          .eq('ativo', true)
+          .maybeSingle();
+      if (resultFornecedor != null) {
+        return (status: 'FORNECEDOR', colaborador: null);
+      }
       return (status: 'NAO_ENCONTRADO', colaborador: null);
     }
 
@@ -381,8 +392,6 @@ class ApiService {
   // ─── Lojinha ──────────────────────────────────────────────────────────────────
 
   /// Busca produtos ativos com estoque > 0
- 
-
 
   // ─── Massoterapia ─────────────────────────────────────────────────────────────
   // Adicione estes métodos dentro da classe ApiService, em api_service.dart
@@ -623,4 +632,250 @@ class ApiService {
       numeroPedido: data['numeroPedido'] as String?,
     );
   }
+
+  // ─── Cole estes métodos no api_service.dart DO APP, dentro da classe ApiService ───
+  // Substitua também o método atualizarPresencaMassoterapia existente (se houver)
+
+  /// Busca agendamentos de um dia pelo formato 'yyyy-MM-dd'.
+  /// Requer a view v_massoterapia_agenda no Supabase (veja SQL de migração).
+  Future<List<Map<String, dynamic>>> buscarAgendamentosData(String data) async {
+    final res = await _client
+        .from('v_massoterapia_agenda')
+        .select()
+        .eq('data', data)
+        .order('horario', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Atualiza status de presença e, opcionalmente, salva a URL da assinatura.
+  Future<bool> atualizarPresencaMassoterapia({
+    required int id,
+    required String status, // 'VEIO' | 'NAO_VEIO'
+    String? assinaturaUrl,
+  }) async {
+    assert(status == 'VEIO' || status == 'NAO_VEIO');
+    try {
+      await _client
+          .from('massoterapia_agendamentos')
+          .update({
+            'status': status,
+            if (assinaturaUrl != null) 'assinatura_url': assinaturaUrl,
+          })
+          .eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Faz upload da assinatura PNG no Storage e retorna a URL pública.
+  /// Bucket: 'assinaturas-massoterapia' (crie no Supabase com acesso público).
+  Future<String> uploadAssinaturaMassoterapia({
+    required int agendamentoId,
+    required Uint8List bytes,
+  }) async {
+    final path =
+        'massoterapia/$agendamentoId/${DateTime.now().millisecondsSinceEpoch}.png';
+    await _client.storage
+        .from('assinaturas-massoterapia')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/png',
+            upsert: true,
+          ),
+        );
+    return _client.storage.from('assinaturas-massoterapia').getPublicUrl(path);
+  }
+
+  /// Login pela matrícula do fornecedor (massoterapeuta).
+  /// Retorna o map do usuário se válido, null caso contrário.
+  Future<Map<String, dynamic>?> loginFornecedor({
+    required String matricula, // ex: '9999'
+    required String senha,
+  }) async {
+    final senhaHash = _hash(senha);
+    final res = await _client
+        .from('usuarios_app')
+        .select()
+        .eq('matricula', matricula.trim())
+        .eq('senha_hash', senhaHash)
+        .eq('ativo', true)
+        .maybeSingle();
+    return res;
+  }
+
+  // ─── Humor do Dia ────────────────────────────────────────────
+
+  /// Retorna o registro de humor do colaborador para hoje, ou null se não registrou.
+  Future<Map<String, dynamic>?> buscarHumorHoje() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return null;
+    final hoje = DateTime.now();
+    final dataStr =
+        '${hoje.year}-${hoje.month.toString().padLeft(2, "0")}-${hoje.day.toString().padLeft(2, "0")}';
+    return await _client
+        .from('humor_registros')
+        .select()
+        .eq('colaborador_id', meuId)
+        .eq('data', dataStr)
+        .maybeSingle();
+  }
+
+  /// Salva o humor do dia. Retorna false se já registrado ou erro.
+  Future<bool> registrarHumor({required int nivel, String? motivo}) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('humor_registros').insert({
+        'colaborador_id': meuId,
+        'nivel': nivel,
+        if (motivo != null && motivo.isNotEmpty) 'motivo': motivo,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Busca o banner configurado para o nível informado.
+  Future<Map<String, dynamic>?> buscarBannerHumor(int nivel) async {
+    return await _client
+        .from('humor_banners')
+        .select()
+        .eq('nivel', nivel)
+        .eq('ativo', true)
+        .maybeSingle();
+  }
+
+  // ─── Feedback ─────────────────────────────────────────────────────
+
+  /// Envia feedback para um colaborador.
+  Future<bool> enviarFeedback({
+    required int destinatarioId,
+    required String texto,
+    required bool anonimo,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    if (meuId == destinatarioId) return false; // sem auto-feedback
+    try {
+      await _client.from('feedbacks').insert({
+        'remetente_id': meuId,
+        'destinatario_id': destinatarioId,
+        'texto': texto.trim(),
+        'anonimo': anonimo,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Feedbacks recebidos pelo colaborador logado (via view).
+  Future<List<Map<String, dynamic>>> buscarFeedbacksRecebidos() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final res = await _client
+        .from('v_feedbacks_recebidos')
+        .select()
+        .eq('destinatario_id', meuId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Conta feedbacks não lidos (para badge).
+  Future<int> contarFeedbacksNaoLidos() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return 0;
+    final res = await _client
+        .from('feedbacks')
+        .select('id')
+        .eq('destinatario_id', meuId)
+        .eq('lido', false);
+    return (res as List).length;
+  }
+
+  /// Marca um feedback como lido.
+  Future<void> marcarFeedbackLido(int feedbackId) async {
+    await _client
+        .from('feedbacks')
+        .update({'lido': true})
+        .eq('id', feedbackId)
+        .eq('destinatario_id', colaboradorAtual!.id);
+  }
+
+  /// Busca todos os colaboradores para a lista de destinatários.
+  Future<List<Map<String, dynamic>>> buscarTodosColaboradores() async {
+    final meuId = colaboradorAtual?.id;
+    final res = await _client
+        .from('colaboradores')
+        .select('id, nome, setor, cargo')
+        .neq('id', meuId ?? 0)
+        .order('nome', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Lista pesquisas disponíveis (filtra por data e ativa via view).
+  Future<List<Map<String, dynamic>>> buscarPesquisasDisponiveis() async {
+    final res = await _client
+        .from('v_pesquisas_disponiveis')
+        .select()
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Busca as perguntas de uma pesquisa, em ordem.
+  Future<List<Map<String, dynamic>>> buscarPerguntasPesquisa(
+    int pesquisaId,
+  ) async {
+    final res = await _client
+        .from('pesquisa_perguntas')
+        .select()
+        .eq('pesquisa_id', pesquisaId)
+        .order('ordem', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Envia todas as respostas de uma pesquisa.
+  /// [respostas] é um Map de pergunta_id → valor (String, int ou bool).
+  Future<bool> responderPesquisa({
+    required int pesquisaId,
+    required bool anonima,
+    required Map<int, dynamic> respostas,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    try {
+      // 1. Insere cabeçalho
+      final cabecalho = await _client
+          .from('pesquisa_respostas')
+          .insert({
+            'pesquisa_id': pesquisaId,
+            'colaborador_id': anonima ? null : meuId,
+          })
+          .select('id')
+          .single();
+      final respostaId = cabecalho['id'] as int;
+
+      // 2. Insere itens
+      final itens = respostas.entries.map((e) {
+        final mapa = <String, dynamic>{
+          'resposta_id': respostaId,
+          'pergunta_id': e.key,
+        };
+        if (e.value is String) mapa['valor_texto'] = e.value;
+        if (e.value is int) mapa['valor_numero'] = e.value;
+        if (e.value is bool) mapa['valor_booleano'] = e.value;
+        return mapa;
+      }).toList();
+
+      await _client.from('pesquisa_resposta_itens').insert(itens);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+
 }

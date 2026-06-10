@@ -11,6 +11,9 @@ class AppColors {
   static const cinzaTexto = Color(0xFF6B7280);
   static const cinzaClaro = Color(0xFFF1F5F9);
   static const branco = Color(0xFFFFFFFF);
+  static const fundo = Color(0xFFF8FAFC);
+  static const sucesso = Color(0xFF22C55E);
+  static const erro = Color(0xFFEF4444);
 
     // Laranja com opacidade (evita withOpacity() no build)
   static const laranjaOp08 = Color(0x14FF6B00);  // 0.08

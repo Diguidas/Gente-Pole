@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/aniversariante_screen.dart';
+import 'package:gentepole/widgets/humor_widget.dart';
 import '../core/app_theme.dart';
 import '../models/aniversariante_model.dart';
 import '../models/comunicado_model.dart';
@@ -20,6 +21,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<ComunicadoModel>> _futureComunicados;
   late Future<List<AniversarianteModel>> _futureAniversariantes;
 
+  // FIX #5 — chave que força o HumorWidget a reconstruir no pull-to-refresh
+  int _humorRefreshKey = 0;
+
   @override
   void initState() {
     super.initState();
@@ -28,9 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _recarregar() => setState(() {
-        _futureComunicados = _api.buscarUltimosComunicados();
-        _futureAniversariantes = _api.buscarAniversariantesMes();
-      });
+    _humorRefreshKey++;
+    _futureComunicados = _api.buscarUltimosComunicados();
+    _futureAniversariantes = _api.buscarAniversariantesMes();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +47,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             height: 240,
             decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal,
+              color: AppColors.laranja,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
             ),
           ),
           SafeArea(
@@ -50,8 +56,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 // ── Header ──────────────────────────────────────────────────
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   child: Row(
                     children: [
                       _avatarUsuario(colaborador?.nome ?? ''),
@@ -94,11 +102,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      _chipInfo(Icons.badge_outlined, 'Matrícula',
-                          colaborador?.matricula ?? '—'),
+                      _chipInfo(
+                        Icons.badge_outlined,
+                        'Matrícula',
+                        colaborador?.matricula ?? '—',
+                      ),
                       const SizedBox(width: 10),
-                      _chipInfo(Icons.calendar_today_outlined, 'Admissão',
-                          colaborador?.dataAdmissaoFormatada ?? '—'),
+                      _chipInfo(
+                        Icons.calendar_today_outlined,
+                        'Admissão',
+                        colaborador?.dataAdmissaoFormatada ?? '—',
+                      ),
                     ],
                   ),
                 ),
@@ -111,8 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(28)),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
                     ),
                     child: FutureBuilder<List<ComunicadoModel>>(
                       future: _futureComunicados,
@@ -121,7 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ConnectionState.waiting) {
                           return const Center(
                             child: CircularProgressIndicator(
-                                color: AppColors.magenta),
+                              color: AppColors.magenta,
+                            ),
                           );
                         }
 
@@ -131,10 +147,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: AppColors.magenta,
                           onRefresh: () async => _recarregar(),
                           child: ListView(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 24, 16, 32),
+                            padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
                             children: [
-                              // ── Comunicado destaque ──────────────────────
+
+                             
+
+                              // ── Widget de humor ──────────────────────────
+                              // FIX #5 — ValueKey garante rebuild no refresh
+                              HumorWidget(key: ValueKey(_humorRefreshKey)),
+                              const SizedBox(height: 20),
+
                               if (lista.isNotEmpty) ...[
                                 _labelSecao('📢 Em destaque'),
                                 const SizedBox(height: 10),
@@ -157,7 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                       onPressed: widget.onVerComunicados,
                                       child: Text(
                                         'Ver todos',
-                                        style: AppTextStyles.corpoCinza.copyWith(color: AppColors.magenta, fontWeight: FontWeight.w600),
+                                        style: AppTextStyles.corpoCinza
+                                            .copyWith(
+                                              color: AppColors.magenta,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                       ),
                                     ),
                                   ],
@@ -191,7 +217,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return FutureBuilder<List<AniversarianteModel>>(
       future: _futureAniversariantes,
       builder: (context, snap) {
-        // Carregando — mostra esqueleto leve
         if (snap.connectionState == ConnectionState.waiting) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,7 +246,6 @@ class _HomeScreenState extends State<HomeScreen> {
         if (todos.isEmpty) return const SizedBox.shrink();
 
         final now = DateTime.now();
-        // Hoje primeiro, depois os próximos do mês
         final hoje = todos.where((a) => a.ehHoje).toList();
         final proximos = todos
             .where((a) => !a.ehHoje && a.diaNascimento > now.day)
@@ -241,11 +265,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const AniversariantesScreen()),
+                      builder: (_) => const AniversariantesScreen(),
+                    ),
                   ),
                   child: Text(
                     'Ver mais',
-                    style: AppTextStyles.corpoCinza.copyWith(color: AppColors.magenta, fontWeight: FontWeight.w600),
+                    style: AppTextStyles.corpoCinza.copyWith(
+                      color: AppColors.magenta,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -289,17 +317,18 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Avatar
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              AvatarColaborador(fotoUrl: a.colaborador.fotoUrl, nome: a.colaborador.nome, raio: 22),
-              if (ehHoje)
-                const Text('🎂', style: TextStyle(fontSize: 12)),
+              AvatarColaborador(
+                fotoUrl: a.colaborador.fotoUrl,
+                nome: a.colaborador.nome,
+                raio: 22,
+              ),
+              if (ehHoje) const Text('🎂', style: TextStyle(fontSize: 12)),
             ],
           ),
           const SizedBox(height: 6),
-          // Dia
           Text(
             ehHoje
                 ? 'Hoje'
@@ -310,12 +339,15 @@ class _HomeScreenState extends State<HomeScreen> {
               color: ehHoje ? AppColors.magenta : AppColors.cinzaTexto,
             ),
           ),
-          // Primeiro nome
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               a.colaborador.primeiroNome,
-              style: AppTextStyles.corpoMinimo.copyWith(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.dark),
+              style: AppTextStyles.corpoMinimo.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppColors.dark,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -345,19 +377,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Imagem — se adapta ao tamanho real sem cortar
             if (c.fotoUrl != null && c.fotoUrl!.isNotEmpty)
               Image.network(
                 c.fotoUrl!,
                 width: double.infinity,
-                // sem height fixo — a imagem define sua própria altura
                 fit: BoxFit.fitWidth,
                 errorBuilder: (_, __, ___) => _bannerSemFoto(),
               )
             else
               _bannerSemFoto(),
-
-            // Texto
             Container(
               color: Colors.white,
               padding: const EdgeInsets.all(16),
@@ -391,16 +419,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _bannerSemFoto() => Container(
-        height: 120,
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: AppColors.gradientePrincipal,
-        ),
-        child: const Center(
-          child:
-              Icon(Icons.campaign_rounded, color: Colors.white, size: 48),
-        ),
-      );
+    height: 120,
+    width: double.infinity,
+    decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
+    child: const Center(
+      child: Icon(Icons.campaign_rounded, color: Colors.white, size: 48),
+    ),
+  );
 
   // ── Card comunicado simples ──────────────────────────────────────────────────
 
@@ -419,8 +444,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
@@ -437,13 +461,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         c.fotoUrl!,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Icon(
-                            Icons.campaign_outlined,
-                            color: AppColors.laranja,
-                            size: 22),
+                          Icons.campaign_outlined,
+                          color: AppColors.laranja,
+                          size: 22,
+                        ),
                       ),
                     )
-                  : const Icon(Icons.campaign_outlined,
-                      color: AppColors.laranja, size: 22),
+                  : const Icon(
+                      Icons.campaign_outlined,
+                      color: AppColors.laranja,
+                      size: 22,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -460,8 +488,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.cinzaTexto, size: 18),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.cinzaTexto,
+              size: 18,
+            ),
           ],
         ),
       ),
@@ -483,7 +514,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Center(
         child: Text(
           iniciais,
-          style: AppTextStyles.corpoBranco.copyWith(fontSize: 16, fontWeight: FontWeight.w700),
+          style: AppTextStyles.corpoBranco.copyWith(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -493,24 +527,22 @@ class _HomeScreenState extends State<HomeScreen> {
     required IconData icon,
     required String tooltip,
     required VoidCallback onTap,
-  }) =>
-      Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            child: Icon(icon, color: Colors.white, size: 22),
-          ),
-        ),
-      );
+  }) => Tooltip(
+    message: tooltip,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    ),
+  );
 
   Widget _chipInfo(IconData icon, String label, String valor) {
     return Expanded(
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: AppColors.brancoOp18,
           borderRadius: BorderRadius.circular(12),
@@ -525,11 +557,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     label,
-                    style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.brancoOp70, fontSize: 10),
+                    style: AppTextStyles.corpoMinimo.copyWith(
+                      color: AppColors.brancoOp70,
+                      fontSize: 10,
+                    ),
                   ),
                   Text(
                     valor,
-                    style: AppTextStyles.corpoMenor.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                    style: AppTextStyles.corpoMenor.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -542,26 +580,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _labelSecao(String texto) => Text(
-        texto,
-        style: AppTextStyles.labelSecao,
-      );
+  Widget _labelSecao(String texto) =>
+      Text(texto, style: AppTextStyles.labelSecao);
 
   Widget _semComunicados() => Center(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 48),
-          child: Column(
-            children: [
-              const Icon(Icons.campaign_outlined,
-                  size: 52, color: AppColors.cinzaTexto),
-              const SizedBox(height: 12),
-              Text('Nenhum comunicado ainda', style: AppTextStyles.corpoCinza.copyWith(fontSize: 15)),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.only(top: 48),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.campaign_outlined,
+            size: 52,
+            color: AppColors.cinzaTexto,
           ),
-        ),
-      );
+          const SizedBox(height: 12),
+          Text(
+            'Nenhum comunicado ainda',
+            style: AppTextStyles.corpoCinza.copyWith(fontSize: 15),
+          ),
+        ],
+      ),
+    ),
+  );
 
-  // ── Modals ───────────────────────────────────────────────────────────────────
+  // ── Modais ───────────────────────────────────────────────────────────────────
 
   void _abrirAlterarSenha(BuildContext context) {
     final senhaAtualCtrl = TextEditingController();
@@ -575,12 +617,12 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
             child: Column(
@@ -634,7 +676,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 SnackBar(
                                   content: Text(
                                     'Nova senha deve ter pelo menos 6 caracteres.',
-                                    style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+                                    style: AppTextStyles.corpoNormal.copyWith(
+                                      color: Colors.white,
+                                    ),
                                   ),
                                   backgroundColor: Colors.red,
                                   behavior: SnackBarBehavior.floating,
@@ -655,33 +699,35 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ok
                                       ? 'Senha alterada com sucesso!'
                                       : 'Senha atual incorreta.',
-                                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+                                  style: AppTextStyles.corpoNormal.copyWith(
+                                    color: Colors.white,
+                                  ),
                                 ),
                                 backgroundColor:
                                     ok ? AppColors.magenta : Colors.red,
                                 behavior: SnackBarBehavior.floating,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             );
                           },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.magenta,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                     ),
                     child: enviando
                         ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2),
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
                           )
-                        : Text(
-                            'Salvar',
-                            style: AppTextStyles.botaoPrimario,
-                          ),
+                        : Text('Salvar', style: AppTextStyles.botaoPrimario),
                   ),
                 ),
               ],
@@ -696,10 +742,17 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
-        title: Text('Sair da conta?', style: AppTextStyles.tituloPequeno.copyWith(fontWeight: FontWeight.w600)),
-        content: Text('Você precisará digitar sua matrícula e senha novamente.', style: AppTextStyles.corpoNormal),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Sair da conta?',
+          style: AppTextStyles.tituloPequeno.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Você precisará digitar sua matrícula e senha novamente.',
+          style: AppTextStyles.corpoNormal,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -728,7 +781,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return p.length >= 2
         ? '${p.first[0]}${p.last[0]}'.toUpperCase()
         : nome.isNotEmpty
-            ? nome[0].toUpperCase()
-            : '?';
+        ? nome[0].toUpperCase()
+        : '?';
   }
 }

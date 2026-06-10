@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:gentepole/screens/feedback/feedback_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
+import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
@@ -43,8 +45,9 @@ class _ServicosScreenState extends State<ServicosScreen> {
         children: [
           Container(
             height: 200,
-            decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal,
+           decoration: const BoxDecoration(
+              color: AppColors.laranja,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
             ),
           ),
           SafeArea(
@@ -60,8 +63,18 @@ class _ServicosScreenState extends State<ServicosScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('⚡ Serviços', style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
-                      Text('Benefícios para você', style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),
+                      Text(
+                        'Serviços',
+                        style: AppTextStyles.tituloGrande.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Benefícios para você',
+                        style: AppTextStyles.corpoBranco.copyWith(
+                          color: AppColors.brancoOp80,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -110,13 +123,17 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             const SizedBox(height: 24),
                             Text(
                               'Serviços para Colaboradores',
-                              style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w500),
+                              style: AppTextStyles.corpoMenor.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ] else ...[
                             const SizedBox(height: 4),
                             Text(
                               'Serviços para Colaboradores',
-                              style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w500),
+                              style: AppTextStyles.corpoMenor.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                           const SizedBox(height: 16),
@@ -154,6 +171,42 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               ),
                             ),
                           ),
+
+                          const SizedBox(height: 14),
+
+                          // ── Feedback ──────────────────────────────────────────────────────
+                          _botaoServico(
+                            context,
+                            icone: Icons.forum_outlined,
+                            titulo: 'Feedback',
+                            subtitulo: 'Envie e receba feedbacks dos colegas',
+                            cor: AppColors.laranja,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const FeedbackScreen(),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // ── Pesquisas ─────────────────────────────────────────────────────
+                          _botaoServico(
+                            context,
+                            icone: Icons.poll_outlined,
+                            titulo: 'Pesquisas',
+                            subtitulo: 'Responda às pesquisas da empresa',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PesquisaListScreen(),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -182,7 +235,12 @@ class _ServicosScreenState extends State<ServicosScreen> {
           () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('$titulo estará disponível em breve! 🚀', style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+                content: Text(
+                  '$titulo estará disponível em breve! 🚀',
+                  style: AppTextStyles.corpoNormal.copyWith(
+                    color: Colors.white,
+                  ),
+                ),
                 backgroundColor: cor,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
@@ -229,7 +287,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
                       Flexible(
                         child: Text(
                           titulo,
-                          style: AppTextStyles.labelSecao.copyWith(fontSize: 16,
+                          style: AppTextStyles.labelSecao.copyWith(
+                            fontSize: 16,
                           ),
                         ),
                       ),
@@ -246,17 +305,18 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           ),
                           child: Text(
                             'Em breve',
-                            style: AppTextStyles.corpoMinimo.copyWith(fontSize: 10, fontWeight: FontWeight.w600, color: cor),
+                            style: AppTextStyles.corpoMinimo.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: cor,
+                            ),
                           ),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitulo,
-                    style: AppTextStyles.corpoCinza,
-                  ),
+                  Text(subtitulo, style: AppTextStyles.corpoCinza),
                 ],
               ),
             ),

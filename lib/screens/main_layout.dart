@@ -3,7 +3,7 @@ import '../core/app_theme.dart';
 import 'home_screen.dart';
 import 'comunicados_screen.dart';
 import 'aniversariante_screen.dart';
-import 'pessoas_screen.dart';
+import 'perfil_screen.dart';
 import 'servicos_screen.dart';
 
 class MainLayout extends StatefulWidget {

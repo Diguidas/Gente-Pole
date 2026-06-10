@@ -33,7 +33,8 @@ class _ComunicadosScreenState extends State<ComunicadosScreen> {
           Container(
             height: 200,
             decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal,
+              color: AppColors.laranja,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
             ),
           ),
           SafeArea(

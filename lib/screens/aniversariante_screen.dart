@@ -49,7 +49,8 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           Container(
             height: 220,
             decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal,
+              color: AppColors.laranja,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
             ),
           ),
           SafeArea(
@@ -72,10 +73,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                               '🎂 Aniversariantes',
                               style: AppTextStyles.tituloBranco,
                             ),
-                            Text(
-                              _mesAtual(),
-                              style: AppTextStyles.corpoBranco,
-                            ),
+                            Text(_mesAtual(), style: AppTextStyles.corpoBranco),
                           ],
                         ),
                       ),
@@ -95,7 +93,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: TabBar(
                     controller: _tabCtrl,
-                    labelStyle: AppTextStyles.corpoBranco.copyWith(fontWeight: FontWeight.w600),
+                    labelStyle: AppTextStyles.corpoBranco.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     unselectedLabelStyle: AppTextStyles.corpoBranco,
                     labelColor: Colors.white,
                     unselectedLabelColor: const Color(0x8CFFFFFF),
@@ -210,16 +210,24 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                             children: [
                               Text(
                                 'Parabéns pelo seu dia,',
-                                style: AppTextStyles.corpoBranco.copyWith(color: const Color(0xD9FFFFFF)),
+                                style: AppTextStyles.corpoBranco.copyWith(
+                                  color: const Color(0xD9FFFFFF),
+                                ),
                               ),
                               Text(
                                 '${_api.colaboradorAtual?.primeiroNome ?? 'Polevalente'}! 🎉',
-                                style: AppTextStyles.tituloGrande.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                                style: AppTextStyles.tituloGrande.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 'Que este novo ciclo seja incrível! ✨',
-                                style: AppTextStyles.corpoMenor.copyWith(color: AppColors.brancoOp80, fontStyle: FontStyle.italic),
+                                style: AppTextStyles.corpoMenor.copyWith(
+                                  color: AppColors.brancoOp80,
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ],
                           ),
@@ -235,10 +243,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                    child: Text(
-                      'Hoje 🎉',
-                      style: AppTextStyles.labelSecao,
-                    ),
+                    child: Text('Hoje 🎉', style: AppTextStyles.labelSecao),
                   ),
                 ),
                 SliverList(
@@ -254,10 +259,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                    child: Text(
-                      'Este mês',
-                      style: AppTextStyles.labelSecao,
-                    ),
+                    child: Text('Este mês', style: AppTextStyles.labelSecao),
                   ),
                 ),
                 SliverList(
@@ -342,11 +344,16 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                               children: [
                                 Text(
                                   'Feliz aniversário! 🎉',
-                                  style: AppTextStyles.corpoBranco.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
+                                  style: AppTextStyles.corpoBranco.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
                                 ),
                                 Text(
                                   '${mensagens.length} pessoa${mensagens.length != 1 ? 's' : ''} te parabenizou!',
-                                  style: AppTextStyles.corpoBranco.copyWith(color: const Color(0xD9FFFFFF)),
+                                  style: AppTextStyles.corpoBranco.copyWith(
+                                    color: const Color(0xD9FFFFFF),
+                                  ),
                                 ),
                               ],
                             ),
@@ -413,7 +420,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                           const SizedBox(height: 6),
                           Text(
                             texto,
-                            style: AppTextStyles.corpoCinza.copyWith(color: AppColors.dark, height: 1.4),
+                            style: AppTextStyles.corpoCinza.copyWith(
+                              color: AppColors.dark,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
@@ -510,7 +520,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             Text(
               'Que este novo ciclo traga muita saúde,\nalegria e conquistas. Você merece! ✨',
               textAlign: TextAlign.center,
-              style: AppTextStyles.corpoNormal.copyWith(color: AppColors.cinzaTexto, height: 1.6),
+              style: AppTextStyles.corpoNormal.copyWith(
+                color: AppColors.cinzaTexto,
+                height: 1.6,
+              ),
             ),
             const SizedBox(height: 24),
             Container(
@@ -523,7 +536,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               child: Text(
                 'As mensagens dos seus colegas\naparecerão aqui ao longo do dia.',
                 textAlign: TextAlign.center,
-                style: AppTextStyles.corpoMenor.copyWith(color: AppColors.magenta, height: 1.5),
+                style: AppTextStyles.corpoMenor.copyWith(
+                  color: AppColors.magenta,
+                  height: 1.5,
+                ),
               ),
             ),
           ],
@@ -540,11 +556,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFF6B00), Color(0xFFE91E8C)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppColors.laranja,
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
           BoxShadow(
@@ -566,28 +578,37 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 children: [
                   Text(
                     a.colaborador.nome,
-                    style: AppTextStyles.tituloPequeno.copyWith(color: Colors.white),
+                    style: AppTextStyles.tituloPequeno.copyWith(
+                      color: Colors.white,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (a.colaborador.setor != null)
                     Text(
                       a.colaborador.setor!,
-                      style: AppTextStyles.corpoMenor.copyWith(color: AppColors.brancoOp80),
+                      style: AppTextStyles.corpoMenor.copyWith(
+                        color: AppColors.brancoOp80,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   const SizedBox(height: 4),
                   Text(
                     'Hoje é dia de celebrar! 🎊',
-                    style: AppTextStyles.corpoMenor.copyWith(color: const Color(0xE6FFFFFF), fontStyle: FontStyle.italic),
+                    style: AppTextStyles.corpoMenor.copyWith(
+                      color: const Color(0xE6FFFFFF),
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                   if (a.totalParabens > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
                         '${a.totalParabens} parabéns recebidos',
-                        style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.brancoOp70),
+                        style: AppTextStyles.corpoMinimo.copyWith(
+                          color: AppColors.brancoOp70,
+                        ),
                       ),
                     ),
                 ],
@@ -611,7 +632,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   jaParabenisei ? '✓ Enviado' : '🎉 Parabenizar',
                   style: AppTextStyles.corpoMenor.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: jaParabenisei ? AppColors.brancoOp70 : AppColors.magenta,
+                    color: jaParabenisei
+                        ? AppColors.brancoOp70
+                        : AppColors.magenta,
                   ),
                 ),
               ),
@@ -655,7 +678,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             child: Center(
               child: Text(
                 dia.toString().padLeft(2, '0'),
-                style: AppTextStyles.tituloMedio.copyWith(color: AppColors.magenta),
+                style: AppTextStyles.tituloMedio.copyWith(
+                  color: AppColors.magenta,
+                ),
               ),
             ),
           ),
@@ -663,10 +688,15 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             pessoas.length == 1
                 ? pessoas.first.colaborador.primeiroNome
                 : '${pessoas.length} aniversariantes',
-            style: AppTextStyles.corpoNormal.copyWith(fontWeight: FontWeight.w600),
+            style: AppTextStyles.corpoNormal.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           subtitle: pessoas.length == 1
-              ? Text(pessoas.first.colaborador.setor ?? '', style: AppTextStyles.corpoMenor)
+              ? Text(
+                  pessoas.first.colaborador.setor ?? '',
+                  style: AppTextStyles.corpoMenor,
+                )
               : null,
           // Sem botão parabenizar nos itens do mês — só em hoje
           children: pessoas.map((a) => _itemDentroGrupo(a)).toList(),
@@ -691,7 +721,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               children: [
                 Text(
                   a.colaborador.nome,
-                  style: AppTextStyles.corpoNormal.copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.corpoNormal.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -738,7 +770,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               SnackBar(
                 content: Text(
                   'Parabéns enviado para ${a.colaborador.primeiroNome}! 🎊',
-                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+                  style: AppTextStyles.corpoNormal.copyWith(
+                    color: Colors.white,
+                  ),
                 ),
                 backgroundColor: AppColors.magenta,
                 behavior: SnackBarBehavior.floating,
@@ -752,7 +786,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               SnackBar(
                 content: Text(
                   'Erro ao enviar. Tente novamente.',
-                  style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+                  style: AppTextStyles.corpoNormal.copyWith(
+                    color: Colors.white,
+                  ),
                 ),
                 backgroundColor: Colors.red,
                 behavior: SnackBarBehavior.floating,
@@ -767,7 +803,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   Widget _avatar(colaborador, {double raio = 22, bool fonteGrande = false}) {
-    return AvatarColaborador(fotoUrl: colaborador.fotoUrl, nome: colaborador.nome, raio: raio);
+    return AvatarColaborador(
+      fotoUrl: colaborador.fotoUrl,
+      nome: colaborador.nome,
+      raio: raio,
+    );
   }
 
   // Helper no _AniversariantesScreenState:
@@ -900,7 +940,11 @@ class _ModalParabensState extends State<_ModalParabens> {
             const SizedBox(height: 20),
             Row(
               children: [
-                AvatarColaborador(fotoUrl: null, nome: a.colaborador.nome, raio: 26),
+                AvatarColaborador(
+                  fotoUrl: null,
+                  nome: a.colaborador.nome,
+                  raio: 26,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -911,14 +955,22 @@ class _ModalParabensState extends State<_ModalParabens> {
                         style: AppTextStyles.tituloMedio.copyWith(fontSize: 17),
                       ),
                       if (a.colaborador.setor != null)
-                        Text(a.colaborador.setor!, style: AppTextStyles.corpoMenor),
+                        Text(
+                          a.colaborador.setor!,
+                          style: AppTextStyles.corpoMenor,
+                        ),
                     ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            Text('Sugestões', style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
+            Text(
+              'Sugestões',
+              style: AppTextStyles.corpoMenor.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 36,
@@ -941,7 +993,9 @@ class _ModalParabensState extends State<_ModalParabens> {
                     ),
                     child: Text(
                       _sugestoes[i],
-                      style: AppTextStyles.corpoMenor.copyWith(color: AppColors.magenta),
+                      style: AppTextStyles.corpoMenor.copyWith(
+                        color: AppColors.magenta,
+                      ),
                     ),
                   ),
                 ),
@@ -994,7 +1048,10 @@ class _ModalParabensState extends State<_ModalParabens> {
                           strokeWidth: 2,
                         ),
                       )
-                    : Text('🎉 Enviar parabéns', style: AppTextStyles.botaoPrimario),
+                    : Text(
+                        '🎉 Enviar parabéns',
+                        style: AppTextStyles.botaoPrimario,
+                      ),
               ),
             ),
           ],
