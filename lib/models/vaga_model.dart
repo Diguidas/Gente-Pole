@@ -85,6 +85,7 @@ class CandidaturaGestorModel {
   final String? resumoProfissional;
   final String? curriculoUrl;
   final String status;
+  final String? admissaoStatus; // status real em admissoes quando status=APROVADO
   final double? salarioEsperado;
   final String? motivoReprovacao;
   final String? testePraticoStatus;
@@ -101,14 +102,27 @@ class CandidaturaGestorModel {
     this.resumoProfissional,
     this.curriculoUrl,
     required this.status,
+    this.admissaoStatus,
     this.salarioEsperado,
     this.motivoReprovacao,
     this.testePraticoStatus,
     required this.createdAt,
   });
 
+  // Status efetivo para exibição: usa admissaoStatus quando disponível
+  String get statusEfetivo => admissaoStatus ?? status;
+
   factory CandidaturaGestorModel.fromJson(Map<String, dynamic> json) {
     final candidato = json['candidatos'] as Map<String, dynamic>? ?? {};
+    // Supabase pode retornar admissoes como List (has-many) ou Map (unique FK)
+    final admissaoRaw = json['admissoes'];
+    Map<String, dynamic>? admissao;
+    if (admissaoRaw is List && admissaoRaw.isNotEmpty) {
+      admissao = admissaoRaw.first as Map<String, dynamic>;
+    } else if (admissaoRaw is Map) {
+      admissao = admissaoRaw as Map<String, dynamic>;
+    }
+
     return CandidaturaGestorModel(
       id: json['id'] as int,
       vagaId: json['vaga_id'] as int,
@@ -120,6 +134,7 @@ class CandidaturaGestorModel {
       resumoProfissional: candidato['resumo_profissional'],
       curriculoUrl: candidato['curriculo_url'],
       status: json['status'] ?? 'INSCRITO',
+      admissaoStatus: admissao?['status'] as String?,
       salarioEsperado: (json['salario_esperado'] as num?)?.toDouble(),
       motivoReprovacao: json['motivo_reprovacao'],
       testePraticoStatus: json['teste_pratico_status'],

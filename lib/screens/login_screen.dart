@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_layout.dart';
 import 'massoterapia/admin_massoterapia_screen.dart';
+
+// ─── Tokens visuais alinhados ao web ────────────────────────────────────────
+// Mesmos valores usados no login_screen.dart do sistema web.
+const _kLaranjaPrimario = Color(0xFFFF8000);
+const _kGradiente = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  stops: [0.0, 0.55, 1.0],
+  colors: [
+    Color(0xFFFFD000), // amarelo vibrante
+    Color(0xFFFF8000), // laranja médio
+    Color(0xFFE84E00), // laranja queimado
+  ],
+);
+const _kFillColor = Color(0xFFF8F9FC);
+const _kBorderRadius = 12.0;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -54,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // ─── Lógica ──────────────────────────────────────────────────────────────────
+  // ─── Lógica (inalterada) ──────────────────────────────────────────────────
 
   Future<void> _continuar() async {
     final matricula = _matriculaController.text.trim();
@@ -86,7 +103,6 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    // ── Primeiro acesso ──────────────────────────────────────────────────────
     if (_etapa == 1) {
       final senha = _senhaController.text;
       final data = _dataController.text.trim();
@@ -100,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen>
         return;
       }
 
-      // Converte DD/MM/YYYY → yyyy-mm-dd para o banco
       final parts = data.split('/');
       final dataFormatada = '${parts[2]}-${parts[1]}-${parts[0]}';
 
@@ -123,7 +138,6 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    // ── Login normal ─────────────────────────────────────────────────────────
     if (_etapa == 2) {
       if (_senhaController.text.isEmpty) return;
       setState(() => _carregando = true);
@@ -185,10 +199,12 @@ class _LoginScreenState extends State<LoginScreen>
   void _mostrarErro(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg),
-        backgroundColor: AppColors.magenta,
+        content: Text(msg, style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: AppColors.erro, // mesmo token do web
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+        ),
       ),
     );
   }
@@ -200,45 +216,60 @@ class _LoginScreenState extends State<LoginScreen>
     final colaborador = _api.colaboradorAtual;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // Gradiente de fundo
+          // ── Banner com gradiente (mesmo do web) ───────────────────────────
           Container(
-            height: 320,
-            decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal,
-            ),
-          ),
-
-          // Logo no topo
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Center(
-                child: Column(
-                  children: [
-                    // Substituindo o Icon por Image.asset
-                    Image.asset(
-                      'assets/logo.png', // Caminho da sua imagem
-                      width: 200, // Ajuste o tamanho conforme necessário
-                      height: 200,
-                    )
-                  ],
+            height: 300,
+            decoration: const BoxDecoration(gradient: _kGradiente),
+            child: Stack(
+              children: [
+                // Bolhas decorativas — mesma linguagem visual do web
+                Positioned(
+                  top: -60,
+                  right: -60,
+                  child: _bolha(220, Colors.white, 0.06),
                 ),
-              ),
+                Positioned(
+                  bottom: 20,
+                  left: -40,
+                  child: _bolha(160, Colors.white, 0.06),
+                ),
+                Positioned(
+                  top: 80,
+                  right: 40,
+                  child: _bolha(70, Colors.white, 0.08),
+                ),
+
+                // Logo centralizada no banner
+                SafeArea(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        width: 300,
+                        height: 300,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
-          // Card flutuante (conforme design system do projeto)
+          // ── Card branco flutuante ─────────────────────────────────────────
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
-              height: MediaQuery.of(context).size.height * 0.68,
+              height: MediaQuery.of(context).size.height * 0.65,
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(32, 36, 32, 24),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 boxShadow: [
                   BoxShadow(
                     color: Color(0x18000000),
@@ -250,71 +281,83 @@ class _LoginScreenState extends State<LoginScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Saudação dinâmica
+                  // ── Saudação ───────────────────────────────────────────
                   Text(
-                    _etapa == 0 ? 'Acesse sua conta' : 'Olá,',
+                    _etapa == 0 ? 'Boas-vindas!' : 'Olá,',
                     style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      color: AppColors.cinzaTexto,
+                      fontSize: _etapa == 0 ? 26 : 15,
+                      fontWeight: _etapa == 0
+                          ? FontWeight.w800
+                          : FontWeight.w400,
+                      color: _etapa == 0
+                          ? AppColors.dark
+                          : AppColors.cinzaTexto,
+                      letterSpacing: _etapa == 0 ? -0.5 : 0,
                     ),
                   ),
 
-                  // Nome aparece após digitar matrícula
-                  if (_etapa > 0 && colaborador != null)
+                  if (_etapa == 0)
+                    Text(
+                      'Faça login para acessar',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: AppColors.cinzaTexto,
+                      ),
+                    ),
+
+                  // Nome do colaborador com fade
+                  if (_etapa > 0 && colaborador != null) ...[
                     FadeTransition(
                       opacity: _fadeAnim,
                       child: Text(
                         colaborador.nome,
                         style: GoogleFonts.poppins(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
                           color: AppColors.dark,
                           height: 1.1,
+                          letterSpacing: -0.5,
                         ),
                       ),
-                    )
-                  else
-                    Text(
-                      'Gente Pole',
-                      style: GoogleFonts.poppins(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark,
-                      ),
                     ),
-
-                  // Setor / cargo como subtítulo
-                  if (_etapa > 0 && colaborador != null)
                     FadeTransition(
                       opacity: _fadeAnim,
                       child: Text(
-                        [
-                          colaborador.cargo,
-                          colaborador.setor,
-                        ].where((e) => e != null && e.isNotEmpty).join(' · '),
+                        [colaborador.cargo, colaborador.setor]
+                            .where((e) => e != null && e.isNotEmpty)
+                            .join(' · '),
                         style: GoogleFonts.poppins(
                           fontSize: 13,
-                          color: AppColors.magenta,
+                          color: _kLaranjaPrimario, // laranja em vez de magenta
                           fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ] else if (_etapa > 0)
+                    FadeTransition(
+                      opacity: _fadeAnim,
+                      child: Text(
+                        'Gente Pole',
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.dark,
                         ),
                       ),
                     ),
 
                   const SizedBox(height: 28),
 
-                  // Campo matrícula
-                  TextField(
+                  // ── Campo matrícula ─────────────────────────────────────
+                  _campo(
                     controller: _matriculaController,
+                    label: 'Matrícula',
+                    icon: Icons.badge_outlined,
                     keyboardType: TextInputType.number,
                     enabled: _etapa == 0,
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                    decoration: const InputDecoration(
-                      labelText: 'Matrícula',
-                      prefixIcon: Icon(Icons.badge_outlined),
-                    ),
                   ),
 
-                  // Campos extras com animação
+                  // ── Campos extras animados ──────────────────────────────
                   AnimatedSize(
                     duration: const Duration(milliseconds: 350),
                     curve: Curves.easeInOut,
@@ -322,46 +365,18 @@ class _LoginScreenState extends State<LoginScreen>
                         ? Column(
                             children: [
                               const SizedBox(height: 14),
-                              TextField(
-                                controller: _senhaController,
-                                obscureText: !_senhaVisivel,
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                decoration: InputDecoration(
-                                  labelText: _etapa == 1
-                                      ? 'Criar senha'
-                                      : 'Senha',
-                                  prefixIcon: const Icon(
-                                    Icons.lock_outline_rounded,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _senhaVisivel
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                    ),
-                                    onPressed: () => setState(
-                                      () => _senhaVisivel = !_senhaVisivel,
-                                    ),
-                                  ),
-                                ),
+                              _campoSenha(
+                                label: _etapa == 1 ? 'Criar senha' : 'Senha',
                               ),
                               if (_etapa == 1) ...[
                                 const SizedBox(height: 14),
-                                TextField(
+                                _campo(
                                   controller: _dataController,
-                                  inputFormatters: [_dateMask],
+                                  label: 'Data de nascimento (DD/MM/AAAA)',
+                                  icon: Icons.cake_outlined,
                                   keyboardType: TextInputType.number,
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  decoration: const InputDecoration(
-                                    labelText:
-                                        'Data de nascimento (DD/MM/AAAA)',
-                                    prefixIcon: Icon(Icons.cake_outlined),
-                                    hintText: 'Para confirmar sua identidade',
-                                  ),
+                                  inputFormatters: [_dateMask],
+                                  hintText: 'Para confirmar sua identidade',
                                 ),
                               ],
                             ],
@@ -371,16 +386,18 @@ class _LoginScreenState extends State<LoginScreen>
 
                   const Spacer(),
 
-                  // Botão principal
+                  // ── Botão principal ─────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: 50,
                     child: ElevatedButton(
                       onPressed: _carregando ? null : _continuar,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.magenta,
+                        backgroundColor: _kLaranjaPrimario, // laranja do web
+                        foregroundColor: Colors.white,
+                        elevation: 0,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(_kBorderRadius),
                         ),
                       ),
                       child: _carregando
@@ -389,19 +406,18 @@ class _LoginScreenState extends State<LoginScreen>
                               height: 22,
                               child: CircularProgressIndicator(
                                 color: Colors.white,
-                                strokeWidth: 2.5,
+                                strokeWidth: 2,
                               ),
                             )
                           : Text(
                               _etapa == 0
-                                  ? 'CONTINUAR'
+                                  ? 'Continuar'
                                   : _etapa == 1
-                                  ? 'CRIAR CONTA'
-                                  : 'ENTRAR',
+                                      ? 'Criar conta'
+                                      : 'Entrar',
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 15,
-                                letterSpacing: 0.8,
                                 color: Colors.white,
                               ),
                             ),
@@ -409,9 +425,9 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
 
                   if (_etapa > 0)
-                    TextButton(
-                      onPressed: _resetar,
-                      child: Center(
+                    Center(
+                      child: TextButton(
+                        onPressed: _resetar,
                         child: Text(
                           'Usar outra matrícula',
                           style: GoogleFonts.poppins(
@@ -421,11 +437,116 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                       ),
                     ),
+
+                  // ── Rodapé ──────────────────────────────────────────────
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Acesso restrito a colaboradores autorizados',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppColors.cinzaTexto,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ─── Helpers de campo com estilo alinhado ao web ──────────────────────────
+
+  Widget _campo({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    bool enabled = true,
+    List<TextInputFormatter>? inputFormatters,
+    String? hintText,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      enabled: enabled,
+      inputFormatters: inputFormatters,
+      style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        labelStyle: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+        hintStyle: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
+        prefixIcon: Icon(icon, color: AppColors.cinzaTexto, size: 20),
+        filled: true,
+        fillColor: _kFillColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+          borderSide: const BorderSide(color: _kLaranjaPrimario, width: 1.5),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+
+  Widget _campoSenha({required String label}) {
+    return TextField(
+      controller: _senhaController,
+      obscureText: !_senhaVisivel,
+      style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle:
+            GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+        prefixIcon: const Icon(Icons.lock_outlined,
+            color: AppColors.cinzaTexto, size: 20),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _senhaVisivel
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined,
+            color: AppColors.cinzaTexto,
+            size: 20,
+          ),
+          onPressed: () => setState(() => _senhaVisivel = !_senhaVisivel),
+        ),
+        filled: true,
+        fillColor: _kFillColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+          borderSide: const BorderSide(color: _kLaranjaPrimario, width: 1.5),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+
+  Widget _bolha(double size, Color cor, double opacidade) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: cor.withOpacity(opacidade),
       ),
     );
   }

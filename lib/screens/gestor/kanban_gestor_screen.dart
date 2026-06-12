@@ -6,7 +6,6 @@ import '../../services/api_service.dart';
 
 class KanbanGestorScreen extends StatefulWidget {
   final VagaModel vaga;
-
   const KanbanGestorScreen({super.key, required this.vaga});
 
   @override
@@ -16,9 +15,24 @@ class KanbanGestorScreen extends StatefulWidget {
 class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
   final _api = ApiService();
   late Future<List<CandidaturaGestorModel>> _futureCandidatos;
-
-  // Filtro de status
   String _filtroStatus = 'TODOS';
+
+  // Grupos para os chips de filtro
+  static const _grupoEntrevista = {'ENTREV_GESTOR', 'PROPOSTA'};
+  static const _grupoAso = {'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'};
+  static const _grupoAdmissao = {
+    'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS',
+    'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS',
+  };
+  static const _grupoContrato = {'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO'};
+
+  // Status que entram na barra de progresso
+  static const _statusProgresso = {
+    'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO',
+    'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS',
+    'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS',
+    'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO', 'INTEGRACAO',
+  };
 
   @override
   void initState() {
@@ -28,33 +42,24 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   void _carregarCandidatos() {
     setState(() {
-      _futureCandidatos =
-          _api.listarCandidatosGestor(widget.vaga.id);
+      _futureCandidatos = _api.listarCandidatosGestor(widget.vaga.id);
     });
   }
 
-  static const _grupoAso = {'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'};
-  static const _grupoAdmissao = {
-    'AGUARDANDO_DADOS',
-    'ADMISSAO_INICIADA',
-    'DADOS_ENVIADOS',
-    'DOCUMENTOS_EM_ANALISE',
-    'DOCUMENTOS_APROVADOS',
-  };
-  static const _grupoContrato = {'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO'};
-
   List<CandidaturaGestorModel> _filtrar(List<CandidaturaGestorModel> lista) {
     switch (_filtroStatus) {
+      case 'GRUPO_ENTREVISTA':
+        return lista.where((c) => _grupoEntrevista.contains(c.statusEfetivo)).toList();
       case 'GRUPO_ASO':
-        return lista.where((c) => _grupoAso.contains(c.status)).toList();
+        return lista.where((c) => _grupoAso.contains(c.statusEfetivo)).toList();
       case 'GRUPO_ADMISSAO':
-        return lista.where((c) => _grupoAdmissao.contains(c.status)).toList();
+        return lista.where((c) => _grupoAdmissao.contains(c.statusEfetivo)).toList();
       case 'GRUPO_CONTRATO':
-        return lista.where((c) => _grupoContrato.contains(c.status)).toList();
-      case 'TODOS':
-        return lista;
+        return lista.where((c) => _grupoContrato.contains(c.statusEfetivo)).toList();
+      case 'INTEGRACAO':
+        return lista.where((c) => c.statusEfetivo == 'INTEGRACAO').toList();
       default:
-        return lista.where((c) => c.status == _filtroStatus).toList();
+        return lista;
     }
   }
 
@@ -111,15 +116,16 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                   ),
                 ),
 
-                // Filtros rápidos
+                // Filtros
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
                         _chipFiltro('TODOS', 'Todos'),
+                        _chipFiltro('GRUPO_ENTREVISTA', 'Entrevista'),
                         _chipFiltro('GRUPO_ASO', 'ASO'),
                         _chipFiltro('GRUPO_ADMISSAO', 'Admissão'),
                         _chipFiltro('GRUPO_CONTRATO', 'Contrato'),
@@ -156,8 +162,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const Icon(Icons.inbox_outlined,
-                                      size: 56,
-                                      color: AppColors.cinzaTexto),
+                                      size: 56, color: AppColors.cinzaTexto),
                                   const SizedBox(height: 16),
                                   Text(
                                     'Nenhum candidato aqui',
@@ -180,8 +185,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                             padding:
                                 const EdgeInsets.fromLTRB(16, 20, 16, 32),
                             itemCount: lista.length,
-                            itemBuilder: (ctx, i) =>
-                                _cardCandidato(lista[i]),
+                            itemBuilder: (ctx, i) => _cardCandidato(lista[i]),
                           ),
                         );
                       },
@@ -196,11 +200,11 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     );
   }
 
-  // ── Card do candidato ────────────────────────────────────────────────────────
+  // ── Card ─────────────────────────────────────────────────────────────────────
 
   Widget _cardCandidato(CandidaturaGestorModel c) {
-    final cor = _corStatus(c.status);
-    final labelStatus = _labelStatus(c.status);
+    final cor = _corStatus(c.statusEfetivo);
+    final label = _labelStatus(c.statusEfetivo);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -214,7 +218,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       ),
       child: Column(
         children: [
-          // Cabeçalho do card
+          // Cabeçalho
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
             child: Row(
@@ -236,9 +240,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                       Text(
                         c.candidatoEmail,
                         style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppColors.cinzaTexto,
-                        ),
+                            fontSize: 11, color: AppColors.cinzaTexto),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -253,7 +255,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    labelStatus,
+                    label,
                     style: GoogleFonts.poppins(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
@@ -265,8 +267,8 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
             ),
           ),
 
-          // Info extra
-          if (c.salarioEsperado != null || c.candidatoCidade != null)
+          // Info extra (localização / salário)
+          if (c.candidatoCidade != null || c.salarioEsperado != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
               child: Row(
@@ -283,8 +285,14 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
               ),
             ),
 
-          // Acompanhamento do fluxo de admissão
-          _secaoAdmissao(c),
+          // Botões de entrevista
+          if (c.statusEfetivo == 'ENTREV_GESTOR') _botoesEntrevista(c),
+
+          // Botão de proposta
+          if (c.statusEfetivo == 'PROPOSTA') _botaoProposta(c),
+
+          // Barra de progresso (a partir do ASO)
+          if (_statusProgresso.contains(c.statusEfetivo)) _barraProgresso(c),
 
           const SizedBox(height: 4),
         ],
@@ -292,12 +300,89 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     );
   }
 
-  // ── Seção admissão ───────────────────────────────────────────────────────────
+  // ── Botões entrevista ────────────────────────────────────────────────────────
 
-  Widget _secaoAdmissao(CandidaturaGestorModel c) {
-    final steps = _stepsAdmissao();
-    final idxAtual = _idxVisual(c.status);
-    if (idxAtual < 0) return const SizedBox.shrink();
+  Widget _botoesEntrevista(CandidaturaGestorModel c) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => _confirmarReprovacao(c),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.magenta,
+                side: const BorderSide(color: AppColors.magenta),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: Text('Reprovar',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () => _aprovarEntrevista(c),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.laranja,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: Text('Aprovar',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Botão proposta ───────────────────────────────────────────────────────────
+
+  Widget _botaoProposta(CandidaturaGestorModel c) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => _aprovarProposta(c),
+          icon: const Icon(Icons.thumb_up_outlined,
+              size: 16, color: Colors.white),
+          label: Text('Confirmar Proposta',
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF10B981),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Barra de progresso (ASO → Admissão → Contrato → Integração) ──────────────
+
+  Widget _barraProgresso(CandidaturaGestorModel c) {
+    final idx = _idxProgresso(c.statusEfetivo);
+    const steps = [
+      {'label': 'ASO'},
+      {'label': 'Admissão'},
+      {'label': 'Contrato'},
+      {'label': 'Integração'},
+    ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
@@ -315,11 +400,13 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
           const SizedBox(height: 10),
           Row(
             children: List.generate(steps.length, (i) {
-              final done = idxAtual >= i;
-              final atual = idxAtual == i;
-              final cor = atual ? AppColors.laranja : done
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFFE5E7EB);
+              final concluido = idx > i;
+              final atual = idx == i;
+              final cor = atual
+                  ? AppColors.laranja
+                  : concluido
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFFE5E7EB);
               return Expanded(
                 child: Row(
                   children: [
@@ -327,8 +414,8 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                       child: Column(
                         children: [
                           Container(
-                            width: 26,
-                            height: 26,
+                            width: 28,
+                            height: 28,
                             decoration: BoxDecoration(
                               color: cor,
                               shape: BoxShape.circle,
@@ -336,28 +423,28 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                             child: Icon(
                               atual
                                   ? Icons.radio_button_checked_rounded
-                                  : done
+                                  : concluido
                                       ? Icons.check_rounded
                                       : Icons.circle_outlined,
-                              size: 13,
-                              color: done || atual
+                              size: 14,
+                              color: (atual || concluido)
                                   ? Colors.white
                                   : AppColors.cinzaTexto,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            steps[i]['label'] as String,
+                            steps[i]['label']!,
                             style: GoogleFonts.poppins(
                               fontSize: 9,
-                              color: atual
-                                  ? AppColors.laranja
-                                  : done
-                                      ? const Color(0xFF10B981)
-                                      : AppColors.cinzaTexto,
-                              fontWeight: atual || done
+                              fontWeight: (atual || concluido)
                                   ? FontWeight.w600
                                   : FontWeight.w400,
+                              color: atual
+                                  ? AppColors.laranja
+                                  : concluido
+                                      ? const Color(0xFF10B981)
+                                      : AppColors.cinzaTexto,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -367,8 +454,8 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                     if (i < steps.length - 1)
                       Container(
                         height: 2,
-                        width: 8,
-                        color: idxAtual > i
+                        width: 10,
+                        color: concluido
                             ? const Color(0xFF10B981)
                             : const Color(0xFFE5E7EB),
                       ),
@@ -380,6 +467,47 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
         ],
       ),
     );
+  }
+
+  // 0=ASO, 1=Admissão, 2=Contrato, 3=Integração
+  int _idxProgresso(String status) {
+    if (_grupoAso.contains(status) || status == 'APROVADO') return 0;
+    if (_grupoAdmissao.contains(status)) return 1;
+    if (_grupoContrato.contains(status)) return 2;
+    if (status == 'INTEGRACAO') return 3;
+    return -1;
+  }
+
+  // ── Ações ────────────────────────────────────────────────────────────────────
+
+  Future<void> _aprovarEntrevista(CandidaturaGestorModel c) async {
+    final ok = await _api.aprovarEntrevistaGestor(
+      candidaturaId: c.id,
+      gestorId: _api.colaboradorAtual?.id ?? 0,
+    );
+    if (ok) _carregarCandidatos();
+    _snack(ok ? 'Candidato avançado para Proposta ✅' : 'Erro ao mover', ok);
+  }
+
+  Future<void> _confirmarReprovacao(CandidaturaGestorModel c) async {
+    final motivo = await _dialogMotivo(context);
+    if (motivo == null || motivo.trim().isEmpty) return;
+    final ok = await _api.reprovarEntrevistaGestor(
+      candidaturaId: c.id,
+      gestorId: _api.colaboradorAtual?.id ?? 0,
+      motivo: motivo.trim(),
+    );
+    if (ok) _carregarCandidatos();
+    _snack(ok ? 'Candidato reprovado' : 'Erro ao reprovar', ok);
+  }
+
+  Future<void> _aprovarProposta(CandidaturaGestorModel c) async {
+    final ok = await _api.aprovarProposta(
+      candidaturaId: c.id,
+      gestorId: _api.colaboradorAtual?.id ?? 0,
+    );
+    if (ok) _carregarCandidatos();
+    _snack(ok ? 'Proposta confirmada! 🎉' : 'Erro ao confirmar', ok);
   }
 
   // ── Helpers de UI ────────────────────────────────────────────────────────────
@@ -414,15 +542,11 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
         : nome.isNotEmpty
             ? nome[0].toUpperCase()
             : '?';
-
     final cores = [
-      AppColors.laranja,
-      AppColors.magenta,
-      const Color(0xFF6C63FF),
-      const Color(0xFF00BFA5),
+      AppColors.laranja, AppColors.magenta,
+      const Color(0xFF6C63FF), const Color(0xFF00BFA5),
     ];
     final cor = cores[nome.codeUnits.fold(0, (a, b) => a + b) % cores.length];
-
     return Container(
       width: 46,
       height: 46,
@@ -434,11 +558,11 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Center(
-        child: Text(
-          iniciais,
-          style: GoogleFonts.poppins(
-              color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
-        ),
+        child: Text(iniciais,
+            style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 15)),
       ),
     );
   }
@@ -458,88 +582,90 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   Color _corStatus(String status) {
     switch (status) {
-      case 'AGUARDANDO_DADOS':
-        return AppColors.cinzaTexto;
+      case 'ENTREV_GESTOR': return AppColors.amarelo;
+      case 'PROPOSTA':      return AppColors.laranja;
+      case 'AGUARDANDO_DADOS': return AppColors.cinzaTexto;
       case 'ASO_AGENDADO':
-      case 'ASO_REALIZADO':
-        return const Color(0xFF6366F1);
-      case 'ASO_APROVADO':
-        return const Color(0xFF10B981);
+      case 'ASO_REALIZADO': return const Color(0xFF6366F1);
+      case 'ASO_APROVADO':  return const Color(0xFF10B981);
       case 'ADMISSAO_INICIADA':
-      case 'DADOS_ENVIADOS':
-        return AppColors.laranja;
-      case 'DOCUMENTOS_EM_ANALISE':
-        return AppColors.amarelo;
-      case 'DOCUMENTOS_APROVADOS':
-        return const Color(0xFF10B981);
-      case 'CONTRATO_ENVIADO':
-        return AppColors.laranja;
-      case 'CONTRATO_ASSINADO':
-        return const Color(0xFF10B981);
-      case 'INTEGRACAO':
-        return const Color(0xFF059669);
-      default:
-        return AppColors.cinzaTexto;
+      case 'DADOS_ENVIADOS': return AppColors.laranja;
+      case 'DOCUMENTOS_EM_ANALISE': return AppColors.amarelo;
+      case 'DOCUMENTOS_APROVADOS':  return const Color(0xFF10B981);
+      case 'CONTRATO_ENVIADO': return AppColors.laranja;
+      case 'CONTRATO_ASSINADO': return const Color(0xFF10B981);
+      case 'INTEGRACAO': return const Color(0xFF059669);
+      default: return AppColors.cinzaTexto;
     }
   }
 
   String _labelStatus(String status) {
     switch (status) {
-      case 'AGUARDANDO_DADOS':
-        return 'Aguardando';
-      case 'ASO_AGENDADO':
-        return 'ASO Agendado';
-      case 'ASO_REALIZADO':
-        return 'ASO Realizado';
-      case 'ASO_APROVADO':
-        return 'ASO Aprovado';
-      case 'ADMISSAO_INICIADA':
-        return 'Admissão Aberta';
-      case 'DADOS_ENVIADOS':
-        return 'Dados Enviados';
-      case 'DOCUMENTOS_EM_ANALISE':
-        return 'Docs em Análise';
-      case 'DOCUMENTOS_APROVADOS':
-        return 'Docs Aprovados';
-      case 'CONTRATO_ENVIADO':
-        return 'Contrato Enviado';
-      case 'CONTRATO_ASSINADO':
-        return 'Contrato Assinado';
-      case 'INTEGRACAO':
-        return 'Integração';
-      default:
-        return status;
+      case 'ENTREV_GESTOR':       return 'Entrevista';
+      case 'PROPOSTA':            return 'Proposta';
+      case 'AGUARDANDO_DADOS':    return 'Aguardando';
+      case 'ASO_AGENDADO':        return 'ASO Agendado';
+      case 'ASO_REALIZADO':       return 'ASO Realizado';
+      case 'ASO_APROVADO':        return 'ASO Aprovado';
+      case 'ADMISSAO_INICIADA':   return 'Admissão Aberta';
+      case 'DADOS_ENVIADOS':      return 'Dados Enviados';
+      case 'DOCUMENTOS_EM_ANALISE': return 'Docs em Análise';
+      case 'DOCUMENTOS_APROVADOS':  return 'Docs Aprovados';
+      case 'CONTRATO_ENVIADO':    return 'Contrato Enviado';
+      case 'CONTRATO_ASSINADO':   return 'Contrato Assinado';
+      case 'INTEGRACAO':          return 'Integração';
+      default: return status;
     }
   }
 
-  // 5 etapas visuais agrupadas para não sobrecarregar
-  List<Map<String, String>> _stepsAdmissao() {
-    return [
-      {'key': 'ASO_AGENDADO', 'label': 'ASO'},
-      {'key': 'ADMISSAO_INICIADA', 'label': 'Admissão'},
-      {'key': 'DOCUMENTOS_EM_ANALISE', 'label': 'Documentos'},
-      {'key': 'CONTRATO_ENVIADO', 'label': 'Contrato'},
-      {'key': 'INTEGRACAO', 'label': 'Integração'},
-    ];
+  void _snack(String msg, bool sucesso) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: GoogleFonts.poppins()),
+      backgroundColor: sucesso ? const Color(0xFF10B981) : AppColors.magenta,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
   }
 
-  // Retorna o índice visual do step com base no status real
-  int _idxVisual(String status) {
-    if ({'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'}.contains(status)) {
-      return 0;
-    }
-    if ({'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS'}
-        .contains(status)) {
-      return 1;
-    }
-    if ({'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS'}.contains(status)) {
-      return 2;
-    }
-    if ({'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO'}.contains(status)) {
-      return 3;
-    }
-    if (status == 'INTEGRACAO') return 4;
-    return -1;
+  Future<String?> _dialogMotivo(BuildContext context) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Motivo da reprovação',
+            style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Descreva o motivo...',
+            hintStyle: GoogleFonts.poppins(fontSize: 13),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+            filled: true,
+            fillColor: AppColors.cinzaClaro,
+          ),
+          style: GoogleFonts.poppins(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar',
+                style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.magenta, elevation: 0),
+            child:
+                Text('Confirmar', style: GoogleFonts.poppins(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
-
 }

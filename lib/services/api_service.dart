@@ -314,18 +314,15 @@ class ApiService {
   ) async {
     final data = await _client
         .from('candidaturas')
-        .select('*, candidatos(*)')
+        .select('*, candidatos(*), admissoes(id, status)')
         .eq('vaga_id', vagaId)
-        .inFilter('status', [
-          'ENTREV_GESTOR',
-          'PROPOSTA',
-          'APROVADO',
-          'REPROVADO',
-        ])
+        .inFilter('status', ['ENTREV_GESTOR', 'PROPOSTA', 'APROVADO'])
         .order('created_at', ascending: false);
 
     return (data as List)
         .map((e) => CandidaturaGestorModel.fromJson(e as Map<String, dynamic>))
+        // Remove candidatos cuja admissão já foi concluída
+        .where((c) => c.admissaoStatus != 'CONCLUIDO')
         .toList();
   }
 
@@ -951,8 +948,11 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Lista pesquisas disponíveis filtradas por destinatário.
+  /// Lista pesquisas disponíveis filtradas por destinatário,
+  /// com campo ja_respondeu para bloquear resposta dupla.
   Future<List<Map<String, dynamic>>> buscarPesquisasDisponiveis() async {
+    final colaboradorId = colaboradorAtual?.id;
+
     final res = await _client
         .from('pesquisas')
         .select()
@@ -962,7 +962,28 @@ class ApiService {
     final filtradas = await _filtrarDestinatarios(
       (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
     );
-    return filtradas;
+
+    if (colaboradorId == null) return filtradas;
+
+    // Busca todas as pesquisas já respondidas pelo colaborador de uma vez
+    final ids = filtradas.map((p) => p['id'] as int).toList();
+    if (ids.isEmpty) return filtradas;
+
+    final respondidas = await _client
+        .from('pesquisa_respostas')
+        .select('pesquisa_id')
+        .eq('colaborador_id', colaboradorId)
+        .inFilter('pesquisa_id', ids);
+
+    final respondidosSet =
+        (respondidas as List).map((e) => e['pesquisa_id'] as int).toSet();
+
+    return filtradas.map((p) {
+      return {
+        ...p,
+        'ja_respondeu': respondidosSet.contains(p['id'] as int),
+      };
+    }).toList();
   }
 
   /// Busca as perguntas de uma pesquisa, em ordem.
