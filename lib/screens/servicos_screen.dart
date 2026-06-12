@@ -7,6 +7,7 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
+import 'integracao/integracao_screen.dart';
 
 class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
@@ -18,20 +19,25 @@ class ServicosScreen extends StatefulWidget {
 class _ServicosScreenState extends State<ServicosScreen> {
   final _api = ApiService();
   bool _ehGestor = false;
-  bool _loadingGestor = true;
+  bool _ehIntegracao = false;
+  bool _loadingPerfis = true;
 
   @override
   void initState() {
     super.initState();
-    _verificarGestor();
+    _verificarPerfis();
   }
 
-  Future<void> _verificarGestor() async {
-    final resultado = await _api.verificarSeEhGestor();
+  Future<void> _verificarPerfis() async {
+    final resultados = await Future.wait([
+      _api.verificarSeEhGestor(),
+      _api.verificarSeEhIntegracao(),
+    ]);
     if (mounted)
       setState(() {
-        _ehGestor = resultado;
-        _loadingGestor = false;
+        _ehGestor = resultados[0];
+        _ehIntegracao = resultados[1];
+        _loadingPerfis = false;
       });
   }
 
@@ -94,8 +100,10 @@ class _ServicosScreenState extends State<ServicosScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (_loadingGestor) const SizedBox.shrink(),
-                          if (!_loadingGestor && _ehGestor) ...[
+                          if (_loadingPerfis) const SizedBox.shrink(),
+
+                          // ── Painel do Gestor ────────────────────────────
+                          if (!_loadingPerfis && _ehGestor) ...[
                             Text(
                               'Painel do Gestor',
                               style: AppTextStyles.corpoMenor.copyWith(
@@ -121,14 +129,39 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               ),
                             ),
                             const SizedBox(height: 24),
+                          ],
+
+                          // ── Integração ──────────────────────────────────
+                          if (!_loadingPerfis && _ehIntegracao) ...[
                             Text(
-                              'Serviços para Colaboradores',
+                              'Integração',
                               style: AppTextStyles.corpoMenor.copyWith(
-                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF6366F1),
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                          ] else ...[
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 10),
+                            _botaoServico(
+                              context,
+                              icone: Icons.people_alt_outlined,
+                              titulo: 'Integração',
+                              subtitulo:
+                                  'Receba e integre novos colaboradores',
+                              cor: const Color(0xFF6366F1),
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const IntegracaoScreen(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+
+                          // ── Serviços para Colaboradores ─────────────────
+                          if (!_loadingPerfis) ...[
                             Text(
                               'Serviços para Colaboradores',
                               style: AppTextStyles.corpoMenor.copyWith(

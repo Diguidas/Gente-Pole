@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/aniversariante_screen.dart';
 import 'package:gentepole/widgets/humor_widget.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../models/aniversariante_model.dart';
 import '../models/comunicado_model.dart';
@@ -20,6 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _api = ApiService();
   late Future<List<ComunicadoModel>> _futureComunicados;
   late Future<List<AniversarianteModel>> _futureAniversariantes;
+  late Future<Map<String, dynamic>?> _futureExame;
 
   // FIX #5 — chave que força o HumorWidget a reconstruir no pull-to-refresh
   int _humorRefreshKey = 0;
@@ -29,12 +31,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _futureComunicados = _api.buscarUltimosComunicados();
     _futureAniversariantes = _api.buscarAniversariantesMes();
+    _futureExame = _api.buscarProximoExame();
   }
 
   void _recarregar() => setState(() {
     _humorRefreshKey++;
     _futureComunicados = _api.buscarUltimosComunicados();
     _futureAniversariantes = _api.buscarAniversariantesMes();
+    _futureExame = _api.buscarProximoExame();
   });
 
   @override
@@ -155,7 +159,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               // ── Widget de humor ──────────────────────────
                               // FIX #5 — ValueKey garante rebuild no refresh
                               HumorWidget(key: ValueKey(_humorRefreshKey)),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 16),
+
+                              // ── Alerta de exame ───────────────────────────
+                              _cardExame(),
 
                               if (lista.isNotEmpty) ...[
                                 _labelSecao('📢 Em destaque'),
@@ -497,6 +504,109 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  // ── Card exame pendente ──────────────────────────────────────────────────────
+
+  Widget _cardExame() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _futureExame,
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data == null) return const SizedBox.shrink();
+
+        final exame = snap.data!;
+        final dataStr = exame['data_agendamento'] as String;
+        final tipo = exame['tipo'] as String? ?? 'Exame';
+        final clinica = exame['clinica'] as String?;
+
+        final dataExame = DateTime.tryParse(dataStr);
+        if (dataExame == null) return const SizedBox.shrink();
+
+        final hoje = DateTime.now();
+        final diasRestantes =
+            dataExame.difference(DateTime(hoje.year, hoje.month, hoje.day)).inDays;
+
+        final dataFormatada =
+            '${dataExame.day.toString().padLeft(2, '0')}/'
+            '${dataExame.month.toString().padLeft(2, '0')}/'
+            '${dataExame.year}';
+
+        final urgente = diasRestantes <= 3;
+        final cor = urgente ? const Color(0xFFEF4444) : const Color(0xFF6366F1);
+        final corFundo = urgente
+            ? const Color(0xFFFEF2F2)
+            : const Color(0xFFEEF2FF);
+
+        final labelDias = diasRestantes == 0
+            ? 'é hoje!'
+            : diasRestantes == 1
+                ? 'amanhã'
+                : 'em $diasRestantes dias';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: corFundo,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: cor.withOpacity(0.25)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: cor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.medical_services_outlined,
+                    color: cor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Exame ${_tipoExame(tipo)} $labelDias',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: cor,
+                      ),
+                    ),
+                    Text(
+                      'Agendado para $dataFormatada'
+                      '${clinica != null ? ' · $clinica' : ''}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: cor.withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _tipoExame(String tipo) {
+    switch (tipo.toLowerCase()) {
+      case 'periodico':
+        return 'periódico';
+      case 'admissional':
+        return 'admissional';
+      case 'demissional':
+        return 'demissional';
+      case 'retorno':
+        return 'de retorno';
+      default:
+        return tipo;
+    }
   }
 
   // ── Widgets de apoio ─────────────────────────────────────────────────────────

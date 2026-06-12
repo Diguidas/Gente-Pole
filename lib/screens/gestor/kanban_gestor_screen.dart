@@ -33,9 +33,29 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     });
   }
 
+  static const _grupoAso = {'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'};
+  static const _grupoAdmissao = {
+    'AGUARDANDO_DADOS',
+    'ADMISSAO_INICIADA',
+    'DADOS_ENVIADOS',
+    'DOCUMENTOS_EM_ANALISE',
+    'DOCUMENTOS_APROVADOS',
+  };
+  static const _grupoContrato = {'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO'};
+
   List<CandidaturaGestorModel> _filtrar(List<CandidaturaGestorModel> lista) {
-    if (_filtroStatus == 'TODOS') return lista;
-    return lista.where((c) => c.status == _filtroStatus).toList();
+    switch (_filtroStatus) {
+      case 'GRUPO_ASO':
+        return lista.where((c) => _grupoAso.contains(c.status)).toList();
+      case 'GRUPO_ADMISSAO':
+        return lista.where((c) => _grupoAdmissao.contains(c.status)).toList();
+      case 'GRUPO_CONTRATO':
+        return lista.where((c) => _grupoContrato.contains(c.status)).toList();
+      case 'TODOS':
+        return lista;
+      default:
+        return lista.where((c) => c.status == _filtroStatus).toList();
+    }
   }
 
   @override
@@ -100,10 +120,10 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                     child: Row(
                       children: [
                         _chipFiltro('TODOS', 'Todos'),
-                        _chipFiltro('ENTREV_GESTOR', 'Entrevista'),
-                        _chipFiltro('PROPOSTA', 'Proposta'),
-                        _chipFiltro('APROVADO', 'Aprovados'),
-                        _chipFiltro('REPROVADO', 'Reprovados'),
+                        _chipFiltro('GRUPO_ASO', 'ASO'),
+                        _chipFiltro('GRUPO_ADMISSAO', 'Admissão'),
+                        _chipFiltro('GRUPO_CONTRATO', 'Contrato'),
+                        _chipFiltro('INTEGRACAO', 'Integração'),
                       ],
                     ),
                   ),
@@ -263,22 +283,8 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
               ),
             ),
 
-          // Teste prático (se a vaga tiver)
-          if (widget.vaga.testePratico)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-              child: _secaoTestePratico(c),
-            ),
-
-          // Botões de ação por status
-          if (c.status == 'ENTREV_GESTOR')
-            _botoesEntrevista(c)
-          else if (c.status == 'PROPOSTA')
-            _botoesProposta(c),
-
-          // Acompanhamento de admissão
-          if (c.status == 'APROVADO')
-            _secaoAdmissao(c),
+          // Acompanhamento do fluxo de admissão
+          _secaoAdmissao(c),
 
           const SizedBox(height: 4),
         ],
@@ -286,287 +292,94 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     );
   }
 
-  // ── Teste prático ────────────────────────────────────────────────────────────
-
-  Widget _secaoTestePratico(CandidaturaGestorModel c) {
-    final status = c.testePraticoStatus;
-    if (status == null && c.status == 'ENTREV_GESTOR') {
-      // Gestor pode lançar resultado
-      return Row(
-        children: [
-          Text(
-            'Teste prático:',
-            style: GoogleFonts.poppins(
-                fontSize: 12, color: AppColors.cinzaTexto),
-          ),
-          const SizedBox(width: 8),
-          _botaoAcaoSmall(
-            label: '✓ Aprovado',
-            cor: const Color(0xFF10B981),
-            onTap: () => _lancarTeste(c, 'APROVADO'),
-          ),
-          const SizedBox(width: 6),
-          _botaoAcaoSmall(
-            label: '✗ Reprovado',
-            cor: AppColors.magenta,
-            onTap: () => _lancarTeste(c, 'REPROVADO'),
-          ),
-        ],
-      );
-    }
-
-    final cor = status == 'APROVADO'
-        ? const Color(0xFF10B981)
-        : status == 'REPROVADO'
-            ? AppColors.magenta
-            : AppColors.cinzaTexto;
-
-    return Row(
-      children: [
-        const Icon(Icons.assignment_outlined,
-            size: 14, color: AppColors.cinzaTexto),
-        const SizedBox(width: 6),
-        Text(
-          'Teste: ',
-          style: GoogleFonts.poppins(
-              fontSize: 12, color: AppColors.cinzaTexto),
-        ),
-        Text(
-          status ?? 'Pendente',
-          style: GoogleFonts.poppins(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: cor,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Botões entrevista ────────────────────────────────────────────────────────
-
-  Widget _botoesEntrevista(CandidaturaGestorModel c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => _confirmarReprovacao(c),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.magenta,
-                side: const BorderSide(color: AppColors.magenta),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text('Reprovar',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => _aprovarEntrevista(c),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.laranja,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text('Aprovar',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Botões proposta ──────────────────────────────────────────────────────────
-
-  Widget _botoesProposta(CandidaturaGestorModel c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () => _aprovarProposta(c),
-          icon: const Icon(Icons.thumb_up_outlined,
-              size: 16, color: Colors.white),
-          label: Text('Confirmar Proposta',
-              style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
-            elevation: 0,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Seção admissão ───────────────────────────────────────────────────────────
 
   Widget _secaoAdmissao(CandidaturaGestorModel c) {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _api.buscarStatusAdmissao(c.id),
-      builder: (context, snap) {
-        if (!snap.hasData || snap.data == null) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-            child: Row(
-              children: [
-                const Icon(Icons.hourglass_empty_rounded,
-                    size: 14, color: AppColors.cinzaTexto),
-                const SizedBox(width: 6),
-                Text(
-                  'Admissão sendo iniciada pelo RH',
-                  style: GoogleFonts.poppins(
-                      fontSize: 12, color: AppColors.cinzaTexto),
-                ),
-              ],
+    final steps = _stepsAdmissao();
+    final idxAtual = _idxVisual(c.status);
+    if (idxAtual < 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Progresso',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.cinzaTexto,
             ),
-          );
-        }
-
-        final adm = snap.data!;
-        final statusAdm = adm['status'] as String? ?? '';
-        final steps = _stepsAdmissao();
-        final idxAtual = steps.indexWhere((s) => s['key'] == statusAdm);
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Acompanhamento da admissão',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.cinzaTexto,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: List.generate(steps.length, (i) {
-                  final done = idxAtual >= i;
-                  return Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: done
-                                      ? AppColors.laranja
-                                      : const Color(0xFFE5E7EB),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  done
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: List.generate(steps.length, (i) {
+              final done = idxAtual >= i;
+              final atual = idxAtual == i;
+              final cor = atual ? AppColors.laranja : done
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFFE5E7EB);
+              return Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: cor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              atual
+                                  ? Icons.radio_button_checked_rounded
+                                  : done
                                       ? Icons.check_rounded
                                       : Icons.circle_outlined,
-                                  size: 14,
-                                  color: done
-                                      ? Colors.white
-                                      : AppColors.cinzaTexto,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                steps[i]['label'] as String,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 9,
-                                  color: done
-                                      ? AppColors.laranja
-                                      : AppColors.cinzaTexto,
-                                  fontWeight: done
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
+                              size: 13,
+                              color: done || atual
+                                  ? Colors.white
+                                  : AppColors.cinzaTexto,
+                            ),
                           ),
-                        ),
-                        if (i < steps.length - 1)
-                          Container(
-                            height: 2,
-                            width: 12,
-                            color: done && idxAtual > i
-                                ? AppColors.laranja
-                                : const Color(0xFFE5E7EB),
+                          const SizedBox(height: 4),
+                          Text(
+                            steps[i]['label'] as String,
+                            style: GoogleFonts.poppins(
+                              fontSize: 9,
+                              color: atual
+                                  ? AppColors.laranja
+                                  : done
+                                      ? const Color(0xFF10B981)
+                                      : AppColors.cinzaTexto,
+                              fontWeight: atual || done
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                      ],
+                        ],
+                      ),
                     ),
-                  );
-                }),
-              ),
-            ],
+                    if (i < steps.length - 1)
+                      Container(
+                        height: 2,
+                        width: 8,
+                        color: idxAtual > i
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFFE5E7EB),
+                      ),
+                  ],
+                ),
+              );
+            }),
           ),
-        );
-      },
+        ],
+      ),
     );
-  }
-
-  // ── Ações assíncronas ────────────────────────────────────────────────────────
-
-  Future<void> _aprovarEntrevista(CandidaturaGestorModel c) async {
-    final gestorId = _api.colaboradorAtual?.id ?? 0;
-    final ok = await _api.aprovarEntrevistaGestor(
-      candidaturaId: c.id,
-      gestorId: gestorId,
-    );
-    if (ok) _carregarCandidatos();
-    _snack(ok ? 'Candidato avançado para Proposta ✅' : 'Erro ao mover', ok);
-  }
-
-  Future<void> _confirmarReprovacao(CandidaturaGestorModel c) async {
-    final motivo = await _dialogMotivo(context);
-    if (motivo == null || motivo.trim().isEmpty) return;
-
-    final gestorId = _api.colaboradorAtual?.id ?? 0;
-    final ok = await _api.reprovarEntrevistaGestor(
-      candidaturaId: c.id,
-      gestorId: gestorId,
-      motivo: motivo.trim(),
-    );
-    if (ok) _carregarCandidatos();
-    _snack(ok ? 'Candidato reprovado' : 'Erro ao reprovar', ok);
-  }
-
-  Future<void> _aprovarProposta(CandidaturaGestorModel c) async {
-    final gestorId = _api.colaboradorAtual?.id ?? 0;
-    final ok = await _api.aprovarProposta(
-      candidaturaId: c.id,
-      gestorId: gestorId,
-    );
-    if (ok) _carregarCandidatos();
-    _snack(ok ? 'Proposta confirmada! 🎉' : 'Erro ao confirmar', ok);
-  }
-
-  Future<void> _lancarTeste(CandidaturaGestorModel c, String resultado) async {
-    final ok = await _api.lancarResultadoTeste(
-      candidaturaId: c.id,
-      resultado: resultado,
-    );
-    if (ok) _carregarCandidatos();
-    _snack(ok ? 'Resultado registrado' : 'Erro ao registrar', ok);
   }
 
   // ── Helpers de UI ────────────────────────────────────────────────────────────
@@ -643,39 +456,28 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     );
   }
 
-  Widget _botaoAcaoSmall({
-    required String label,
-    required Color cor,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: cor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: cor.withOpacity(0.3)),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.poppins(
-              fontSize: 11, fontWeight: FontWeight.w600, color: cor),
-        ),
-      ),
-    );
-  }
-
   Color _corStatus(String status) {
     switch (status) {
-      case 'ENTREV_GESTOR':
-        return AppColors.amarelo;
-      case 'PROPOSTA':
-        return AppColors.laranja;
-      case 'APROVADO':
+      case 'AGUARDANDO_DADOS':
+        return AppColors.cinzaTexto;
+      case 'ASO_AGENDADO':
+      case 'ASO_REALIZADO':
+        return const Color(0xFF6366F1);
+      case 'ASO_APROVADO':
         return const Color(0xFF10B981);
-      case 'REPROVADO':
-        return AppColors.magenta;
+      case 'ADMISSAO_INICIADA':
+      case 'DADOS_ENVIADOS':
+        return AppColors.laranja;
+      case 'DOCUMENTOS_EM_ANALISE':
+        return AppColors.amarelo;
+      case 'DOCUMENTOS_APROVADOS':
+        return const Color(0xFF10B981);
+      case 'CONTRATO_ENVIADO':
+        return AppColors.laranja;
+      case 'CONTRATO_ASSINADO':
+        return const Color(0xFF10B981);
+      case 'INTEGRACAO':
+        return const Color(0xFF059669);
       default:
         return AppColors.cinzaTexto;
     }
@@ -683,81 +485,61 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   String _labelStatus(String status) {
     switch (status) {
-      case 'ENTREV_GESTOR':
-        return 'Entrevista';
-      case 'PROPOSTA':
-        return 'Proposta';
-      case 'APROVADO':
-        return 'Aprovado';
-      case 'REPROVADO':
-        return 'Reprovado';
+      case 'AGUARDANDO_DADOS':
+        return 'Aguardando';
+      case 'ASO_AGENDADO':
+        return 'ASO Agendado';
+      case 'ASO_REALIZADO':
+        return 'ASO Realizado';
+      case 'ASO_APROVADO':
+        return 'ASO Aprovado';
+      case 'ADMISSAO_INICIADA':
+        return 'Admissão Aberta';
+      case 'DADOS_ENVIADOS':
+        return 'Dados Enviados';
+      case 'DOCUMENTOS_EM_ANALISE':
+        return 'Docs em Análise';
+      case 'DOCUMENTOS_APROVADOS':
+        return 'Docs Aprovados';
+      case 'CONTRATO_ENVIADO':
+        return 'Contrato Enviado';
+      case 'CONTRATO_ASSINADO':
+        return 'Contrato Assinado';
+      case 'INTEGRACAO':
+        return 'Integração';
       default:
         return status;
     }
   }
 
+  // 5 etapas visuais agrupadas para não sobrecarregar
   List<Map<String, String>> _stepsAdmissao() {
     return [
-      {'key': 'AGUARDANDO_DADOS', 'label': 'Dados'},
-      {'key': 'DOCUMENTOS_EM_ANALISE', 'label': 'Docs'},
       {'key': 'ASO_AGENDADO', 'label': 'ASO'},
+      {'key': 'ADMISSAO_INICIADA', 'label': 'Admissão'},
+      {'key': 'DOCUMENTOS_EM_ANALISE', 'label': 'Documentos'},
       {'key': 'CONTRATO_ENVIADO', 'label': 'Contrato'},
-      {'key': 'CONCLUIDO', 'label': 'Concluído'},
+      {'key': 'INTEGRACAO', 'label': 'Integração'},
     ];
   }
 
-  void _snack(String msg, bool sucesso) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: GoogleFonts.poppins()),
-        backgroundColor:
-            sucesso ? const Color(0xFF10B981) : AppColors.magenta,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+  // Retorna o índice visual do step com base no status real
+  int _idxVisual(String status) {
+    if ({'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'}.contains(status)) {
+      return 0;
+    }
+    if ({'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS'}
+        .contains(status)) {
+      return 1;
+    }
+    if ({'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS'}.contains(status)) {
+      return 2;
+    }
+    if ({'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO'}.contains(status)) {
+      return 3;
+    }
+    if (status == 'INTEGRACAO') return 4;
+    return -1;
   }
 
-  Future<String?> _dialogMotivo(BuildContext context) async {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Motivo da reprovação',
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: 'Descreva o motivo...',
-            hintStyle: GoogleFonts.poppins(fontSize: 13),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-            filled: true,
-            fillColor: AppColors.cinzaClaro,
-          ),
-          style: GoogleFonts.poppins(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancelar',
-                style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.magenta, elevation: 0),
-            child: Text('Confirmar',
-                style: GoogleFonts.poppins(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
 }

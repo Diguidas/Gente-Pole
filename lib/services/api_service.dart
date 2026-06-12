@@ -180,15 +180,59 @@ class ApiService {
   // ─── Comunicados ─────────────────────────────────────────────────────────────
 
   /// Últimos 4 comunicados (para o card de destaque + lista na Home)
+  /// Filtra localmente uma lista de registros pelo campo tipo_destinatario,
+  /// usando os dados do colaborador logado e seus agrupamentos.
+  Future<List<Map<String, dynamic>>> _filtrarDestinatarios(
+    List<Map<String, dynamic>> lista,
+  ) async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+
+    // Busca os agrupamentos do colaborador uma única vez
+    final membros = await _client
+        .from('agrupamento_membros')
+        .select('agrupamento_id')
+        .eq('colaborador_id', colab.id);
+    final meusAgrupamentos =
+        (membros as List).map((e) => e['agrupamento_id'] as int).toSet();
+
+    return lista.where((item) {
+      final tipo = item['tipo_destinatario'] as String? ?? 'todos';
+      switch (tipo) {
+        case 'todos':
+          return true;
+        case 'setor':
+          final setores = item['setores_alvo'];
+          if (setores == null) return false;
+          return (setores as List).contains(colab.setor);
+        case 'colaboradores':
+          final colabs = item['colaboradores_alvo'];
+          if (colabs == null) return false;
+          return (colabs as List).contains(colab.id);
+        case 'agrupamentos':
+          final grupos = item['agrupamentos_alvo'];
+          if (grupos == null) return false;
+          return (grupos as List)
+              .any((g) => meusAgrupamentos.contains(g as int));
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
   Future<List<ComunicadoModel>> buscarUltimosComunicados() async {
     final data = await _client
         .from('comunicados')
         .select()
-        .order('criado_em', ascending: false)
-        .limit(4);
+        .order('criado_em', ascending: false);
 
-    return (data as List)
-        .map((e) => ComunicadoModel.fromJson(e as Map<String, dynamic>))
+    final filtrados = await _filtrarDestinatarios(
+      (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+    );
+
+    return filtrados
+        .take(4)
+        .map((e) => ComunicadoModel.fromJson(e))
         .toList();
   }
 
@@ -199,9 +243,11 @@ class ApiService {
         .select()
         .order('criado_em', ascending: false);
 
-    return (data as List)
-        .map((e) => ComunicadoModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final filtrados = await _filtrarDestinatarios(
+      (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+    );
+
+    return filtrados.map((e) => ComunicadoModel.fromJson(e)).toList();
   }
 
   // ─── Auth — Alterar senha ─────────────────────────────────────────────────
@@ -377,6 +423,70 @@ class ApiService {
     }
   }
 
+  /// Retorna true se o colaborador logado está no agrupamento "Integração".
+  Future<bool> verificarSeEhIntegracao() async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) return false;
+    try {
+      final ag = await _client
+          .from('agrupamentos')
+          .select('id')
+          .eq('nome', 'Integração')
+          .maybeSingle();
+      if (ag == null) return false;
+
+      final membro = await _client
+          .from('agrupamento_membros')
+          .select('id')
+          .eq('agrupamento_id', ag['id'] as int)
+          .eq('colaborador_id', colaborador.id)
+          .maybeSingle();
+      return membro != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Busca todas as admissões com status INTEGRACAO, com dados do candidato.
+  Future<List<Map<String, dynamic>>> buscarAdmisoesIntegracao() async {
+    final res = await _client
+        .from('admissoes')
+        .select('*, candidatos(nome, email, telefone, cidade, estado)')
+        .eq('status', 'INTEGRACAO')
+        .order('criado_em', ascending: true);
+    return (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// Marca a integração como concluída, mudando o status para CONCLUIDO.
+  Future<bool> concluirIntegracao(int admissaoId) async {
+    try {
+      await _client
+          .from('admissoes')
+          .update({'status': 'CONCLUIDO'})
+          .eq('id', admissaoId);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Busca o próximo exame agendado e não realizado do colaborador logado.
+  Future<Map<String, dynamic>?> buscarProximoExame() async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return null;
+    final hoje = DateTime.now().toIso8601String().substring(0, 10);
+    final res = await _client
+        .from('exames')
+        .select('id, tipo, clinica, data_agendamento')
+        .eq('colaborador_id', id)
+        .isFilter('data_realizacao', null)
+        .gte('data_agendamento', hoje)
+        .order('data_agendamento', ascending: true)
+        .limit(1)
+        .maybeSingle();
+    return res;
+  }
+
   /// Acompanhamento da admissão de um candidato aprovado
   Future<Map<String, dynamic>?> buscarStatusAdmissao(int candidaturaId) async {
     final data = await _client
@@ -506,22 +616,46 @@ class ApiService {
     }
   }
 
-  /// Retorna true se o colaborador logado tem role de gestor na tabela usuarios_web.
+  /// Retorna true se o colaborador logado está no agrupamento "Gestores".
   Future<bool> verificarSeEhGestor() async {
     final colaborador = colaboradorAtual;
     if (colaborador == null) return false;
     try {
-      final res = await _client
-          .from('usuarios_web')
+      // 1. Busca o id do agrupamento "Gestores"
+      final ag = await _client
+          .from('agrupamentos')
           .select('id')
-          .eq('colaborador_id', colaborador.id)
-          .eq('role', 'gestor')
-          .eq('ativo', true)
+          .eq('nome', 'Gestores')
           .maybeSingle();
-      return res != null;
+      if (ag == null) return false;
+
+      final agrupamentoId = ag['id'] as int;
+
+      // 2. Verifica se o colaborador está nesse agrupamento
+      final membro = await _client
+          .from('agrupamento_membros')
+          .select('id')
+          .eq('agrupamento_id', agrupamentoId)
+          .eq('colaborador_id', colaborador.id)
+          .maybeSingle();
+      return membro != null;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Busca todos os colaboradores do mesmo setor do usuário logado.
+  Future<List<ColaboradorModel>> buscarMinhaEquipe() async {
+    final setor = colaboradorAtual?.setor;
+    if (setor == null || setor.isEmpty) return [];
+    final res = await _client
+        .from('colaboradores')
+        .select()
+        .eq('setor', setor)
+        .order('nome');
+    return (res as List)
+        .map((e) => ColaboradorModel.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Busca as mensagens de parabéns recebidas pelo colaborador logado hoje.
@@ -817,13 +951,18 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Lista pesquisas disponíveis (filtra por data e ativa via view).
+  /// Lista pesquisas disponíveis filtradas por destinatário.
   Future<List<Map<String, dynamic>>> buscarPesquisasDisponiveis() async {
     final res = await _client
-        .from('v_pesquisas_disponiveis')
+        .from('pesquisas')
         .select()
+        .eq('ativa', true)
         .order('criado_em', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
+
+    final filtradas = await _filtrarDestinatarios(
+      (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+    );
+    return filtradas;
   }
 
   /// Busca as perguntas de uma pesquisa, em ordem.
