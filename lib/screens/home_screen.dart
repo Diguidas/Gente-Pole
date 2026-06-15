@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/aniversariante_screen.dart';
 import 'package:gentepole/widgets/humor_widget.dart';
@@ -66,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Row(
                     children: [
-                      _avatarUsuario(colaborador?.nome ?? ''),
+                      _avatarUsuario(colaborador?.nome ?? '', colaborador?.fotoUrl),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -611,8 +612,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Widgets de apoio ─────────────────────────────────────────────────────────
 
-  Widget _avatarUsuario(String nome) {
-    final iniciais = _iniciais(nome);
+  Widget _avatarUsuario(String nome, String? fotoUrl) {
+    if (fotoUrl != null && fotoUrl.isNotEmpty) {
+      return Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: fotoUrl,
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => _avatarIniciais(nome),
+            errorWidget: (_, __, ___) => _avatarIniciais(nome),
+          ),
+        ),
+      );
+    }
+    return _avatarIniciais(nome);
+  }
+
+  Widget _avatarIniciais(String nome) {
     return Container(
       width: 48,
       height: 48,
@@ -623,7 +647,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Center(
         child: Text(
-          iniciais,
+          _iniciais(nome),
           style: AppTextStyles.corpoBranco.copyWith(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -869,8 +893,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Text('Cancelar', style: AppTextStyles.corpoCinza),
           ),
           ElevatedButton(
-            onPressed: () {
-              _api.limparSessao();
+            onPressed: () async {
+              await _api.limparSessao();
+              if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),

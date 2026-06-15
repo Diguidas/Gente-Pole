@@ -176,7 +176,9 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  void _irParaHome() {
+  Future<void> _irParaHome() async {
+    await _api.salvarSessao(_matriculaController.text.trim());
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const MainLayout()),
@@ -184,14 +186,15 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   void _resetar() {
-    _animController.reverse().then((_) {
+    _animController.reverse().then((_) async {
+      await _api.limparSessao();
+      if (!mounted) return;
       setState(() {
         _etapa = 0;
         _ehFornecedor = false;
         _matriculaController.clear();
         _senhaController.clear();
         _dataController.clear();
-        _api.limparSessao();
       });
     });
   }

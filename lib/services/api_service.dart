@@ -5,6 +5,7 @@ import 'package:gentepole/models/comunicado_model.dart';
 import 'package:gentepole/models/lojinha_model.dart';
 import 'package:gentepole/models/massoterapia_model.dart';
 import 'package:gentepole/models/vaga_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/colaborador_model.dart';
 import '../models/aniversariante_model.dart';
@@ -20,8 +21,39 @@ class ApiService {
 
   // ─── Sessão ──────────────────────────────────────────────────────────────────
 
+  static const _kMatriculaKey = 'sessao_matricula';
+
   ColaboradorModel? colaboradorAtual;
-  void limparSessao() => colaboradorAtual = null;
+
+  Future<void> salvarSessao(String matricula) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kMatriculaKey, matricula);
+  }
+
+  Future<void> limparSessao() async {
+    colaboradorAtual = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kMatriculaKey);
+  }
+
+  /// Tenta restaurar a sessão salva. Retorna true se conseguiu.
+  Future<bool> restaurarSessao() async {
+    final prefs = await SharedPreferences.getInstance();
+    final matricula = prefs.getString(_kMatriculaKey);
+    if (matricula == null) return false;
+
+    final data = await _client
+        .from('colaboradores')
+        .select()
+        .eq('matricula', matricula)
+        .maybeSingle();
+    if (data == null) {
+      await prefs.remove(_kMatriculaKey);
+      return false;
+    }
+    colaboradorAtual = ColaboradorModel.fromJson(data);
+    return true;
+  }
 
   // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -505,10 +537,10 @@ class ApiService {
   // Import necessário no topo do arquivo:
   //   import '../models/massoterapia_model.dart';
 
-  /// Dias disponíveis para massoterapia nas próximas 4 semanas,
-  /// baseado nos dias_semana configurados pelo admin.
+  /// Retorna APENAS o próximo dia disponível para massoterapia,
+  /// respeitando a regra de 24h de antecedência:
+  /// o dia só aparece a partir das 00h do dia anterior.
   Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
-    // Busca os dias da semana ativos (1=seg … 5=sex)
     final configDias = await _client
         .from('massoterapia_dias_disponiveis')
         .select('dia_semana')
@@ -520,20 +552,19 @@ class ApiService {
 
     if (diasAtivos.isEmpty) return [];
 
-    // Gera as próximas 4 semanas de datas válidas (a partir de hoje)
-    final hoje = DateTime.now();
-    final datas = <String>[];
-    // Encontra a segunda-feira da semana atual
-    final inicioSemana = hoje.subtract(Duration(days: hoje.weekday - 1));
-    for (var i = 0; i < 5; i++) {
-      final d = inicioSemana.add(Duration(days: i));
+    final agora = DateTime.now();
+    // Só mostra dias que ainda são "amanhã ou depois" (24h de antecedência)
+    final amanha = DateTime(agora.year, agora.month, agora.day + 1);
+
+    for (var i = 0; i < 14; i++) {
+      final d = amanha.add(Duration(days: i));
       if (diasAtivos.contains(d.weekday)) {
         final str =
             '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-        datas.add(str);
+        return [str];
       }
     }
-    return datas;
+    return [];
   }
 
   /// Todos os agendamentos com status AGENDADO nas próximas 4 semanas.
@@ -655,6 +686,20 @@ class ApiService {
         .toList();
   }
 
+  /// Busca a mensagem institucional da empresa para o aniversariante.
+  /// Retorna o registro ativo mais recente da tabela
+  /// [mensagens_empresa_aniversario], ou null se não houver nenhum.
+  Future<Map<String, dynamic>?> buscarMensagemEmpresaAniversario() async {
+    final res = await _client
+        .from('mensagens_empresa_aniversario')
+        .select('titulo, corpo')
+        .eq('ativo', true)
+        .order('id', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return res;
+  }
+
   /// Busca as mensagens de parabéns recebidas pelo colaborador logado hoje.
   Future<List<Map<String, dynamic>>> buscarMensagensParabens() async {
     final meuId = colaboradorAtual?.id;
@@ -662,7 +707,7 @@ class ApiService {
 
     final res = await _client
         .from('parabens')
-        .select('*, colaboradores!remetente_id(nome, setor)')
+        .select('*, colaboradores!remetente_id(nome, setor, foto_url)')
         .eq('destinatario_id', meuId)
         .order('criado_em', ascending: true);
 
@@ -673,6 +718,7 @@ class ApiService {
         ...map,
         'remetente_nome': col?['nome'] ?? 'Colega',
         'remetente_setor': col?['setor'],
+        'remetente_foto_url': col?['foto_url'],
       };
     }).toList();
   }
@@ -835,6 +881,60 @@ class ApiService {
         .eq('ativo', true)
         .maybeSingle();
     return res;
+  }
+
+  // ─── Foto de perfil ──────────────────────────────────────────────────────────
+
+  /// Faz upload da foto, salva a URL no banco e atualiza o colaboradorAtual.
+  /// Retorna a URL pública ou null em caso de erro.
+  Future<String?> uploadFotoPerfil(Uint8List bytes) async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return null;
+
+    try {
+      final path = 'colaboradores/$id.jpg';
+      await _client.storage
+          .from('fotos-colaboradores')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
+          );
+
+      final url = _client.storage
+          .from('fotos-colaboradores')
+          .getPublicUrl(path);
+
+      // Força cache-bust para que o app recarregue a imagem nova
+      final urlFinal = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+
+      await _client
+          .from('colaboradores')
+          .update({'foto_url': urlFinal})
+          .eq('id', id);
+
+      // Atualiza instância local
+      colaboradorAtual = ColaboradorModel(
+        id: colaboradorAtual!.id,
+        matricula: colaboradorAtual!.matricula,
+        nome: colaboradorAtual!.nome,
+        setor: colaboradorAtual!.setor,
+        cargo: colaboradorAtual!.cargo,
+        cpf: colaboradorAtual!.cpf,
+        dataNascimento: colaboradorAtual!.dataNascimento,
+        dataAdmissao: colaboradorAtual!.dataAdmissao,
+        supervisorId: colaboradorAtual!.supervisorId,
+        clienteSap: colaboradorAtual!.clienteSap,
+        fotoUrl: urlFinal,
+      );
+
+      return urlFinal;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ─── Humor do Dia ────────────────────────────────────────────
@@ -1038,4 +1138,93 @@ class ApiService {
   }
 
 
+
+  // ─── Eu Crio Oportunidades ────────────────────────────────────────────────
+
+  Future<List<VagaModel>> listarVagasAbertas() async {
+    final data = await _client
+        .from('vagas')
+        .select()
+        .eq('status', 'ABERTA')
+        .eq('status_requisicao', 'APROVADA')
+        .order('created_at', ascending: false);
+    return (data as List)
+        .map((e) => VagaModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> inscreverColaboradorNaVaga({
+    required int colaboradorId,
+    required int vagaId,
+    required String nome,
+    required String cpf,
+    required String email,
+    required String telefone,
+  }) async {
+    final cpfLimpo = cpf.replaceAll(RegExp(r'\D'), '');
+    String candidatoId;
+    final existente = await _client
+        .from('candidatos')
+        .select('id')
+        .eq('cpf', cpfLimpo)
+        .maybeSingle();
+    if (existente != null) {
+      candidatoId = existente['id'].toString();
+    } else {
+      final novo = await _client.from('candidatos').insert({
+        'nome': nome,
+        'cpf': cpfLimpo,
+        'email': email,
+        'telefone': telefone,
+        'cidade': '',
+        'estado': '',
+        'area_interesse': '',
+        'anos_experiencia': 0,
+        'ultimo_emprego': '',
+        'resumo_profissional': 'Colaborador interno',
+      }).select('id').single();
+      candidatoId = novo['id'].toString();
+    }
+    final jaInscrito = await _client
+        .from('candidaturas')
+        .select('id')
+        .eq('candidato_id', int.parse(candidatoId))
+        .eq('vaga_id', vagaId)
+        .maybeSingle();
+    if (jaInscrito != null) throw Exception('já inscrito');
+    await _client.from('candidaturas').insert({
+      'candidato_id': int.parse(candidatoId),
+      'vaga_id': vagaId,
+      'status': 'INSCRITO',
+      'salario_esperado': 0,
+      'tipo_origem': 'COLABORADOR',
+    });
+  }
+
+  Future<void> indicarCandidato({
+    required int colaboradorId,
+    required int vagaId,
+    required String nomeIndicado,
+  }) async {
+    final candidato = await _client.from('candidatos').insert({
+      'nome': nomeIndicado,
+      'cpf': '',
+      'email': '',
+      'telefone': '',
+      'cidade': '',
+      'estado': '',
+      'area_interesse': '',
+      'anos_experiencia': 0,
+      'ultimo_emprego': '',
+      'resumo_profissional': '',
+    }).select('id').single();
+    await _client.from('candidaturas').insert({
+      'candidato_id': candidato['id'] as int,
+      'vaga_id': vagaId,
+      'status': 'INSCRITO',
+      'salario_esperado': 0,
+      'tipo_origem': 'INDICACAO',
+      'indicado_por_id': colaboradorId,
+    });
+  }
 }

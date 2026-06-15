@@ -95,15 +95,32 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     return slots;
   }
 
-  // Na screen, troque o getter _slotsOcupados:
   Set<String> get _slotsOcupados {
     if (_dataSelecionada == null) return {};
     return _agendamentos
         .where(
           (a) => a.data == _dataSelecionada && a.status != 'CANCELADO',
-        ) // ← qualquer status ativo ocupa o slot
+        )
         .map((a) => a.horario)
         .toSet();
+  }
+
+  /// Slots que já passaram no horário (só relevante se _dataSelecionada for hoje)
+  Set<String> get _slotsPassados {
+    if (_dataSelecionada == null) return {};
+    final agora = DateTime.now();
+    final hojeStr =
+        '${agora.year}-${agora.month.toString().padLeft(2, '0')}-${agora.day.toString().padLeft(2, '0')}';
+    if (_dataSelecionada != hojeStr) return {};
+    // Bloqueia slots cujo horário já passou
+    return _todosSlots.where((slot) {
+      final partes = slot.split(':');
+      final slotDt = DateTime(
+        agora.year, agora.month, agora.day,
+        int.parse(partes[0]), int.parse(partes[1]),
+      );
+      return slotDt.isBefore(agora);
+    }).toSet();
   }
 
   List<MassoterapiaAgendamentoModel> get _agendamentosDoDia {
@@ -637,6 +654,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
 
   Widget _buildGradeHorarios() {
     final ocupados = _slotsOcupados;
+    final passados = _slotsPassados;
     final bloqueado = _setorLotado;
 
     return Column(
@@ -646,6 +664,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           'Manhã',
           _todosSlots.take(16).toList(),
           ocupados,
+          passados,
           bloqueado,
         ),
         const SizedBox(height: 16),
@@ -653,6 +672,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           'Tarde',
           _todosSlots.skip(16).toList(),
           ocupados,
+          passados,
           bloqueado,
         ),
       ],
@@ -663,6 +683,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     String label,
     List<String> slots,
     Set<String> ocupados,
+    Set<String> passados,
     bool bloqueado,
   ) {
     return Column(
@@ -683,8 +704,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           runSpacing: 8,
           children: slots.map((slot) {
             final ocupado = ocupados.contains(slot);
+            final passado = passados.contains(slot);
             final selecionado = slot == _horarioSelecionado;
-            final disponivel = !ocupado && !bloqueado;
+            final disponivel = !ocupado && !passado && !bloqueado;
 
             Color bgColor;
             Color txtColor;
@@ -694,11 +716,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
               bgColor = AppColors.laranja;
               txtColor = Colors.white;
               border = null;
-            } else if (ocupado) {
-              bgColor = Colors.grey.shade100;
-              txtColor = Colors.grey.shade400;
-              border = null;
-            } else if (bloqueado) {
+            } else if (ocupado || passado || bloqueado) {
               bgColor = Colors.grey.shade100;
               txtColor = Colors.grey.shade400;
               border = null;
@@ -736,8 +754,12 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                   slot,
                   style: GoogleFonts.poppins(
                     fontSize: 13,
-                    fontWeight: selecionado ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight:
+                        selecionado ? FontWeight.w700 : FontWeight.w500,
                     color: txtColor,
+                    decoration: passado
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
                   ),
                 ),
               ),

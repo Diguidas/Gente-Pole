@@ -18,6 +18,8 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   late Future<List<AniversarianteModel>> _future;
   late Future<List<Map<String, dynamic>>> _futureMensagens;
 
+  late Future<Map<String, dynamic>?> _futureMensagemEmpresa;
+
   final Set<int> _jaParabenisei = {};
 
   @override
@@ -26,6 +28,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     _tabCtrl = TabController(length: 2, vsync: this);
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
+    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
   }
 
   @override
@@ -37,6 +40,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   void _recarregar() => setState(() {
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
+    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
   });
 
   // ─── Build principal ─────────────────────────────────────────────────────────
@@ -281,160 +285,227 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   // ─── Aba 2: Mensagens ────────────────────────────────────────────────────────
 
   Widget _buildAbaMensagens() {
-    final meuId = _api.colaboradorAtual?.id;
     final aniv = _meuAniversario();
     final ehAniversarioHoje =
         aniv != null &&
         DateTime.now().day == aniv.dia &&
         DateTime.now().month == aniv.mes;
 
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _futureMensagens,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.magenta),
-          );
-        }
+    if (!ehAniversarioHoje) return _buildAguardarSeuDia();
 
-        // Não é aniversário hoje
-        if (!ehAniversarioHoje) {
-          return _buildAguardarSeuDia();
-        }
+    return RefreshIndicator(
+      color: AppColors.magenta,
+      onRefresh: () async => setState(() {
+        _futureMensagens = _api.buscarMensagensParabens();
+        _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+      }),
+      child: FutureBuilder<List<dynamic>>(
+        future: Future.wait([_futureMensagemEmpresa, _futureMensagens]),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.magenta),
+            );
+          }
 
-        final mensagens = snap.data ?? [];
+          final msgEmpresa = snap.data?[0] as Map<String, dynamic>?;
+          final mensagens =
+              (snap.data?[1] as List<Map<String, dynamic>>?) ?? [];
+          final nome = _api.colaboradorAtual?.primeiroNome ?? '';
 
-        // É aniversário mas não tem mensagens
-        if (mensagens.isEmpty) {
-          return _buildFelicitacaoPropria();
-        }
+          return CustomScrollView(
+            slivers: [
+              // ── Card Gente & Cultura sempre no topo ───────────────────────
+              if (msgEmpresa != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                    child: _cardEmpresa(msgEmpresa, nome),
+                  ),
+                ),
 
-        // Tem mensagens — exibe lista
-        return RefreshIndicator(
-          color: AppColors.magenta,
-          onRefresh: () async =>
-              setState(() => _futureMensagens = _api.buscarMensagensParabens()),
-          child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-            itemCount: mensagens.length + 1, // +1 para o header
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (ctx, i) {
-              if (i == 0) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Banner topo
-                    Container(
-                      padding: const EdgeInsets.all(20),
+              // ── Seção mensagens dos colegas ───────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                  child: Text(
+                    'Os Polevalentes desejam:',
+                    style: AppTextStyles.labelSecao,  
+                  ),
+                ),
+              ),
+
+              if (mensagens.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFF6B00), Color(0xFFE91E8C)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                        color: AppColors.magentaOp15,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.magentaOp18),
+                      ),
+                      child: Text(
+                        'As mensagens dos seus colegas aparecerão aqui ao longo do dia. 🎂',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.corpoMenor.copyWith(
+                          color: AppColors.magenta,
+                          height: 1.5,
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const Text('🎂', style: TextStyle(fontSize: 36)),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Feliz aniversário! 🎉',
-                                  style: AppTextStyles.corpoBranco.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                Text(
-                                  '${mensagens.length} pessoa${mensagens.length != 1 ? 's' : ''} te parabenizou!',
-                                  style: AppTextStyles.corpoBranco.copyWith(
-                                    color: const Color(0xD9FFFFFF),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Mensagens recebidas',
-                      style: AppTextStyles.labelSecao,
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _cardMensagem(mensagens[i]),
+                      ),
+                      childCount: mensagens.length,
                     ),
-                    const SizedBox(height: 4),
-                  ],
-                );
-              }
-
-              final msg = mensagens[i - 1];
-              final remetente = msg['remetente_nome'] as String? ?? 'Colega';
-              final setor = msg['remetente_setor'] as String?;
-              final texto = msg['mensagem'] as String? ?? '';
-              final criadoEm = msg['criado_em'] as String? ?? '';
-              final hora = criadoEm.length >= 16
-                  ? criadoEm.substring(11, 16)
-                  : '';
-
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x08000000),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+                  ),
                 ),
-                child: Row(
+
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _cardEmpresa(Map<String, dynamic> msgEmpresa, String nome) {
+    final titulo =
+        (msgEmpresa['titulo'] as String? ?? '').replaceAll('{nome}', nome);
+    final corpo = msgEmpresa['corpo'] as String? ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4EC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.laranja.withOpacity(0.35)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10E65C00),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.laranja.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text('🧡', style: TextStyle(fontSize: 18)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AvatarColaborador(fotoUrl: null, nome: remetente, raio: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  remetente,
-                                  style: AppTextStyles.corpoMedio,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (hora.isNotEmpty)
-                                Text(hora, style: AppTextStyles.corpoMinimo),
-                            ],
-                          ),
-                          if (setor != null)
-                            Text(setor, style: AppTextStyles.corpoMinimo),
-                          const SizedBox(height: 6),
-                          Text(
-                            texto,
-                            style: AppTextStyles.corpoCinza.copyWith(
-                              color: AppColors.dark,
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      titulo,
+                      style: AppTextStyles.tituloMedio.copyWith(
+                        fontSize: 15,
+                        color: AppColors.laranja,
                       ),
                     ),
+                    Text('Gente & Cultura', style: AppTextStyles.corpoMinimo),
                   ],
                 ),
-              );
-            },
+              ),
+            ],
           ),
-        );
-      },
+          const SizedBox(height: 14),
+          Text(
+            corpo,
+            style: AppTextStyles.corpoNormal.copyWith(
+              height: 1.55,
+              color: const Color(0xFF4A3728),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardMensagem(Map<String, dynamic> msg) {
+    final remetente = msg['remetente_nome'] as String? ?? 'Colega';
+    final setor = msg['remetente_setor'] as String?;
+    final fotoUrl = msg['remetente_foto_url'] as String?;
+    final texto = msg['mensagem'] as String? ?? '';
+    final criadoEm = msg['criado_em'] as String? ?? '';
+    final hora = criadoEm.length >= 16 ? criadoEm.substring(11, 16) : '';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AvatarColaborador(fotoUrl: fotoUrl, nome: remetente, raio: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        remetente,
+                        style: AppTextStyles.corpoMedio,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (hora.isNotEmpty)
+                      Text(hora, style: AppTextStyles.corpoMinimo),
+                  ],
+                ),
+                if (setor != null)
+                  Text(setor, style: AppTextStyles.corpoMinimo),
+                const SizedBox(height: 6),
+                Text(
+                  texto,
+                  style: AppTextStyles.corpoCinza.copyWith(
+                    color: AppColors.dark,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -492,55 +563,6 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   : 'No seu aniversário, as mensagens dos seus colegas aparecerão aqui.',
               textAlign: TextAlign.center,
               style: AppTextStyles.corpoCinza.copyWith(height: 1.5),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ─── Felicitação própria (aniversário hoje, sem mensagens ainda) ─────────────
-
-  Widget _buildFelicitacaoPropria() {
-    final nome = _api.colaboradorAtual?.primeiroNome ?? 'você';
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🎉🎂🎉', style: TextStyle(fontSize: 40)),
-            const SizedBox(height: 20),
-            Text(
-              'Feliz aniversário, $nome!',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.tituloGrande.copyWith(fontSize: 20),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Que este novo ciclo traga muita saúde,\nalegria e conquistas. Você merece! ✨',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.corpoNormal.copyWith(
-                color: AppColors.cinzaTexto,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.magentaOp15,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.magentaOp18),
-              ),
-              child: Text(
-                'As mensagens dos seus colegas\naparecerão aqui ao longo do dia.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.corpoMenor.copyWith(
-                  color: AppColors.magenta,
-                  height: 1.5,
-                ),
-              ),
             ),
           ],
         ),
@@ -941,7 +963,7 @@ class _ModalParabensState extends State<_ModalParabens> {
             Row(
               children: [
                 AvatarColaborador(
-                  fotoUrl: null,
+                  fotoUrl: a.colaborador.fotoUrl,
                   nome: a.colaborador.nome,
                   raio: 26,
                 ),

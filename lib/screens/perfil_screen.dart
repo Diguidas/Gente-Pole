@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../core/app_theme.dart';
 import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
@@ -13,8 +15,10 @@ class PessoasScreen extends StatefulWidget {
 
 class _PessoasScreenState extends State<PessoasScreen> {
   final _api = ApiService();
+  final _picker = ImagePicker();
   ColaboradorModel? _supervisor;
   bool _loadingSupervisor = false;
+  bool _uploadandoFoto = false;
 
   @override
   void initState() {
@@ -32,6 +36,98 @@ class _PessoasScreenState extends State<PessoasScreen> {
         _supervisor = sup;
         _loadingSupervisor = false;
       });
+  }
+
+  Future<void> _escolherFoto() async {
+    final origem = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.cinzaTextoOp30,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Alterar foto de perfil', style: AppTextStyles.tituloMedio),
+            const SizedBox(height: 20),
+            _opcaoFoto(
+              Icons.camera_alt_outlined,
+              'Tirar foto',
+              () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            const SizedBox(height: 12),
+            _opcaoFoto(
+              Icons.photo_library_outlined,
+              'Escolher da galeria',
+              () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (origem == null) return;
+
+    final arquivo = await _picker.pickImage(
+      source: origem,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 85,
+    );
+    if (arquivo == null) return;
+
+    final bytes = await arquivo.readAsBytes();
+
+    setState(() => _uploadandoFoto = true);
+    final url = await _api.uploadFotoPerfil(bytes);
+    if (mounted) {
+      setState(() => _uploadandoFoto = false);
+      if (url == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Erro ao salvar foto. Tente novamente.',
+              style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _opcaoFoto(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.laranjaOp08,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.laranja, size: 22),
+            const SizedBox(width: 14),
+            Text(label, style: AppTextStyles.corpoNormal),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -93,7 +189,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                         children: [
                           // Avatar + nome + cargo
                           const SizedBox(height: 28),
-                          _avatar(c, raio: 40),
+                          _avatarEditavel(c),
                           const SizedBox(height: 14),
                           Text(
                             c.nome,
@@ -185,6 +281,51 @@ class _PessoasScreenState extends State<PessoasScreen> {
 
   Widget _avatar(ColaboradorModel c, {double raio = 22}) {
     return AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: raio);
+  }
+
+  Widget _avatarEditavel(ColaboradorModel c) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        _uploadandoFoto
+            ? Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(
+                  color: AppColors.laranjaOp15,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.laranja,
+                    strokeWidth: 2,
+                  ),
+                ),
+              )
+            : AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: 40),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: _uploadandoFoto ? null : _escolherFoto,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppColors.laranja,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.camera_alt_rounded,
+                color: Colors.white,
+                size: 14,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _itemInfo(IconData icon, String label, String valor) =>

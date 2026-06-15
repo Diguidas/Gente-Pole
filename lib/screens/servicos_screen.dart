@@ -3,6 +3,7 @@ import 'package:gentepole/screens/feedback/feedback_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
+import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
@@ -189,25 +190,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
                           const SizedBox(height: 14),
 
-                          // ── Massoterapia ─────────────────────────────────
-                          _botaoServico(
-                            context,
-                            icone: Icons.self_improvement_rounded,
-                            titulo: 'Massoterapia',
-                            subtitulo: 'Agende sua sessão de bem-estar',
-                            cor: AppColors.magenta,
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const MassoterapiaScreen(),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 14),
-
-                          // ── Feedback ──────────────────────────────────────────────────────
+                          // ── Feedback ─────────────────────────────────────
                           _botaoServico(
                             context,
                             icone: Icons.forum_outlined,
@@ -225,7 +208,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
                           const SizedBox(height: 14),
 
-                          // ── Pesquisas ─────────────────────────────────────────────────────
+                          // ── Pesquisas ────────────────────────────────────
                           _botaoServico(
                             context,
                             icone: Icons.poll_outlined,
@@ -237,6 +220,60 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const PesquisaListScreen(),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // ── Bem na Pole ──────────────────────────────────
+                          Text(
+                            'Bem na Pole',
+                            style: AppTextStyles.corpoMenor.copyWith(
+                              color: AppColors.magenta,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _botaoServico(
+                            context,
+                            icone: Icons.self_improvement_rounded,
+                            titulo: 'Massoterapia',
+                            subtitulo: 'Agende sua sessão de bem-estar',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MassoterapiaScreen(),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // ── Eu Crio Oportunidades ─────────────────────────
+                          Text(
+                            'Eu Crio Oportunidades',
+                            style: AppTextStyles.corpoMenor.copyWith(
+                              color: const Color(0xFF10B981),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _botaoServico(
+                            context,
+                            icone: Icons.volunteer_activism_outlined,
+                            titulo: 'Eu Crio Oportunidades',
+                            subtitulo: 'Candidate-se ou indique para vagas abertas',
+                            cor: const Color(0xFF10B981),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EuCrioOportunidadesScreen(),
                               ),
                             ),
                           ),
