@@ -6,6 +6,7 @@ import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'main_layout.dart';
 import 'massoterapia/admin_massoterapia_screen.dart';
+import 'nutricionista/admin_nutricionista_screen.dart';
 
 // ─── Tokens visuais alinhados ao web ────────────────────────────────────────
 // Mesmos valores usados no login_screen.dart do sistema web.
@@ -153,9 +154,13 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
         if (!mounted) return;
+        final tipo = fornecedor['tipo'] as String?;
+        final Widget telaFornecedor = tipo == 'nutricionista'
+            ? const AdminNutricionistaScreen()
+            : const AdminMassoterapiaScreen();
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const AdminMassoterapiaScreen()),
+          MaterialPageRoute(builder: (_) => telaFornecedor),
         );
         return;
       }

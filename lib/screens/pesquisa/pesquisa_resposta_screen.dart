@@ -294,8 +294,8 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
           const SizedBox(height: 14),
 
           // Resposta conforme o tipo
-          if (tipo == 'texto_livre') _respostaTexto(id),
-          if (tipo == 'multipla_escolha') _respostaMultipla(id, opcoes),
+          if (tipo == 'texto' || tipo == 'texto_livre') _respostaTexto(id),
+          if (tipo == 'multipla_escolha' || tipo == 'checkbox') _respostaMultipla(id, opcoes),
           if (tipo == 'escala') _respostaEscala(id, escalaMin, escalaMax),
           if (tipo == 'sim_nao') _respostaSimNao(id),
         ],

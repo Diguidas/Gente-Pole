@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:gentepole/models/comunicado_model.dart';
+import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/models/lojinha_model.dart';
 import 'package:gentepole/models/massoterapia_model.dart';
 import 'package:gentepole/models/vaga_model.dart';
+import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/colaborador_model.dart';
@@ -228,24 +230,35 @@ class ApiService {
     final meusAgrupamentos =
         (membros as List).map((e) => e['agrupamento_id'] as int).toSet();
 
+    List<dynamic> _parseList(dynamic raw) {
+      if (raw == null) return [];
+      if (raw is List) return raw;
+      if (raw is String) {
+        try {
+          final decoded = jsonDecode(raw);
+          return decoded is List ? decoded : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [];
+    }
+
     return lista.where((item) {
       final tipo = item['tipo_destinatario'] as String? ?? 'todos';
       switch (tipo) {
         case 'todos':
           return true;
         case 'setor':
-          final setores = item['setores_alvo'];
-          if (setores == null) return false;
-          return (setores as List).contains(colab.setor);
+          return _parseList(item['setores_alvo']).contains(colab.setor);
         case 'colaboradores':
-          final colabs = item['colaboradores_alvo'];
-          if (colabs == null) return false;
-          return (colabs as List).contains(colab.id);
+          final colabs = _parseList(item['colaboradores_alvo']);
+          return colabs.contains(colab.id) ||
+              colabs.contains(colab.id.toString());
         case 'agrupamentos':
-          final grupos = item['agrupamentos_alvo'];
-          if (grupos == null) return false;
-          return (grupos as List)
-              .any((g) => meusAgrupamentos.contains(g as int));
+          final grupos = _parseList(item['agrupamentos_alvo']);
+          return grupos.any((g) => meusAgrupamentos.contains(
+              g is int ? g : int.tryParse(g.toString()) ?? -1));
         default:
           return true;
       }
@@ -316,6 +329,16 @@ class ApiService {
   // ─── Vagas do gestor ──────────────────────────────────────────────────────────
 
   /// Cria requisição de vaga. Envia com status_requisicao = AGUARDANDO_APROVACAO_RH
+  /// Retorna os templates ativos cadastrados pelo RH.
+  Future<List<Map<String, dynamic>>> listarTemplatesGestor() async {
+    final res = await _client
+        .from('ats_templates')
+        .select('id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao')
+        .eq('ativo', true)
+        .order('titulo');
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   Future<bool> solicitarVaga(VagaModel vaga) async {
     try {
       await _client.from('vagas').insert(vaga.toInsertMap());
@@ -537,9 +560,8 @@ class ApiService {
   // Import necessário no topo do arquivo:
   //   import '../models/massoterapia_model.dart';
 
-  /// Retorna APENAS o próximo dia disponível para massoterapia,
-  /// respeitando a regra de 24h de antecedência:
-  /// o dia só aparece a partir das 00h do dia anterior.
+  /// Retorna APENAS o próximo dia disponível para massoterapia.
+  /// Inclui hoje se o dia da semana estiver ativo.
   Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
     final configDias = await _client
         .from('massoterapia_dias_disponiveis')
@@ -553,11 +575,10 @@ class ApiService {
     if (diasAtivos.isEmpty) return [];
 
     final agora = DateTime.now();
-    // Só mostra dias que ainda são "amanhã ou depois" (24h de antecedência)
-    final amanha = DateTime(agora.year, agora.month, agora.day + 1);
+    final hoje = DateTime(agora.year, agora.month, agora.day);
 
     for (var i = 0; i < 14; i++) {
-      final d = amanha.add(Duration(days: i));
+      final d = hoje.add(Duration(days: i));
       if (diasAtivos.contains(d.weekday)) {
         final str =
             '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -959,9 +980,13 @@ class ApiService {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return false;
     try {
+      final hoje = DateTime.now();
+      final dataStr =
+          '${hoje.year}-${hoje.month.toString().padLeft(2, "0")}-${hoje.day.toString().padLeft(2, "0")}';
       await _client.from('humor_registros').insert({
         'colaborador_id': meuId,
         'nivel': nivel,
+        'data': dataStr,
         if (motivo != null && motivo.isNotEmpty) 'motivo': motivo,
       });
       return true;
@@ -1227,4 +1252,409 @@ class ApiService {
       'indicado_por_id': colaboradorId,
     });
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+// ADICIONAR NO api_service.dart — cole cada bloco na seção correspondente
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── Nutricionista ───────────────────────────────────────────────────────────
+// Cole após os métodos de massoterapia
+
+  Future<List<String>> buscarDiasDisponiveisNutricionista() async {
+    // Reutiliza a mesma tabela de configuração de dias disponíveis.
+    // Crie uma tabela nutricionista_config_dias (data DATE, ativo BOOL)
+    // ou use a lógica de dias úteis que já existe na massoterapia.
+    // Ajuste a query abaixo conforme seu schema:
+    final hoje = DateTime.now();
+    final hojeStr =
+        '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
+
+    final data = await _client
+        .from('nutricionista_config_dias')
+        .select('data')
+        .eq('ativo', true)
+        .gte('data', hojeStr)
+        .order('data', ascending: true);
+
+    return (data as List).map((e) => e['data'] as String).toList();
+  }
+
+  Future<List<NutricionistaAgendamentoModel>> buscarAgendamentosNutricionista() async {
+    // Busca os agendamentos dos próximos 30 dias para montar a grade de horários.
+    final hoje = DateTime.now();
+    final limite = hoje.add(const Duration(days: 30));
+    final hojeStr =
+        '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
+    final limiteStr =
+        '${limite.year}-${limite.month.toString().padLeft(2, '0')}-${limite.day.toString().padLeft(2, '0')}';
+
+    final data = await _client
+        .from('nutricionista_agendamentos')
+        .select('*, colaboradores(nome, matricula, setor)')
+        .gte('data', hojeStr)
+        .lte('data', limiteStr)
+        .neq('status', 'CANCELADO')
+        .order('data', ascending: true)
+        .order('horario', ascending: true);
+    // assinatura_url já vem no select '*'
+
+    return (data as List)
+        .map((e) => NutricionistaAgendamentoModel.fromJson(
+            e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<bool> agendarNutricionista({
+    required String data,
+    required String horario,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('nutricionista_agendamentos').insert({
+        'colaborador_id': meuId,
+        'matricula': colaboradorAtual!.matricula,
+        'data': data,
+        'horario': horario,
+        'status': 'AGENDADO',
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> cancelarNutricionista(int agendamentoId) async {
+    try {
+      await _client
+          .from('nutricionista_agendamentos')
+          .update({'status': 'CANCELADO'}).eq('id', agendamentoId);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> atualizarPresencaNutricionista({
+    required int id,
+    required String status,
+    String? assinaturaUrl,
+  }) async {
+    try {
+      final dados = <String, dynamic>{'status': status};
+      if (assinaturaUrl != null) dados['assinatura_url'] = assinaturaUrl;
+      await _client
+          .from('nutricionista_agendamentos')
+          .update(dados)
+          .eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String> uploadAssinaturaNutricionista({
+    required int agendamentoId,
+    required Uint8List bytes,
+  }) async {
+    final path =
+        'nutricionista/$agendamentoId/${DateTime.now().millisecondsSinceEpoch}.png';
+    await _client.storage
+        .from('assinaturas-massoterapia')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/png',
+            upsert: true,
+          ),
+        );
+    return _client.storage
+        .from('assinaturas-massoterapia')
+        .getPublicUrl(path);
+  }
+
+// ─── Conexões do Bem ─────────────────────────────────────────────────────────
+// Cole após os métodos de nutricionista
+
+  Future<bool> salvarVoluntarioConexoes({
+    required String tamanho,
+    required String whatsapp,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('conexoes_voluntarios').insert({
+        'colaborador_id': meuId,
+        'matricula': colaboradorAtual!.matricula,
+        'tamanho_camisa': tamanho,
+        'whatsapp': whatsapp,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> buscarVoluntarioCadastrado() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return null;
+    try {
+      final res = await _client
+          .from('conexoes_voluntarios')
+          .select('id, tamanho_camisa, whatsapp, criado_em')
+          .eq('colaborador_id', meuId)
+          .maybeSingle();
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> salvarInstituicaoConexoes({
+    required String nome,
+    required String telefoneResponsavel,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('conexoes_instituicoes').insert({
+        'indicado_por_id': meuId,
+        'matricula': colaboradorAtual!.matricula,
+        'nome_instituicao': nome,
+        'telefone_responsavel': telefoneResponsavel,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+// ─── Ouvidoria ────────────────────────────────────────────────────────────────
+// Cole após os métodos de conexões
+
+  Future<bool> salvarOuvidoria({
+    required String ocorrido,
+    required String telefone,
+    required String sugestao,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('ouvidoria').insert({
+        'colaborador_id': meuId,
+        'matricula': colaboradorAtual!.matricula,
+        'ocorrido': ocorrido,
+        'telefone_contato': telefone,
+        'sugestao': sugestao.isEmpty ? null : sugestao,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+// ════════════════════════════════════════════════════════════════════════════
+// TRECHO PARA ADICIONAR AO api_service.dart
+// Cole os imports no topo do arquivo e os métodos dentro da classe ApiService,
+// na seção de Comunicados/Feed.
+// ════════════════════════════════════════════════════════════════════════════
+//
+// IMPORTS adicionais no topo:
+//   import 'dart:io';
+//   import '../models/feed_post_model.dart';
+//
+// ════════════════════════════════════════════════════════════════════════════
+ 
+// ─── Feed ─────────────────────────────────────────────────────────────────────
+ 
+  /// Busca os posts do feed mais recentes (paginado).
+  ///
+  /// Filtra por destinatário: o colaborador vê posts dirigidos a 'todos',
+  /// ao seu setor, ou diretamente a ele.
+  Future<List<FeedPostModel>> buscarFeed({int pagina = 0}) async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+
+    final data = await _client
+        .from('feed_posts')
+        .select('*, autor:colaboradores(nome, foto_url, cargo)')
+        .order('criado_em', ascending: false)
+        .range(pagina * 20, pagina * 20 + 39);
+
+    final posts = (data as List)
+        .map((e) => FeedPostModel.fromJson(e as Map<String, dynamic>))
+        .where((p) {
+          // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
+          if (p.tipo == 'comunicado') return false;
+          // O próprio autor sempre vê seus posts
+          if (p.autorId == colab.id) return true;
+          if (p.destinatario == 'todos') return true;
+          if (p.destinatario == '@setor:${colab.setor}') return true;
+          // Suporta '@colaborador:42' e '@colaborador:42|NOME'
+          if (p.destinatario.startsWith('@colaborador:${colab.id}|') ||
+              p.destinatario == '@colaborador:${colab.id}') return true;
+          return false;
+        })
+        .toList();
+
+    // Mescla comunicados da tabela comunicados (só na primeira página)
+    if (pagina == 0) {
+      final comData = await _client
+          .from('comunicados')
+          .select()
+          .order('criado_em', ascending: false)
+          .limit(30);
+
+      final filtrados = await _filtrarDestinatarios(
+        (comData as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+      );
+
+      final comunicados = filtrados.map((c) {
+        final titulo = c['titulo'] as String?;
+        final descricao = c['descricao'] as String?;
+        final conteudo = [
+          if (titulo != null && titulo.isNotEmpty) titulo,
+          if (descricao != null && descricao.isNotEmpty) descricao,
+        ].join('\n');
+        return FeedPostModel(
+          id: -(c['id'] as int),
+          autorId: null,
+          tipo: 'comunicado',
+          conteudo: conteudo.isNotEmpty ? conteudo : null,
+          imagemUrl: c['foto_url'] as String?,
+          destinatario: 'todos',
+          criadoEm: DateTime.parse(c['criado_em'] as String),
+        );
+      }).toList();
+
+      final tudo = [...posts, ...comunicados];
+      tudo.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
+      return tudo.take(40).toList();
+    }
+
+    return posts;
+  }
+ 
+  /// Cria um novo post no feed.
+  ///
+  /// [imagemBytes] e [imagemNome] são opcionais (post sem foto).
+  /// [destinatario] pode ser 'todos', '@setor:TI', '@colaborador:42'.
+  Future<bool> criarPost({
+    required String conteudo,
+    required String destinatario,
+    List<int>? imagemBytes,
+    String? imagemNome,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      String? imagemUrl;
+ 
+      // Faz upload da imagem se houver
+      if (imagemBytes != null && imagemNome != null) {
+        final ext = imagemNome.split('.').last.toLowerCase();
+        final caminho = 'posts/$meuId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        await _client.storage
+            .from('feed-imagens')
+            .uploadBinary(
+              caminho,
+              Uint8List.fromList(imagemBytes),
+              fileOptions: FileOptions(contentType: 'image/$ext', upsert: false),
+            );
+        imagemUrl = _client.storage.from('feed-imagens').getPublicUrl(caminho);
+      }
+ 
+      await _client.from('feed_posts').insert({
+        'autor_id': meuId,
+        'tipo': 'post',
+        'conteudo': conteudo.trim(),
+        'imagem_url': imagemUrl,
+        'destinatario': destinatario,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+ 
+  /// Exclui um post (só o próprio autor pode excluir).
+  Future<bool> excluirPost(int postId) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client
+          .from('feed_posts')
+          .delete()
+          .eq('id', postId)
+          .eq('autor_id', meuId);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+ 
+  /// Busca colaboradores e setores para o autocomplete de @menção.
+  ///
+  /// Retorna uma lista de Maps com 'tipo' ('colaborador' | 'setor'),
+  /// 'label' (texto exibido) e 'valor' (string gravada no campo destinatario).
+  Future<List<Map<String, String>>> buscarSugestoesMencao(String query) async {
+    if (query.isEmpty) return [];
+    final q = query.toLowerCase();
+ 
+    // Busca colaboradores
+    final colabs = await _client
+        .from('colaboradores')
+        .select('id, nome, cargo')
+        .ilike('nome', '%$q%')
+        .limit(6);
+ 
+    // Busca setores distintos
+    final setoresRaw = await _client
+        .from('colaboradores')
+        .select('setor')
+        .ilike('setor', '%$q%');
+ 
+    final setores = (setoresRaw as List)
+        .map((e) => e['setor'] as String?)
+        .whereType<String>()
+        .toSet() // deduplica
+        .take(4)
+        .toList();
+ 
+    final sugestoes = <Map<String, String>>[];
+ 
+    // Adiciona 'todos' se o query bater
+    if ('todos'.contains(q)) {
+      sugestoes.add({
+        'tipo': 'todos',
+        'label': 'Todos',
+        'sublabel': 'Todos os colaboradores',
+        'valor': 'todos',
+      });
+    }
+ 
+    for (final s in setores) {
+      sugestoes.add({
+        'tipo': 'setor',
+        'label': '@$s',
+        'sublabel': 'Setor',
+        'valor': '@setor:$s',
+      });
+    }
+ 
+    for (final c in (colabs as List)) {
+      sugestoes.add({
+        'tipo': 'colaborador',
+        'label': '@${c['nome']}',
+        'sublabel': c['cargo'] ?? '',
+        'valor': '@colaborador:${c['id']}',
+      });
+    }
+ 
+    return sugestoes;
+  }
+  
 }

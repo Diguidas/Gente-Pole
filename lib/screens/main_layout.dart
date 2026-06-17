@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:gentepole/screens/feed/feed_screen.dart';
 import '../core/app_theme.dart';
-import 'home_screen.dart';
-import 'comunicados_screen.dart';
 import 'aniversariante_screen.dart';
 import 'perfil_screen.dart';
 import 'servicos_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -15,7 +15,7 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
-  final Set<int> _visitadas = {0}; // Home já abre na primeira vez
+  final Set<int> _visitadas = {0};
 
   void _onTabTap(int index) {
     setState(() {
@@ -29,27 +29,42 @@ class _MainLayoutState extends State<MainLayout> {
 
     switch (index) {
       case 0:
-        return HomeScreen(
-          onVerComunicados: () => _onTabTap(1),
-        );
+        return const FeedScreen();
       case 1:
-        return const ComunicadosScreen();
-      case 2:
         return const AniversariantesScreen();
-      case 3:
+      case 2:
         return const ServicosScreen();
-      case 4:
+      case 3:
         return const PessoasScreen();
       default:
         return const SizedBox.shrink();
     }
   }
 
+  static Widget _navItem(IconData icon, String label, bool ativo) {
+    final cor = ativo ? AppColors.magenta : AppColors.cinzaTexto;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: cor),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 10,
+            color: cor,
+            fontWeight: ativo ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
-        children: List.generate(5, (index) {
+        children: List.generate(4, (index) {
           return Offstage(
             offstage: _selectedIndex != index,
             child: _buildPage(index),
@@ -63,31 +78,35 @@ class _MainLayoutState extends State<MainLayout> {
         unselectedItemColor: AppColors.cinzaTexto,
         type: BottomNavigationBarType.fixed,
         elevation: 12,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home_rounded),
-            label: 'Início',
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
+        items: [
+          const BottomNavigationBarItem(
+            icon: ImageIcon(
+              AssetImage('assets/pole+conectada.png'),
+              size: 50,
+            ),
+            activeIcon: ImageIcon(
+              AssetImage('assets/pole+conectada.png'),
+              size: 50,
+              color: AppColors.magenta,
+            ),
+            label: '',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.campaign_outlined),
-            activeIcon: Icon(Icons.campaign_rounded),
-            label: 'Comunicados',
+            icon: _navItem(Icons.cake_outlined, 'Parabéns', false),
+            activeIcon: _navItem(Icons.cake_rounded, 'Parabéns', true),
+            label: '',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.cake_outlined),
-            activeIcon: Icon(Icons.cake_rounded),
-            label: 'Parabéns',
+            icon: _navItem(Icons.grid_view_rounded, 'Serviços', false),
+            activeIcon: _navItem(Icons.grid_view_rounded, 'Serviços', true),
+            label: '',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.grid_view_rounded),
-            activeIcon: Icon(Icons.grid_view_rounded),
-            label: 'Serviços',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline_rounded),
-            activeIcon: Icon(Icons.people_rounded),
-            label: 'Perfil',
+            icon: _navItem(Icons.people_outline_rounded, 'Perfil', false),
+            activeIcon: _navItem(Icons.people_rounded, 'Perfil', true),
+            label: '',
           ),
         ],
       ),

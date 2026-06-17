@@ -14,6 +14,7 @@ class VagaModel {
   final int? requisitadoPorId;
   final String statusRequisicao;
   final DateTime createdAt;
+  final int? templateId;
 
   VagaModel({
     required this.id,
@@ -31,6 +32,7 @@ class VagaModel {
     this.requisitadoPorId,
     required this.statusRequisicao,
     required this.createdAt,
+    this.templateId,
   });
 
   factory VagaModel.fromJson(Map<String, dynamic> json) {
@@ -49,6 +51,7 @@ class VagaModel {
       tipoVaga: json['tipo_vaga'] ?? 'UNICA',
       requisitadoPorId: json['requisitado_por_id'] as int?,
       statusRequisicao: json['status_requisicao'] ?? 'APROVADA',
+      templateId: json['template_id'] as int?,
       createdAt: DateTime.parse(
         (json['created_at'] ?? json['criado_em']) as String,
       ),
@@ -70,6 +73,7 @@ class VagaModel {
       'tipo_vaga': tipoVaga,
       'requisitado_por_id': requisitadoPorId,
       'status_requisicao': 'AGUARDANDO_APROVACAO_RH',
+      if (templateId != null) 'template_id': templateId,
     };
   }
 }
