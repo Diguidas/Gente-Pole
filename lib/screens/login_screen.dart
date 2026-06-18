@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/app_theme.dart';
+import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import 'main_layout.dart';
 import 'massoterapia/admin_massoterapia_screen.dart';
 import 'nutricionista/admin_nutricionista_screen.dart';
@@ -35,7 +37,7 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   final _api = ApiService();
 
-  final _matriculaController = TextEditingController();
+  final _cpfController = TextEditingController();
   final _senhaController = TextEditingController();
   final _dataController = TextEditingController();
 
@@ -43,12 +45,17 @@ class _LoginScreenState extends State<LoginScreen>
     mask: '##/##/####',
     filter: {'#': RegExp(r'[0-9]')},
   );
+  final _cpfMask = MaskTextInputFormatter(
+    mask: '###.###.###-##',
+    filter: {'#': RegExp(r'[0-9]')},
+  );
 
-  // 0 = só matrícula | 1 = primeiro acesso | 2 = login normal
+  // 0 = só CPF | 1 = primeiro acesso | 2 = login normal
   int _etapa = 0;
   bool _carregando = false;
   bool _senhaVisivel = false;
   bool _ehFornecedor = false;
+  ColaboradorModel? _colaboradorEncontrado;
 
   late final AnimationController _animController;
   late final Animation<double> _fadeAnim;
@@ -66,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _animController.dispose();
-    _matriculaController.dispose();
+    _cpfController.dispose();
     _senhaController.dispose();
     _dataController.dispose();
     super.dispose();
@@ -75,19 +82,19 @@ class _LoginScreenState extends State<LoginScreen>
   // ─── Lógica (inalterada) ──────────────────────────────────────────────────
 
   Future<void> _continuar() async {
-    final matricula = _matriculaController.text.trim();
+    final cpf = _cpfController.text.trim();
 
     if (_etapa == 0) {
-      if (matricula.isEmpty) return;
+      if (cpf.isEmpty) return;
       setState(() => _carregando = true);
 
-      final resultado = await _api.verificarMatricula(matricula);
+      final resultado = await _api.verificarCpf(cpf);
 
       setState(() => _carregando = false);
 
       switch (resultado.status) {
         case 'NAO_ENCONTRADO':
-          _mostrarErro('Matrícula não encontrada.');
+          _mostrarErro('CPF não encontrado.');
         case 'FORNECEDOR':
           setState(() {
             _etapa = 2;
@@ -95,10 +102,16 @@ class _LoginScreenState extends State<LoginScreen>
           });
           _animController.forward(from: 0);
         case 'PRIMEIRO_ACESSO':
-          setState(() => _etapa = 1);
+          setState(() {
+            _etapa = 1;
+            _colaboradorEncontrado = resultado.colaborador;
+          });
           _animController.forward(from: 0);
         case 'CADASTRADO':
-          setState(() => _etapa = 2);
+          setState(() {
+            _etapa = 2;
+            _colaboradorEncontrado = resultado.colaborador;
+          });
           _animController.forward(from: 0);
       }
       return;
@@ -123,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _carregando = true);
 
       final ok = await _api.criarConta(
-        matricula: matricula,
+        matricula: _colaboradorEncontrado!.matricula,
         senha: senha,
         dataNascimento: dataFormatada,
       );
@@ -145,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (_ehFornecedor) {
         final fornecedor = await _api.loginFornecedor(
-          matricula: matricula,
+          matricula: cpf,
           senha: _senhaController.text,
         );
         setState(() => _carregando = false);
@@ -166,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       final ok = await _api.validarLogin(
-        matricula: matricula,
+        matricula: _colaboradorEncontrado!.matricula,
         senha: _senhaController.text,
       );
 
@@ -182,7 +195,8 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _irParaHome() async {
-    await _api.salvarSessao(_matriculaController.text.trim());
+    await _api.salvarSessao(_colaboradorEncontrado!.matricula);
+    await NotificationService.init();
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
@@ -197,7 +211,8 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() {
         _etapa = 0;
         _ehFornecedor = false;
-        _matriculaController.clear();
+        _colaboradorEncontrado = null;
+        _cpfController.clear();
         _senhaController.clear();
         _dataController.clear();
       });
@@ -356,12 +371,13 @@ class _LoginScreenState extends State<LoginScreen>
 
                   const SizedBox(height: 28),
 
-                  // ── Campo matrícula ─────────────────────────────────────
+                  // ── Campo CPF ───────────────────────────────────────────
                   _campo(
-                    controller: _matriculaController,
-                    label: 'Matrícula',
+                    controller: _cpfController,
+                    label: 'CPF',
                     icon: Icons.badge_outlined,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [_cpfMask],
                     enabled: _etapa == 0,
                   ),
 
@@ -437,7 +453,7 @@ class _LoginScreenState extends State<LoginScreen>
                       child: TextButton(
                         onPressed: _resetar,
                         child: Text(
-                          'Usar outra matrícula',
+                          'Usar outro CPF',
                           style: GoogleFonts.poppins(
                             color: AppColors.cinzaTexto,
                             fontSize: 13,

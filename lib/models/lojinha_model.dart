@@ -12,6 +12,7 @@ class LojinhaProdutoModel {
   final String? categoria;
   final String? linha;
   final String? grupo;
+  final String? fotoUrl;
 
   LojinhaProdutoModel({
     required this.id,
@@ -25,6 +26,7 @@ class LojinhaProdutoModel {
     this.categoria,
     this.linha,
     this.grupo,
+    this.fotoUrl,
   });
 
   factory LojinhaProdutoModel.fromJson(Map<String, dynamic> j) =>
@@ -40,6 +42,7 @@ class LojinhaProdutoModel {
         categoria:     j['categoria'] as String?,
         linha:         j['linha'] as String?,
         grupo:         j['grupo'] as String?,
+        fotoUrl:       j['foto_url'] as String?,
       );
 }
 

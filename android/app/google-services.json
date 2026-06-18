@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "118477759593",
+    "project_id": "gente-pole",
+    "storage_bucket": "gente-pole.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:118477759593:android:3722bcc59b5d3667e4aef8",
+        "android_client_info": {
+          "package_name": "com.example.gentepole"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8GTgG7qe1hVlclF1wT9U8t6gwN_zIge0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

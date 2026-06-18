@@ -752,38 +752,95 @@ class _IndicarSheet extends StatefulWidget {
 }
 
 class _IndicarSheetState extends State<_IndicarSheet> {
-  final _nomeCtrl = TextEditingController();
+  final _cpfCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  bool _enviando = false;
+
+  // Candidato encontrado após busca
+  Map<String, dynamic>? _candidatoEncontrado;
+
+  bool _buscando  = false;
+  bool _enviando  = false;
   String? _erro;
-  bool _sucesso = false;
+  bool _sucesso   = false;
 
   @override
   void dispose() {
-    _nomeCtrl.dispose();
+    _cpfCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _enviar() async {
+  void _onCpfChanged(String v) {
+    // Limpa resultado anterior quando o usuário edita o CPF
+    if (_candidatoEncontrado != null) setState(() => _candidatoEncontrado = null);
+
+    final digits = v.replaceAll(RegExp(r'\D'), '');
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length && i < 11; i++) {
+      if (i == 3 || i == 6) buf.write('.');
+      if (i == 9) buf.write('-');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    if (formatted != v) {
+      _cpfCtrl.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+  }
+
+  bool _cpfValido(String cpf) {
+    final d = cpf.replaceAll(RegExp(r'\D'), '');
+    if (d.length != 11 || RegExp(r'^(\d)\1+$').hasMatch(d)) return false;
+    int soma = 0;
+    for (int i = 0; i < 9; i++) soma += int.parse(d[i]) * (10 - i);
+    int r = (soma * 10) % 11;
+    if (r == 10 || r == 11) r = 0;
+    if (r != int.parse(d[9])) return false;
+    soma = 0;
+    for (int i = 0; i < 10; i++) soma += int.parse(d[i]) * (11 - i);
+    r = (soma * 10) % 11;
+    if (r == 10 || r == 11) r = 0;
+    return r == int.parse(d[10]);
+  }
+
+  Future<void> _buscar() async {
     if (!_formKey.currentState!.validate()) return;
-    final colaborador = widget.api.colaboradorAtual;
-    if (colaborador == null) return;
-
-    setState(() {
-      _enviando = true;
-      _erro = null;
-    });
-
+    setState(() { _buscando = true; _erro = null; _candidatoEncontrado = null; });
     try {
-      await widget.api.indicarCandidato(
+      final cpf = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
+      final candidato = await widget.api.buscarCandidatoPorCpf(cpf);
+      if (!mounted) return;
+      if (candidato == null) {
+        setState(() => _erro = 'Nenhum candidato encontrado com este CPF.\nVerifique se ele já se cadastrou no portal.');
+      } else {
+        setState(() => _candidatoEncontrado = candidato);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _erro = 'Erro ao buscar candidato. Tente novamente.');
+    } finally {
+      if (mounted) setState(() => _buscando = false);
+    }
+  }
+
+  Future<void> _confirmarIndicacao() async {
+    final colaborador = widget.api.colaboradorAtual;
+    final candidato   = _candidatoEncontrado;
+    if (colaborador == null || candidato == null) return;
+
+    setState(() { _enviando = true; _erro = null; });
+    try {
+      await widget.api.vincularIndicacao(
+        candidatoId:   candidato['id'] as int,
+        vagaId:        widget.vaga.id,
         colaboradorId: colaborador.id,
-        vagaId: widget.vaga.id,
-        nomeIndicado: _nomeCtrl.text.trim(),
       );
       if (mounted) setState(() => _sucesso = true);
     } catch (e) {
       if (mounted) {
-        setState(() => _erro = 'Erro ao enviar indicação. Tente novamente.');
+        setState(() => _erro = e.toString().contains('já indicado')
+            ? 'Este candidato já possui uma indicação para esta vaga.'
+            : 'Erro ao registrar indicação. Tente novamente.');
       }
     } finally {
       if (mounted) setState(() => _enviando = false);
@@ -793,171 +850,218 @@ class _IndicarSheetState extends State<_IndicarSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        child: _sucesso
-            ? _buildSucesso()
-            : Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2)),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text('Indicar para a vaga',
-                        style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w700, fontSize: 17)),
-                    const SizedBox(height: 4),
-                    Text(widget.vaga.titulo,
-                        style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: const Color(0xFFF59E0B),
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 20),
+        child: _sucesso ? _buildSucesso() : _buildForm(),
+      ),
+    );
+  }
 
-                    Text('Nome do indicado',
-                        style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87)),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _nomeCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      style: GoogleFonts.poppins(fontSize: 14),
-                      decoration: InputDecoration(
-                        hintText: 'Nome completo',
-                        hintStyle: GoogleFonts.poppins(
-                            color: Colors.grey.shade400, fontSize: 14),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              BorderSide(color: Colors.grey.shade200),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              BorderSide(color: Colors.grey.shade200),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFFF59E0B), width: 1.5),
-                        ),
-                      ),
-                      validator: (v) => (v == null || v.trim().length < 3)
-                          ? 'Informe o nome completo'
-                          : null,
-                    ),
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Indicar para a vaga',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17)),
+          const SizedBox(height: 4),
+          Text(widget.vaga.titulo,
+              style: GoogleFonts.poppins(
+                  fontSize: 14, color: const Color(0xFFF59E0B), fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
 
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFFBEB),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color:
-                                const Color(0xFFF59E0B).withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline,
-                              size: 16, color: Color(0xFFF59E0B)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'O indicado deverá apresentar seu currículo na entrevista. O RH entrará em contato com ele.',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 11,
-                                  color: Colors.orange.shade800),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+          // Instrução
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 16, color: Color(0xFFF59E0B)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Informe o CPF do candidato que você quer indicar. Ele precisa ter se cadastrado no portal da Pole.',
+                    style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange.shade800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
 
-                    if (_erro != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(_erro!,
-                            style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                color: Colors.red.shade700)),
-                      ),
-                    ],
-
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _enviando ? null : _enviar,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFF59E0B),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: _enviando
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : Text('Enviar indicação',
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15)),
-                      ),
-                    ),
-                  ],
+          // Campo CPF + botão buscar
+          Text('CPF do candidato',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _cpfCtrl,
+                  keyboardType: TextInputType.number,
+                  onChanged: _onCpfChanged,
+                  style: GoogleFonts.poppins(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: '000.000.000-00',
+                    hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 14),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 1.5)),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Informe o CPF';
+                    if (!_cpfValido(v)) return 'CPF inválido';
+                    return null;
+                  },
                 ),
               ),
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _buscando ? null : _buscar,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                  child: _buscando
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text('Buscar',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+
+          // Candidato encontrado
+          if (_candidatoEncontrado != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: const Color(0xFF10B981).withOpacity(0.15),
+                    child: Text(
+                      (_candidatoEncontrado!['nome'] as String? ?? '?')[0].toUpperCase(),
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700, color: const Color(0xFF10B981)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_candidatoEncontrado!['nome'] as String? ?? '',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                        if ((_candidatoEncontrado!['area_interesse'] as String?)?.isNotEmpty == true)
+                          Text(_candidatoEncontrado!['area_interesse'] as String,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.check_circle_rounded,
+                      color: Color(0xFF10B981), size: 22),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _enviando ? null : _confirmarIndicacao,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF59E0B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _enviando
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text('Confirmar indicação',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ],
+
+          // Erro
+          if (_erro != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+              child: Text(_erro!,
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.red.shade700)),
+            ),
+          ],
+        ],
       ),
     );
   }
 
   Widget _buildSucesso() {
+    final nome = _candidatoEncontrado?['nome'] as String? ?? 'O candidato';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 16),
         const Text('🌟', style: TextStyle(fontSize: 52)),
         const SizedBox(height: 16),
-        Text('Indicação enviada!',
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700, fontSize: 18)),
+        Text('Indicação registrada!',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 18)),
         const SizedBox(height: 8),
         Text(
-          'Sua indicação de "${_nomeCtrl.text.trim()}" para "${widget.vaga.titulo}" foi registrada. Obrigado!',
+          '$nome foi vinculado como sua indicação para "${widget.vaga.titulo}".\nO RH verá seu nome como indicador.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(
-              fontSize: 13, color: Colors.grey.shade600),
+          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600),
         ),
         const SizedBox(height: 24),
         SizedBox(
@@ -967,12 +1071,10 @@ class _IndicarSheetState extends State<_IndicarSheet> {
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFF59E0B),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             child: Text('Fechar',
-                style: GoogleFonts.poppins(
-                    color: Colors.white, fontWeight: FontWeight.w600)),
+                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ),
         const SizedBox(height: 8),

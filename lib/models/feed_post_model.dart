@@ -19,6 +19,8 @@ class FeedPostModel {
   final String? imagemUrl;
   final String destinatario; // 'todos' | '@setor:NomeSetor' | '@colaborador:42'
   final DateTime criadoEm;
+  // 'aprovado' | 'pendente' | 'rejeitado' — só relevante para posts para 'todos'
+  final String status;
 
   const FeedPostModel({
     required this.id,
@@ -32,6 +34,7 @@ class FeedPostModel {
     this.imagemUrl,
     required this.destinatario,
     required this.criadoEm,
+    this.status = 'aprovado',
   });
 
   factory FeedPostModel.fromJson(Map<String, dynamic> json) {
@@ -50,6 +53,7 @@ class FeedPostModel {
       imagemUrl: json['imagem_url'] as String?,
       destinatario: json['destinatario'] as String? ?? 'todos',
       criadoEm: DateTime.parse(json['criado_em'] as String),
+      status: json['status'] as String? ?? 'aprovado',
     );
   }
 
@@ -81,8 +85,26 @@ class FeedPostModel {
     return '${criadoEm.day.toString().padLeft(2, '0')}/${criadoEm.month.toString().padLeft(2, '0')}';
   }
 
+  FeedPostModel copyWith({String? status}) => FeedPostModel(
+        id: id,
+        autorId: autorId,
+        autorNome: autorNome,
+        autorFotoUrl: autorFotoUrl,
+        autorCargo: autorCargo,
+        tipo: tipo,
+        titulo: titulo,
+        conteudo: conteudo,
+        imagemUrl: imagemUrl,
+        destinatario: destinatario,
+        criadoEm: criadoEm,
+        status: status ?? this.status,
+      );
+
   bool get isDoSistema => autorId == null;
   bool get temImagem => imagemUrl != null && imagemUrl!.isNotEmpty;
   bool get isAniversario =>
       tipo == 'aniversario' || tipo == 'aniversario_empresa';
+  bool get isPendente => status == 'pendente';
+  bool get isRejeitado => status == 'rejeitado';
+  bool get isAprovado => status == 'aprovado';
 }

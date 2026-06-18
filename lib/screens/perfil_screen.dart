@@ -140,12 +140,14 @@ class _PessoasScreenState extends State<PessoasScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Fundo gradiente
-          Container(
-            height: 220,
-            decoration: const BoxDecoration(
-              color: AppColors.laranja,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
+          ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(10)),
+            child: Image.asset(
+              'assets/banner_perfil.png',
+              height: 220,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
           ),
           SafeArea(
@@ -264,6 +266,50 @@ class _PessoasScreenState extends State<PessoasScreen> {
                               ),
                             ),
 
+                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            child: InkWell(
+                              onTap: () => _abrirAlterarSenha(context),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.laranjaOp08,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.laranja.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(Icons.lock_outline_rounded,
+                                          size: 18, color: AppColors.laranja),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Alterar senha',
+                                              style: AppTextStyles.corpoMedio),
+                                          Text('Atualize sua senha de acesso',
+                                              style: AppTextStyles.corpoMinimo),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right_rounded,
+                                        color: AppColors.laranja, size: 20),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                           const SizedBox(height: 8),
                         ],
                       ),
@@ -275,6 +321,158 @@ class _PessoasScreenState extends State<PessoasScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _abrirAlterarSenha(BuildContext context) {
+    final senhaAtualCtrl = TextEditingController();
+    final novaSenhaCtrl = TextEditingController();
+    final confirmaSenhaCtrl = TextEditingController();
+    bool enviando = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.cinzaTextoOp30,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('🔒 Alterar senha', style: AppTextStyles.tituloMedio),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: senhaAtualCtrl,
+                  obscureText: true,
+                  style: AppTextStyles.corpoNormal,
+                  decoration: const InputDecoration(
+                    labelText: 'Senha atual',
+                    prefixIcon: Icon(Icons.lock_outline_rounded),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: novaSenhaCtrl,
+                  obscureText: true,
+                  style: AppTextStyles.corpoNormal,
+                  decoration: const InputDecoration(
+                    labelText: 'Nova senha',
+                    prefixIcon: Icon(Icons.lock_reset_rounded),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: confirmaSenhaCtrl,
+                  obscureText: true,
+                  style: AppTextStyles.corpoNormal,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar nova senha',
+                    prefixIcon: Icon(Icons.lock_reset_rounded),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: enviando
+                        ? null
+                        : () async {
+                            final atual = senhaAtualCtrl.text.trim();
+                            final nova = novaSenhaCtrl.text.trim();
+                            final confirma = confirmaSenhaCtrl.text.trim();
+                            if (atual.isEmpty || nova.length < 6) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'A nova senha deve ter pelo menos 6 caracteres.',
+                                    style: AppTextStyles.corpoNormal
+                                        .copyWith(color: Colors.white),
+                                  ),
+                                  backgroundColor: Colors.red,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                              return;
+                            }
+                            if (nova != confirma) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'As senhas não conferem.',
+                                    style: AppTextStyles.corpoNormal
+                                        .copyWith(color: Colors.white),
+                                  ),
+                                  backgroundColor: Colors.red,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                              return;
+                            }
+                            setModalState(() => enviando = true);
+                            final ok = await _api.alterarSenha(
+                              senhaAtual: atual,
+                              novaSenha: nova,
+                            );
+                            if (!mounted) return;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok
+                                      ? 'Senha alterada com sucesso!'
+                                      : 'Senha atual incorreta.',
+                                  style: AppTextStyles.corpoNormal
+                                      .copyWith(color: Colors.white),
+                                ),
+                                backgroundColor:
+                                    ok ? AppColors.laranja : Colors.red,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.laranja,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                    ),
+                    child: enviando
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2),
+                          )
+                        : Text('Salvar', style: AppTextStyles.botaoPrimario),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

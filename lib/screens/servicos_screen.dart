@@ -75,11 +75,14 @@ class _ServicosScreenState extends State<ServicosScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          Container(
-            height: 200,
-            decoration: const BoxDecoration(
-              color: AppColors.laranja,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(28)),
+            child: Image.asset(
+              'assets/banner_servicos.png',
+              height: 200,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
           ),
           SafeArea(

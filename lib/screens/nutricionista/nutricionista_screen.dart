@@ -145,22 +145,21 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
         .toSet();
   }
 
+  // Horário de Brasília (UTC-3, sem DST), independe do fuso do dispositivo
+  static DateTime _brasilia() =>
+      DateTime.now().toUtc().subtract(const Duration(hours: 3));
+
   Set<String> get _slotsPassados {
     if (_dataSelecionada == null) return {};
-    final agora = DateTime.now();
+    final agora = _brasilia();
     final hojeStr =
         '${agora.year}-${agora.month.toString().padLeft(2, '0')}-${agora.day.toString().padLeft(2, '0')}';
     if (_dataSelecionada != hojeStr) return {};
     return _todosSlots.where((slot) {
       final partes = slot.split(':');
-      final slotDt = DateTime(
-        agora.year,
-        agora.month,
-        agora.day,
-        int.parse(partes[0]),
-        int.parse(partes[1]),
-      );
-      return slotDt.isBefore(agora);
+      final h = int.parse(partes[0]);
+      final m = int.parse(partes[1]);
+      return h < agora.hour || (h == agora.hour && m <= agora.minute);
     }).toSet();
   }
 
@@ -681,6 +680,30 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
                                 fontSize: 10,
                                 color: _cor,
                                 fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (souEu && a.status == 'AGENDADO') ...[
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: _salvando ? null : _cancelar,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: Colors.red.shade200, width: 1),
+                              ),
+                              child: Text(
+                                'Desmarcar',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  color: Colors.red.shade700,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),

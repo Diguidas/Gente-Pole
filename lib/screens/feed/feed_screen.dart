@@ -9,6 +9,7 @@ import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -30,18 +31,57 @@ class _FeedScreenState extends State<FeedScreen> {
   // Humor
   Map<String, dynamic>? _humorHoje;
 
+  // Exame periódico
+  Map<String, dynamic>? _exameAgendado;
+
+  RealtimeChannel? _statusChannel;
+
   @override
   void initState() {
     super.initState();
     _carregarFeed();
     _carregarHumor();
+    _carregarExame();
     _scrollCtrl.addListener(_onScroll);
+    _assinarStatusPosts();
   }
 
   @override
   void dispose() {
+    _statusChannel?.unsubscribe();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _assinarStatusPosts() {
+    final meuId = _api.colaboradorAtual?.id;
+    if (meuId == null) return;
+    _statusChannel = Supabase.instance.client
+        .channel('feed_status_$meuId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'feed_posts',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'autor_id',
+            value: meuId,
+          ),
+          callback: (payload) {
+            final novo = payload.newRecord;
+            final id = novo['id'] as int?;
+            final novoStatus = novo['status'] as String?;
+            if (id == null || novoStatus == null) return;
+            if (!mounted) return;
+            setState(() {
+              _posts = _posts.map((p) {
+                if (p.id == id) return p.copyWith(status: novoStatus);
+                return p;
+              }).toList();
+            });
+          },
+        )
+        .subscribe();
   }
 
   // ── Humor ─────────────────────────────────────────────────────────────────────
@@ -54,6 +94,14 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (_) {
       // falha silenciosa — card ainda é exibido
     }
+  }
+
+  Future<void> _carregarExame() async {
+    try {
+      final e = await _api.buscarProximoExamePeriodico();
+      if (!mounted) return;
+      setState(() => _exameAgendado = e);
+    } catch (_) {}
   }
 
   Future<void> _registrarHumor(int nivel) async {
@@ -215,11 +263,14 @@ class _FeedScreenState extends State<FeedScreen> {
       backgroundColor: const Color(0xFFF8F9FC),
       body: Stack(
         children: [
-          Container(
-            height: 220,
-            decoration: const BoxDecoration(
-              color: AppColors.laranja,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(28)),
+            child: Image.asset(
+              'assets/banner_app.png',
+              height: 220,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
           ),
           SafeArea(
@@ -251,11 +302,6 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           ],
                         ),
-                      ),
-                      _headerIcon(
-                        icon: Icons.lock_outline_rounded,
-                        tooltip: 'Alterar senha',
-                        onTap: () => _abrirAlterarSenha(context),
                       ),
                       _headerIcon(
                         icon: Icons.logout_rounded,
@@ -300,6 +346,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             onRefresh: () async {
                               await _carregarFeed(reiniciar: true);
                               await _carregarHumor();
+                              await _carregarExame();
                             },
                             child: ListView.builder(
                               controller: _scrollCtrl,
@@ -307,19 +354,25 @@ class _FeedScreenState extends State<FeedScreen> {
                                   const EdgeInsets.fromLTRB(16, 12, 16, 40),
                               itemCount: _posts.length +
                                   2 + // humor + composer
+                                  (_exameAgendado != null ? 1 : 0) +
                                   (_carregandoMais ? 1 : 0),
                               itemBuilder: (ctx, i) {
                                 // Item 0: humor card
                                 if (i == 0) return _buildHumorCard();
-                                // Item 1: composer inline
-                                if (i == 1) {
+                                // Item 1: exame card (se houver)
+                                if (i == 1 && _exameAgendado != null) {
+                                  return _buildExameCard(_exameAgendado!);
+                                }
+                                final offset = _exameAgendado != null ? 1 : 0;
+                                // Item 1 ou 2: composer inline
+                                if (i == 1 + offset) {
                                   return _InlineComposer(
                                     api: _api,
                                     onPublicado: () =>
                                         _carregarFeed(reiniciar: true),
                                   );
                                 }
-                                final postIdx = i - 2;
+                                final postIdx = i - 2 - offset;
                                 if (postIdx == _posts.length) {
                                   return const Padding(
                                     padding: EdgeInsets.all(24),
@@ -341,6 +394,108 @@ class _FeedScreenState extends State<FeedScreen> {
                           ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Exame Card ────────────────────────────────────────────────────────────────
+
+  Widget _buildExameCard(Map<String, dynamic> exame) {
+    final dataRaw = exame['data_agendamento'] as String?;
+    String dataFormatada = '—';
+    if (dataRaw != null) {
+      final dt = DateTime.tryParse(dataRaw);
+      if (dt != null) {
+        dataFormatada =
+            '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+      }
+    }
+    final clinica = exame['clinica'] as String?;
+    final obs = exame['observacoes'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFB923C).withOpacity(0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFB923C).withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFB923C).withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.medical_services_outlined,
+                color: Color(0xFFF97316), size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Exame Periódico Agendado',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFC2410C),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFB923C).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Lembrete',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFEA580C),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '📅  $dataFormatada${clinica != null ? '  ·  $clinica' : ''}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                if (obs != null && obs.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    obs,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: const Color(0xFF92400E).withOpacity(0.7)),
+                  ),
+                ],
               ],
             ),
           ),
@@ -440,132 +595,6 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // ── Modais ────────────────────────────────────────────────────────────────────
 
-  void _abrirAlterarSenha(BuildContext context) {
-    final senhaAtualCtrl = TextEditingController();
-    final novaSenhaCtrl = TextEditingController();
-    bool enviando = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding:
-              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.cinzaTexto.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text('🔒 Alterar senha', style: AppTextStyles.tituloMedio),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: senhaAtualCtrl,
-                  obscureText: true,
-                  style: AppTextStyles.corpoNormal,
-                  decoration: const InputDecoration(
-                    labelText: 'Senha atual',
-                    prefixIcon: Icon(Icons.lock_outline_rounded),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: novaSenhaCtrl,
-                  obscureText: true,
-                  style: AppTextStyles.corpoNormal,
-                  decoration: const InputDecoration(
-                    labelText: 'Nova senha',
-                    prefixIcon: Icon(Icons.lock_reset_rounded),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: enviando
-                        ? null
-                        : () async {
-                            final atual = senhaAtualCtrl.text.trim();
-                            final nova = novaSenhaCtrl.text.trim();
-                            if (atual.isEmpty || nova.length < 6) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Nova senha deve ter pelo menos 6 caracteres.',
-                                    style: AppTextStyles.corpoNormal
-                                        .copyWith(color: Colors.white),
-                                  ),
-                                  backgroundColor: Colors.red,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                              return;
-                            }
-                            setModalState(() => enviando = true);
-                            final ok = await _api.alterarSenha(
-                              senhaAtual: atual,
-                              novaSenha: nova,
-                            );
-                            if (!mounted) return;
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? 'Senha alterada com sucesso!'
-                                      : 'Senha atual incorreta.',
-                                  style: AppTextStyles.corpoNormal
-                                      .copyWith(color: Colors.white),
-                                ),
-                                backgroundColor:
-                                    ok ? AppColors.magenta : Colors.red,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                              ),
-                            );
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.magenta,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                    ),
-                    child: enviando
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2),
-                          )
-                        : Text('Salvar', style: AppTextStyles.botaoPrimario),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   void _confirmarSaida(BuildContext context) {
     showDialog(
       context: context,
@@ -575,7 +604,7 @@ class _FeedScreenState extends State<FeedScreen> {
             style: AppTextStyles.tituloPequeno
                 .copyWith(fontWeight: FontWeight.w600)),
         content: Text(
-            'Você precisará digitar sua matrícula e senha novamente.',
+            'Você precisará digitar seu CPF e senha novamente.',
             style: AppTextStyles.corpoNormal),
         actions: [
           TextButton(
@@ -820,6 +849,7 @@ class _InlineComposerState extends State<_InlineComposer> {
     if (ok) {
       _ctrl.clear();
       _ctrl.clearMentions();
+      final pendente = _destinatario == 'todos';
       setState(() {
         _imagemBytes = null;
         _imagemNome = null;
@@ -831,6 +861,16 @@ class _InlineComposerState extends State<_InlineComposer> {
       });
       _focusNode.unfocus();
       widget.onPublicado();
+      if (pendente && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Post enviado para aprovação do RH.',
+                style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+            backgroundColor: const Color(0xFFF59E0B),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } else {
       setState(() => _enviando = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1400,6 +1440,28 @@ class _PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Pill de status para posts do próprio usuário que estão pendentes ou rejeitados
+                if (meuId != null && post.autorId == meuId && !post.isAprovado)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: post.isPendente
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      post.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: post.isPendente
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFFB91C1C),
+                      ),
+                    ),
+                  ),
                 if (meuId != null && post.autorId == meuId)
                   PopupMenuButton<String>(
                     onSelected: (v) {

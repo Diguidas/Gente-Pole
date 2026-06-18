@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/feed/feed_screen.dart';
 import '../core/app_theme.dart';
+import '../core/app_navigator.dart';
 import 'aniversariante_screen.dart';
 import 'perfil_screen.dart';
 import 'servicos_screen.dart';
@@ -16,6 +17,20 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
   final Set<int> _visitadas = {0};
+
+  @override
+  void initState() {
+    super.initState();
+    AppNavigator.tabIndex.addListener(_onExternalTab);
+  }
+
+  @override
+  void dispose() {
+    AppNavigator.tabIndex.removeListener(_onExternalTab);
+    super.dispose();
+  }
+
+  void _onExternalTab() => _onTabTap(AppNavigator.tabIndex.value);
 
   void _onTabTap(int index) {
     setState(() {

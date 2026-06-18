@@ -1199,11 +1199,21 @@ class _CardProduto extends StatelessWidget {
               child: Stack(
                 children: [
                   Center(
-                    child: Icon(
-                      Icons.inventory_2_outlined,
-                      size: 44,
-                      color: AppColors.laranja.withOpacity(0.4),
-                    ),
+                    child: produto.fotoUrl != null
+                        ? Image.network(
+                            produto.fotoUrl!,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.inventory_2_outlined,
+                              size: 44,
+                              color: AppColors.laranja.withOpacity(0.4),
+                            ),
+                          )
+                        : Icon(
+                            Icons.inventory_2_outlined,
+                            size: 44,
+                            color: AppColors.laranja.withOpacity(0.4),
+                          ),
                   ),
                   if (produto.estoque > 0 && produto.estoque <= 3)
                     Positioned(

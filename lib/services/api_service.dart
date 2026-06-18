@@ -21,6 +21,19 @@ class ApiService {
 
   final _client = Supabase.instance.client;
 
+  // Horário de Brasília (UTC-3, sem DST desde 2019) — independe do fuso do dispositivo
+  static DateTime _brasilia() =>
+      DateTime.now().toUtc().subtract(const Duration(hours: 3));
+
+  // O app admin salva o horário de Brasília sem converter para UTC.
+  // O PostgreSQL armazena como UTC-3h (3h a menos do real).
+  // Compensamos adicionando 3h ao valor lido.
+  static DateTime _parseComunicadoTs(String s) {
+    final dt = DateTime.parse(s);
+    if (dt.isUtc) return dt.add(const Duration(hours: 3));
+    return dt.toUtc().add(const Duration(hours: 3));
+  }
+
   // ─── Sessão ──────────────────────────────────────────────────────────────────
 
   static const _kMatriculaKey = 'sessao_matricula';
@@ -59,21 +72,23 @@ class ApiService {
 
   // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-  Future<({String status, ColaboradorModel? colaborador})> verificarMatricula(
-    String matricula,
+  Future<({String status, ColaboradorModel? colaborador})> verificarCpf(
+    String cpf,
   ) async {
+    final cpfLimpo = cpf.replaceAll(RegExp(r'[^0-9]'), '');
+
     final resultColaborador = await _client
         .from('colaboradores')
         .select()
-        .eq('matricula', matricula)
+        .eq('cpf', cpfLimpo)
         .maybeSingle();
 
     if (resultColaborador == null) {
-      // Verifica se é um fornecedor (ex: massoterapeuta) cadastrado em usuarios_app
+      // Verifica se é um fornecedor cadastrado em usuarios_app (usa matricula)
       final resultFornecedor = await _client
           .from('usuarios_app')
           .select('id')
-          .eq('matricula', matricula.trim())
+          .eq('matricula', cpf.trim())
           .eq('ativo', true)
           .maybeSingle();
       if (resultFornecedor != null) {
@@ -88,7 +103,7 @@ class ApiService {
     final resultAuth = await _client
         .from('usuarios_auth')
         .select('id')
-        .eq('matricula', matricula)
+        .eq('matricula', colaborador.matricula)
         .maybeSingle();
 
     return resultAuth == null
@@ -124,6 +139,18 @@ class ApiService {
         .maybeSingle();
     if (data == null) return false;
     return data['senha_hash'] == _hash(senha);
+  }
+
+  /// Salva (ou atualiza) o FCM token do colaborador logado no banco.
+  Future<void> salvarFcmToken(String token) async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return;
+    try {
+      await _client
+          .from('colaboradores')
+          .update({'fcm_token': token})
+          .eq('id', id);
+    } catch (_) {}
   }
 
   // ─── Aniversariantes ──────────────────────────────────────────────────────────
@@ -574,7 +601,7 @@ class ApiService {
 
     if (diasAtivos.isEmpty) return [];
 
-    final agora = DateTime.now();
+    final agora = _brasilia();
     final hoje = DateTime(agora.year, agora.month, agora.day);
 
     for (var i = 0; i < 14; i++) {
@@ -592,7 +619,7 @@ class ApiService {
   /// Inclui join com colaboradores para exibir nome, matrícula e setor.
   Future<List<MassoterapiaAgendamentoModel>>
   buscarAgendamentosMassoterapia() async {
-    final hoje = DateTime.now();
+    final hoje = _brasilia();
     final fim = hoje.add(const Duration(days: 27));
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
@@ -750,18 +777,30 @@ class ApiService {
 
   // ─── Lojinha ──────────────────────────────────────────────────────────────────
 
-  /// Busca produtos ativos com estoque > 0
+  /// Busca produtos ativos com estoque > 0, incluindo foto do produto
   Future<List<LojinhaProdutoModel>> buscarProdutosLojinha() async {
-    final data = await _client
-        .from('lojinha_produtos')
-        .select()
-        .eq('ativo', true)
-        .gt('estoque', 0)
-        .order('descricao', ascending: true);
+    final results = await Future.wait([
+      _client
+          .from('lojinha_produtos')
+          .select()
+          .eq('ativo', true)
+          .gt('estoque', 0)
+          .order('descricao', ascending: true),
+      _client.from('lojinha_fotos').select('material, foto_url'),
+    ]);
 
-    return (data as List)
-        .map((e) => LojinhaProdutoModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    // Mapa material (sem zeros) → foto_url
+    final fotos = <String, String>{
+      for (final f in (results[1] as List))
+        (f['material'] as String): (f['foto_url'] as String),
+    };
+
+    return (results[0] as List).map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      final matSemZeros = (m['material'] as String).replaceAll(RegExp(r'^0+'), '');
+      m['foto_url'] = fotos[matSemZeros];
+      return LojinhaProdutoModel.fromJson(m);
+    }).toList();
   }
 
   /// Dados do funcionário no SAP: limites + histórico de pedidos
@@ -992,6 +1031,30 @@ class ApiService {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Retorna o próximo exame periódico agendado para o colaborador (sem realização).
+  Future<Map<String, dynamic>?> buscarProximoExamePeriodico() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return null;
+    try {
+      final hoje = DateTime.now();
+      final hojeStr =
+          '${hoje.year}-${hoje.month.toString().padLeft(2, "0")}-${hoje.day.toString().padLeft(2, "0")}';
+      final res = await _client
+          .from('exames')
+          .select('id, tipo, clinica, data_agendamento, observacoes')
+          .eq('colaborador_id', meuId)
+          .eq('tipo', 'periodico')
+          .gte('data_agendamento', hojeStr)
+          .isFilter('data_realizacao', null)
+          .order('data_agendamento', ascending: true)
+          .limit(1)
+          .maybeSingle();
+      return res;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1226,16 +1289,63 @@ class ApiService {
     });
   }
 
+  /// Busca um candidato pelo CPF (só dígitos). Retorna null se não encontrado.
+  Future<Map<String, dynamic>?> buscarCandidatoPorCpf(String cpf) async {
+    final data = await _client
+        .from('candidatos')
+        .select('id, nome, area_interesse, telefone')
+        .eq('cpf', cpf)
+        .maybeSingle();
+    return data;
+  }
+
+  /// Vincula o colaborador como indicador de um candidato já cadastrado.
+  /// Atualiza a candidatura existente para a vaga ou cria uma nova.
+  Future<void> vincularIndicacao({
+    required int candidatoId,
+    required int vagaId,
+    required int colaboradorId,
+  }) async {
+    // Verifica se já existe candidatura para esse candidato+vaga
+    final existente = await _client
+        .from('candidaturas')
+        .select('id, indicado_por_id')
+        .eq('candidato_id', candidatoId)
+        .eq('vaga_id', vagaId)
+        .maybeSingle();
+
+    if (existente != null) {
+      // Já tem candidatura — atualiza o indicador
+      if (existente['indicado_por_id'] != null) throw Exception('já indicado');
+      await _client
+          .from('candidaturas')
+          .update({'indicado_por_id': colaboradorId, 'tipo_origem': 'INDICACAO'})
+          .eq('id', existente['id'] as int);
+    } else {
+      // Sem candidatura ainda — cria vinculada ao indicador
+      await _client.from('candidaturas').insert({
+        'candidato_id': candidatoId,
+        'vaga_id':       vagaId,
+        'status':        'INSCRITO',
+        'salario_esperado': 0,
+        'tipo_origem':   'INDICACAO',
+        'indicado_por_id': colaboradorId,
+      });
+    }
+  }
+
   Future<void> indicarCandidato({
     required int colaboradorId,
     required int vagaId,
     required String nomeIndicado,
+    String cpfIndicado = '',
+    String telefoneIndicado = '',
   }) async {
     final candidato = await _client.from('candidatos').insert({
       'nome': nomeIndicado,
-      'cpf': '',
+      'cpf': cpfIndicado,
       'email': '',
-      'telefone': '',
+      'telefone': telefoneIndicado,
       'cidade': '',
       'estado': '',
       'area_interesse': '',
@@ -1265,7 +1375,7 @@ class ApiService {
     // Crie uma tabela nutricionista_config_dias (data DATE, ativo BOOL)
     // ou use a lógica de dias úteis que já existe na massoterapia.
     // Ajuste a query abaixo conforme seu schema:
-    final hoje = DateTime.now();
+    final hoje = _brasilia();
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
 
@@ -1281,7 +1391,7 @@ class ApiService {
 
   Future<List<NutricionistaAgendamentoModel>> buscarAgendamentosNutricionista() async {
     // Busca os agendamentos dos próximos 30 dias para montar a grade de horários.
-    final hoje = DateTime.now();
+    final hoje = _brasilia();
     final limite = hoje.add(const Duration(days: 30));
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
@@ -1476,9 +1586,11 @@ class ApiService {
     final colab = colaboradorAtual;
     if (colab == null) return [];
 
+    // Traz posts aprovados visíveis + os próprios posts (qualquer status)
     final data = await _client
         .from('feed_posts')
         .select('*, autor:colaboradores(nome, foto_url, cargo)')
+        .or('status.eq.aprovado,autor_id.eq.${colab.id}')
         .order('criado_em', ascending: false)
         .range(pagina * 20, pagina * 20 + 39);
 
@@ -1487,8 +1599,10 @@ class ApiService {
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
           if (p.tipo == 'comunicado') return false;
-          // O próprio autor sempre vê seus posts
+          // O próprio autor sempre vê seus posts (com qualquer status)
           if (p.autorId == colab.id) return true;
+          // Posts de terceiros só aparecem se aprovados
+          if (!p.isAprovado) return false;
           if (p.destinatario == 'todos') return true;
           if (p.destinatario == '@setor:${colab.setor}') return true;
           // Suporta '@colaborador:42' e '@colaborador:42|NOME'
@@ -1526,7 +1640,7 @@ class ApiService {
           conteudo: conteudo.isNotEmpty ? conteudo : null,
           imagemUrl: c['foto_url'] as String?,
           destinatario: 'todos',
-          criadoEm: DateTime.parse(c['criado_em'] as String),
+          criadoEm: _parseComunicadoTs(c['criado_em'] as String),
         );
       }).toList();
 
@@ -1567,12 +1681,15 @@ class ApiService {
         imagemUrl = _client.storage.from('feed-imagens').getPublicUrl(caminho);
       }
  
+      // Posts para 'todos' precisam de aprovação do RH; demais vão direto
+      final status = destinatario == 'todos' ? 'pendente' : 'aprovado';
       await _client.from('feed_posts').insert({
         'autor_id': meuId,
         'tipo': 'post',
         'conteudo': conteudo.trim(),
         'imagem_url': imagemUrl,
         'destinatario': destinatario,
+        'status': status,
       });
       return true;
     } catch (_) {

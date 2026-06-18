@@ -50,11 +50,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     return Scaffold(
       body: Stack(
         children: [
-          Container(
-            height: 220,
-            decoration: const BoxDecoration(
-              color: AppColors.laranja,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(28)),
+            child: Image.asset(
+              'assets/banner_aniversario.png',
+              height: 220,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
           ),
           SafeArea(
@@ -578,13 +581,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.laranja,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
+        border: Border.all(color: AppColors.laranja.withOpacity(0.35), width: 1.5),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x40E91E8C),
+            color: AppColors.laranja.withOpacity(0.12),
             blurRadius: 16,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -601,7 +605,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   Text(
                     a.colaborador.nome,
                     style: AppTextStyles.tituloPequeno.copyWith(
-                      color: Colors.white,
+                      color: AppColors.dark,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -610,7 +614,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     Text(
                       a.colaborador.setor!,
                       style: AppTextStyles.corpoMenor.copyWith(
-                        color: AppColors.brancoOp80,
+                        color: AppColors.cinzaTexto,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -619,7 +623,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   Text(
                     'Hoje é dia de celebrar! 🎊',
                     style: AppTextStyles.corpoMenor.copyWith(
-                      color: const Color(0xE6FFFFFF),
+                      color: AppColors.laranja,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -629,7 +633,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                       child: Text(
                         '${a.totalParabens} parabéns recebidos',
                         style: AppTextStyles.corpoMinimo.copyWith(
-                          color: AppColors.brancoOp70,
+                          color: AppColors.cinzaTexto,
                         ),
                       ),
                     ),
@@ -637,7 +641,6 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
               ),
             ),
             const SizedBox(width: 12),
-            // Botão parabenizar — só aparece para aniversariantes de hoje
             GestureDetector(
               onTap: jaParabenisei ? null : () => _abrirModalParabens(a),
               child: AnimatedContainer(
@@ -647,16 +650,16 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: jaParabenisei ? AppColors.brancoOp20 : Colors.white,
+                  color: jaParabenisei
+                      ? AppColors.laranja.withOpacity(0.08)
+                      : AppColors.laranja,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   jaParabenisei ? '✓ Enviado' : '🎉 Parabenizar',
                   style: AppTextStyles.corpoMenor.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: jaParabenisei
-                        ? AppColors.brancoOp70
-                        : AppColors.magenta,
+                    color: jaParabenisei ? AppColors.cinzaTexto : Colors.white,
                   ),
                 ),
               ),
