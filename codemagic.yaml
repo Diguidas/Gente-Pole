@@ -10,26 +10,19 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
-      - name: Build unsigned IPA
+      - name: Build unsigned iOS app
         script: |
           flutter build ios --release --no-codesign
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath "$CM_BUILD_DIR/Runner.xcarchive" \
-            archive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE=""
-          xcodebuild -exportArchive \
-            -archivePath "$CM_BUILD_DIR/Runner.xcarchive" \
-            -exportOptionsPlist "../ExportOptions.plist" \
-            -exportPath "$CM_BUILD_DIR/output"
+
+      - name: Package .app into .ipa
+        script: |
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -1)
+          mkdir -p output/Payload
+          cp -r "$APP_PATH" output/Payload/
+          cd output
+          zip -r "../gentepole.ipa" Payload
+          cd ..
+          echo "IPA criado em: $(pwd)/gentepole.ipa"
 
     artifacts:
-      - build/ios/ipa/*.ipa
-      - $CM_BUILD_DIR/output/*.ipa
-      - $CM_BUILD_DIR/Runner.xcarchive/Products/Applications/*.app
+      - gentepole.ipa
