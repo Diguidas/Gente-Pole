@@ -55,60 +55,73 @@ class _EuCrioOportunidadesScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 220,
-            decoration: const BoxDecoration(
-              color: Color(0xFF10B981),
-              borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(28)),
-            ),
-          ),
-          SafeArea(
-            child: Column(
+          SizedBox(
+            height: 200,
+            child: Stack(
               children: [
-                // ── Header ─────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 24, 20),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Eu Crio Oportunidades',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              'Vagas abertas para indicação e candidatura',
-                              style: GoogleFonts.poppins(
-                                color: Colors.white.withOpacity(0.85),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28)),
+                    child: Image.asset(
+                      'assets/oportunidade.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Eu Crio Oportunidades',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  'Vagas abertas para indicação e candidatura',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-                // ── Corpo ───────────────────────────────────────────────
-                Expanded(
+          // ── Corpo ───────────────────────────────────────────────
+          Expanded(
                   child: Container(
                     width: double.infinity,
                     decoration: const BoxDecoration(
@@ -146,9 +159,6 @@ class _EuCrioOportunidadesScreenState
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 

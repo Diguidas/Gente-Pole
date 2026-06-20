@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
+import 'lojinha_carrinho_screen.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
 import 'dart:async';
 
@@ -28,6 +29,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   List<LojinhaProdutoModel> _todos = [];
   List<LojinhaProdutoModel> _filtrados = [];
   final Map<int, CarrinhoItem> _carrinho = {};
+  final Map<int, Timer> _cartTimers = {};
 
   String? _marcaSel;
   String? _categoriaSel;
@@ -49,6 +51,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    for (final t in _cartTimers.values) t.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -138,24 +141,111 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   double get _totalValor =>
       _carrinho.values.fold(0.0, (s, i) => s + i.subtotal);
 
-  void _adicionar(LojinhaProdutoModel p) => setState(() {
-    _carrinho.containsKey(p.id)
-        ? _carrinho[p.id]!.quantidade++
-        : _carrinho[p.id] = CarrinhoItem(produto: p);
-  });
+  void _adicionar(LojinhaProdutoModel p) {
+    setState(() {
+      _carrinho.containsKey(p.id)
+          ? _carrinho[p.id]!.quantidade++
+          : _carrinho[p.id] = CarrinhoItem(produto: p);
+    });
+    _agendarSyncCarrinho(p);
+  }
 
-  void _remover(LojinhaProdutoModel p) => setState(() {
+  void _remover(LojinhaProdutoModel p) {
     if (!_carrinho.containsKey(p.id)) return;
-    _carrinho[p.id]!.quantidade <= 1
-        ? _carrinho.remove(p.id)
-        : _carrinho[p.id]!.quantidade--;
-  });
+    setState(() {
+      _carrinho[p.id]!.quantidade <= 1
+          ? _carrinho.remove(p.id)
+          : _carrinho[p.id]!.quantidade--;
+    });
+    _agendarSyncCarrinho(p);
+  }
+
+  void _agendarSyncCarrinho(LojinhaProdutoModel p) {
+    _cartTimers[p.id]?.cancel();
+    _cartTimers[p.id] = Timer(
+      const Duration(milliseconds: 600),
+      () => _syncCarrinho(p),
+    );
+  }
+
+  Future<void> _syncCarrinho(LojinhaProdutoModel p) async {
+    final qtd = _carrinho[p.id]?.quantidade ?? 0;
+    final result = await _api.adicionarAoCarrinho(
+      material: p.material,
+      quantidade: qtd,
+    );
+    if (!mounted || result.ok) return;
+    if (result.motivo == 'estoque_insuficiente') {
+      final max = result.estoqueDisponivel ?? 0;
+      setState(() {
+        if (max <= 0) {
+          _carrinho.remove(p.id);
+        } else {
+          _carrinho[p.id]?.quantidade = max;
+        }
+      });
+      _mostrarErroEstoque(max);
+    }
+  }
+
+  void _mostrarErroEstoque(int disponiveis) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(28),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.inventory_2_outlined,
+                  color: Colors.orange, size: 36),
+            ),
+            const SizedBox(height: 16),
+            Text('Estoque insuficiente',
+                style: GoogleFonts.poppins(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(
+              disponiveis > 0
+                  ? 'Apenas $disponiveis unidade${disponiveis > 1 ? 's' : ''} disponível${disponiveis > 1 ? 'is' : ''}. Seu carrinho foi ajustado.'
+                  : 'Este produto não está mais disponível.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                  fontSize: 13, color: AppColors.cinzaTexto),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () => Navigator.pop(context),
+                child: Text('OK',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   // ── Pedido ─────────────────────────────────────────────────────────────────
 
   Future<void> _finalizarPedido() async {
     if (_carrinho.isEmpty || _enviando) return;
-    Navigator.of(context).pop();
     setState(() => _enviando = true);
 
     final result = await _api.finalizarPedidoLojinha(
@@ -171,13 +261,17 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     if (result.ok) {
       widget.onPedidoCriado();
       if (mounted && result.numeroPedido != null) {
-        await Navigator.push(
+        // pushReplacement: substitui esta tela na pilha, então ao pressionar
+        // "voltar" no detalhe do pedido o usuário retorna à Home da Lojinha.
+        await Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) =>
                 LojinhaPedidoDetalheScreen(ordem: result.numeroPedido!),
           ),
         );
+      } else if (mounted) {
+        Navigator.pop(context); // volta para Home caso não haja número de pedido
       }
     } else {
       _mostrarErro(result.retorno);
@@ -249,19 +343,18 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   }
 
   void _abrirCarrinho() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _CarrinhoSheet(
-        carrinho: _carrinho,
-        totalValor: _totalValor,
-        onAdicionar: _adicionar,
-        onRemover: _remover,
-        onFinalizar: _finalizarPedido,
-        enviando: _enviando,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LojinhaCarrinhoScreen(
+          carrinho: _carrinho,
+          onAdicionar: _adicionar,
+          onRemover: _remover,
+          onFinalizar: _finalizarPedido,
+          enviando: _enviando,
+        ),
       ),
-    );
+    ).then((_) => setState(() {})); // rebuild ao voltar para refletir qty alteradas
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────

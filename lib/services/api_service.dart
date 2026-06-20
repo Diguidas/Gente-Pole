@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:gentepole/models/comunicado_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/models/lojinha_model.dart';
@@ -844,8 +845,64 @@ class ApiService {
     }
   }
 
+  /// Estoque visível de uma lista de materiais (cache SAP − carrinhos ativos de outros)
+  Future<Map<String, int>> buscarEstoqueVisivel(List<String> materiais) async {
+    final colaborador = colaboradorAtual!;
+    try {
+      final res = await _client.functions.invoke(
+        'get-estoque-produto',
+        body: {
+          'colaborador_id': colaborador.id,
+          'materiais': materiais,
+        },
+      );
+      debugPrint('buscarEstoqueVisivel raw: ${res.data}');
+      final data = res.data as Map<String, dynamic>;
+      debugPrint('buscarEstoqueVisivel ok=${data['ok']} estoques=${data['estoques']}');
+      if (data['ok'] != true) return {};
+      final map = {
+        for (final e in (data['estoques'] as List))
+          e['material'] as String: (e['estoque_disponivel'] as num).toInt(),
+      };
+      debugPrint('buscarEstoqueVisivel map=$map');
+      return map;
+    } catch (e) {
+      debugPrint('buscarEstoqueVisivel erro: $e');
+      return {};
+    }
+  }
+
+  /// Adiciona/atualiza item no carrinho ativo (quantidade=0 remove)
+  Future<({bool ok, String? motivo, int? estoqueDisponivel})>
+  adicionarAoCarrinho({
+    required String material,
+    required int quantidade,
+  }) async {
+    final colaborador = colaboradorAtual!;
+    try {
+      final res = await _client.functions.invoke(
+        'adicionar-carrinho',
+        body: {
+          'colaborador_id': colaborador.id,
+          'material': material,
+          'quantidade': quantidade,
+        },
+      );
+      final data = res.data as Map<String, dynamic>;
+      return (
+        ok: data['ok'] as bool,
+        motivo: data['motivo'] as String?,
+        estoqueDisponivel: data['estoque_disponivel'] != null
+            ? (data['estoque_disponivel'] as num).toInt()
+            : null,
+      );
+    } catch (_) {
+      return (ok: true, motivo: null, estoqueDisponivel: null);
+    }
+  }
+
   /// Envia pedido via Edge Function
-  Future<({bool ok, String retorno, String? numeroPedido})>
+  Future<({bool ok, String retorno, String? numeroPedido, String? remessa})>
   finalizarPedidoLojinha({required List<CarrinhoItem> itens}) async {
     final colaborador = colaboradorAtual!;
     final hoje = DateTime.now();
@@ -867,6 +924,7 @@ class ApiService {
       ok: data['ok'] as bool,
       retorno: data['retorno'] as String,
       numeroPedido: data['numeroPedido'] as String?,
+      remessa: data['remessa'] as String?,
     );
   }
 
@@ -1702,12 +1760,13 @@ class ApiService {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return false;
     try {
-      await _client
+      final result = await _client
           .from('feed_posts')
           .delete()
           .eq('id', postId)
-          .eq('autor_id', meuId);
-      return true;
+          .eq('autor_id', meuId)
+          .select('id');
+      return (result as List).isNotEmpty;
     } catch (_) {
       return false;
     }

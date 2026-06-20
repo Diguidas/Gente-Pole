@@ -256,75 +256,73 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             height: 220,
-            decoration: const BoxDecoration(
-              gradient: AppColors.gradientePrincipal
-            ),
-          ),
-          SafeArea(
-            child: Column(
+            child: Stack(
               children: [
-                _buildHeader(),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(28),
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28)),
+                    child: Image.asset(
+                      'assets/massoterapia.png',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 18),
                       ),
                     ),
-                    child: _loading
-                        ? _buildLoading()
-                        : _erro != null
-                        ? _buildErro()
-                        : _buildConteudo(),
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 24, 20),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
-          ),
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Massoterapia',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  'Agende sua sessão de bem-estar',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 13,
-                  ),
-                ),
+                Text('Massoterapia',
+                    style: GoogleFonts.poppins(
+                        fontSize: 22, fontWeight: FontWeight.w700)),
+                Text('Agende sua sessão de bem-estar',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13, color: Colors.grey.shade600)),
               ],
+            ),
+          ),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8F9FC),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+              ),
+              child: _loading
+                  ? _buildLoading()
+                  : _erro != null
+                  ? _buildErro()
+                  : _buildConteudo(),
             ),
           ),
         ],
@@ -373,22 +371,55 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   }
 
   Widget _buildConteudo() {
-    if (_diasDisponiveis.isEmpty) {
+    final agora = _brasilia();
+    final hojeStr =
+        '${agora.year}-${agora.month.toString().padLeft(2, '0')}-${agora.day.toString().padLeft(2, '0')}';
+    final hojeDisponivel = _diasDisponiveis.contains(hojeStr);
+
+    if (_diasDisponiveis.isEmpty || !hojeDisponivel) {
+      final proxima = _diasDisponiveis.isNotEmpty ? _diasDisponiveis.first : null;
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🗓️', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 12),
-            Text(
-              'Nenhum dia disponível\nno momento.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                color: Colors.grey.shade600,
-                fontSize: 15,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: AppColors.laranja.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.event_busy_rounded,
+                  size: 40,
+                  color: AppColors.laranja,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                'Hoje não tem massoterapia',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                proxima != null
+                    ? 'A próxima sessão será em\n${_formatarData(proxima)}'
+                    : 'Nenhuma sessão agendada no momento.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

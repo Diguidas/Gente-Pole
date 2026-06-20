@@ -118,66 +118,73 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             height: 200,
-            decoration: const BoxDecoration(
-              color: _cor,
-              borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(28)),
-            ),
-          ),
-          SafeArea(
-            child: Column(
+            child: Stack(
               children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 20),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Conexões do Bem',
-                            style: AppTextStyles.tituloGrande.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'Voluntariado e solidariedade',
-                            style: AppTextStyles.corpoBranco.copyWith(
-                              color: AppColors.brancoOp80,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28)),
+                    child: Image.asset(
+                      'assets/conexoes.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-                // TabBar
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    indicator: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 18),
+                      ),
                     ),
-                    labelColor: _cor,
-                    unselectedLabelColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Conexões do Bem', style: AppTextStyles.tituloGrande),
+                Text('Voluntariado e solidariedade',
+                    style: AppTextStyles.corpoBranco
+                        .copyWith(color: AppColors.cinzaTexto)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // TabBar
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                color: _cor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: _cor,
                     labelStyle: GoogleFonts.poppins(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
@@ -211,9 +218,6 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 

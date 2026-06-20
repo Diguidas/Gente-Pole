@@ -268,53 +268,58 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             height: 200,
-            decoration: const BoxDecoration(
-              color: _cor,
-              borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(28)),
-            ),
-          ),
-          SafeArea(
-            child: Column(
+            child: Stack(
               children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 20),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Nutricionista',
-                            style: AppTextStyles.tituloGrande.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'Agende sua consulta',
-                            style: AppTextStyles.corpoBranco.copyWith(
-                              color: AppColors.brancoOp80,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28)),
+                    child: Image.asset(
+                      'assets/nutricionista.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-                // Corpo
-                Expanded(
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Nutricionista', style: AppTextStyles.tituloGrande),
+                Text('Agende sua consulta',
+                    style: AppTextStyles.corpoBranco
+                        .copyWith(color: AppColors.cinzaTexto)),
+              ],
+            ),
+          ),
+          Expanded(
                   child: Container(
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
@@ -344,9 +349,6 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 

@@ -40,62 +40,71 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     final dados = _dados;
 
     return Scaffold(
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 260,
-            decoration: const BoxDecoration(
-                gradient: AppColors.gradientePrincipal),
+          // ── Banner imagem ────────────────────────────────────────────────
+          SizedBox(
+            height: 220,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28)),
+                    child: Image.asset(
+                      'assets/lojinha.png',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          SafeArea(
+
+          // ── Título + Card de Limite ──────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header ───────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('🛒 Lojinha',
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700)),
-                          Text('Olá, ${colaborador?.primeiroNome ?? ''}!',
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.85),
-                                  fontSize: 13)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                Text('Lojinha',
+                    style: GoogleFonts.poppins(
+                        fontSize: 22, fontWeight: FontWeight.w700)),
+                Text('Olá, ${colaborador?.primeiroNome ?? ''}!',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(height: 14),
+                _carregando
+                    ? _shimmerCard()
+                    : dados == null
+                        ? _erroCard()
+                        : _limiteCard(dados),
+              ],
+            ),
+          ),
 
-                const SizedBox(height: 20),
-
-                // ── Card de Limite ───────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _carregando
-                      ? _shimmerCard()
-                      : dados == null
-                          ? _erroCard()
-                          : _limiteCard(dados),
-                ),
-
-                const SizedBox(height: 8),
-
-                // ── Corpo ────────────────────────────────────────────────
-                Expanded(
+          // ── Corpo ────────────────────────────────────────────────
+          Expanded(
                   child: Container(
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
@@ -174,9 +183,6 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -186,9 +192,15 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.18),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.3)),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 3)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,16 +210,16 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
             children: [
               Text('Limite disponível',
                   style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.8), fontSize: 12)),
+                      color: AppColors.cinzaTexto, fontSize: 12)),
               Text('Total: ${_moeda(d.limiteTotal)}',
                   style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.7), fontSize: 11)),
+                      color: AppColors.cinzaTexto, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 6),
           Text(_moeda(d.limiteDisp),
               style: GoogleFonts.poppins(
-                  color: Colors.white,
+                  color: AppColors.laranja,
                   fontSize: 26,
                   fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
@@ -215,9 +227,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: 1 - d.percentualUsado,
-              backgroundColor: Colors.white.withOpacity(0.2),
+              backgroundColor: Colors.grey.shade200,
               valueColor:
-                  const AlwaysStoppedAnimation<Color>(Colors.white),
+                  AlwaysStoppedAnimation<Color>(AppColors.laranja),
               minHeight: 6,
             ),
           ),
@@ -225,7 +237,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
           Text(
             'Utilizado: ${_moeda(d.limiteUsado)} de ${_moeda(d.limiteTotal)}',
             style: GoogleFonts.poppins(
-                color: Colors.white.withOpacity(0.7), fontSize: 11),
+                color: AppColors.cinzaTexto, fontSize: 11),
           ),
         ],
       ),
@@ -233,33 +245,34 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   }
 
   Widget _shimmerCard() => Container(
-        height: 110,
+        height: 80,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Center(
-            child: CircularProgressIndicator(color: Colors.white)),
+        child: Center(
+            child: CircularProgressIndicator(color: AppColors.laranja)),
       );
 
   Widget _erroCard() => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey.shade200),
         ),
         child: Row(
           children: [
-            const Icon(Icons.wifi_off_rounded, color: Colors.white),
+            Icon(Icons.wifi_off_rounded, color: Colors.grey.shade500),
             const SizedBox(width: 12),
             Expanded(
               child: Text('Não foi possível carregar seus dados.',
                   style: GoogleFonts.poppins(
-                      color: Colors.white, fontSize: 13)),
+                      color: AppColors.cinzaTexto, fontSize: 13)),
             ),
             GestureDetector(
               onTap: _carregar,
-              child: const Icon(Icons.refresh_rounded, color: Colors.white),
+              child: Icon(Icons.refresh_rounded, color: AppColors.laranja),
             ),
           ],
         ),
