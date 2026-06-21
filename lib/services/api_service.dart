@@ -1832,5 +1832,60 @@ class ApiService {
  
     return sugestoes;
   }
-  
+
+  // ─── Indicações pendentes ────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> buscarIndicacoesPendentes() async {
+    final col = colaboradorAtual;
+    if (col == null) return [];
+
+    final matricula = col.matricula;
+    final cpf = col.cpf?.replaceAll(RegExp(r'\D'), '') ?? '';
+
+    final query = _client
+        .from('candidaturas')
+        .select('id, vaga_id, candidato_id, status, status_indicacao, matricula_indicador, candidatos(nome, cpf), vagas(titulo)')
+        .eq('status_indicacao', 'pendente');
+
+    final List resultados = [];
+
+    final byMatricula = await query.eq('matricula_indicador', matricula);
+    resultados.addAll(byMatricula as List);
+
+    if (cpf.isNotEmpty && cpf != matricula) {
+      final byCpf = await _client
+          .from('candidaturas')
+          .select('id, vaga_id, candidato_id, status, status_indicacao, matricula_indicador, candidatos(nome, cpf), vagas(titulo)')
+          .eq('status_indicacao', 'pendente')
+          .eq('matricula_indicador', cpf);
+      for (final item in byCpf as List) {
+        if (!resultados.any((r) => r['id'] == item['id'])) {
+          resultados.add(item);
+        }
+      }
+    }
+
+    return resultados.cast<Map<String, dynamic>>();
+  }
+
+  Future<void> confirmarIndicacao({
+    required int candidaturaId,
+    required bool confirmar,
+  }) async {
+    final col = colaboradorAtual;
+    if (col == null) return;
+
+    if (confirmar) {
+      await _client.from('candidaturas').update({
+        'status_indicacao': 'confirmado',
+        'indicado_por_id': col.id,
+        'tipo_origem': 'INDICACAO',
+      }).eq('id', candidaturaId);
+    } else {
+      await _client.from('candidaturas').update({
+        'status_indicacao': 'rejeitado',
+      }).eq('id', candidaturaId);
+    }
+  }
+
 }

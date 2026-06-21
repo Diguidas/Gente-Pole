@@ -219,37 +219,40 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           ),
                           const SizedBox(height: 14),
 
-                          _botaoServico(
-                            context,
-                            icone: Icons.forum_outlined,
-                            titulo: 'Feedback',
-                            subtitulo: 'Envie e receba feedbacks dos colegas',
-                            cor: AppColors.laranja,
-                            emBreve: false,
-                            onTap: () => Navigator.push(
+                          // Mude para true para exibir nas demonstrações
+                          if (false) ...[
+                            _botaoServico(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const FeedbackScreen(),
+                              icone: Icons.forum_outlined,
+                              titulo: 'Feedback',
+                              subtitulo: 'Envie e receba feedbacks dos colegas',
+                              cor: AppColors.laranja,
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const FeedbackScreen(),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
 
-                          _botaoServico(
-                            context,
-                            icone: Icons.poll_outlined,
-                            titulo: 'Pesquisas',
-                            subtitulo: 'Responda às pesquisas da empresa',
-                            cor: AppColors.magenta,
-                            emBreve: false,
-                            onTap: () => Navigator.push(
+                            _botaoServico(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const PesquisaListScreen(),
+                              icone: Icons.poll_outlined,
+                              titulo: 'Pesquisas',
+                              subtitulo: 'Responda às pesquisas da empresa',
+                              cor: AppColors.magenta,
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PesquisaListScreen(),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
+                          ],
 
                           // ── Cardápio ──────────────────────────────────────
                           _botaoServico(

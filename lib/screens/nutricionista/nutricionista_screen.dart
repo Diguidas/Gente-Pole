@@ -271,41 +271,37 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 200,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(28)),
-                    child: Image.asset(
-                      'assets/nutricionista.png',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(28)),
+                child: Image.asset(
+                  'assets/nutricionista.png',
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
                 ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  child: SafeArea(
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        margin: const EdgeInsets.all(12),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.3),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 18),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                child: SafeArea(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      margin: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3),
+                        shape: BoxShape.circle,
                       ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white, size: 18),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),

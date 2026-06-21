@@ -1517,17 +1517,47 @@ class _PostCard extends StatelessWidget {
     );
   }
 
-  // Renderiza texto com @menções em destaque
+  // Renderiza texto com @menções e *nomes* (aniversário) em destaque
   Widget _buildConteudo(String texto, bool isAniversario) {
+    final fontSize = isAniversario ? 15.0 : 14.0;
     final baseStyle = GoogleFonts.poppins(
-      fontSize: isAniversario ? 15 : 14,
+      fontSize: fontSize,
       color: AppColors.dark,
       height: 1.5,
-      fontWeight:
-          isAniversario ? FontWeight.w500 : FontWeight.normal,
+      fontWeight: isAniversario ? FontWeight.w500 : FontWeight.normal,
     );
 
-    // Extrai o texto exato da menção a partir do destinatario (nome completo)
+    // Posts de aniversário: destaca *nome* em laranja
+    if (isAniversario) {
+      final regex = RegExp(r'\*([^*]+)\*');
+      final matches = regex.allMatches(texto).toList();
+      if (matches.isNotEmpty) {
+        final spans = <TextSpan>[];
+        int last = 0;
+        for (final m in matches) {
+          if (m.start > last) {
+            spans.add(TextSpan(text: texto.substring(last, m.start)));
+          }
+          spans.add(TextSpan(
+            text: m.group(1), // sem os asteriscos
+            style: GoogleFonts.poppins(
+              fontSize: fontSize,
+              color: AppColors.laranja,
+              fontWeight: FontWeight.w700,
+              height: 1.5,
+            ),
+          ));
+          last = m.end;
+        }
+        if (last < texto.length) {
+          spans.add(TextSpan(text: texto.substring(last)));
+        }
+        return RichText(text: TextSpan(style: baseStyle, children: spans));
+      }
+      return Text(texto, style: baseStyle);
+    }
+
+    // Posts normais: destaca @menções em magenta
     String? mencaoTexto;
     if (post.destinatario.startsWith('@colaborador:')) {
       final pipeIdx = post.destinatario.indexOf('|');
@@ -1535,7 +1565,6 @@ class _PostCard extends StatelessWidget {
     } else if (post.destinatario.startsWith('@setor:')) {
       mencaoTexto = '@${post.destinatario.substring(7)}';
     }
-    // Padrão: tenta o nome completo primeiro (inclui espaços), depois @palavra
     final regexStr = mencaoTexto != null
         ? '${RegExp.escape(mencaoTexto)}|@\\S+'
         : r'@\S+';
@@ -1552,7 +1581,7 @@ class _PostCard extends StatelessWidget {
       spans.add(TextSpan(
         text: m.group(0),
         style: GoogleFonts.poppins(
-          fontSize: isAniversario ? 15 : 14,
+          fontSize: fontSize,
           color: AppColors.magenta,
           fontWeight: FontWeight.w700,
           height: 1.5,

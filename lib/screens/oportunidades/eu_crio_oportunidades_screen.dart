@@ -16,6 +16,7 @@ class _EuCrioOportunidadesScreenState
     extends State<EuCrioOportunidadesScreen> {
   final _api = ApiService();
   List<VagaModel> _vagas = [];
+  List<Map<String, dynamic>> _indicacoesPendentes = [];
   bool _loading = true;
   String? _erro;
 
@@ -31,12 +32,51 @@ class _EuCrioOportunidadesScreenState
       _erro = null;
     });
     try {
-      final vagas = await _api.listarVagasAbertas();
-      if (mounted) setState(() => _vagas = vagas);
+      final results = await Future.wait([
+        _api.listarVagasAbertas(),
+        _api.buscarIndicacoesPendentes(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _vagas = results[0] as List<VagaModel>;
+          _indicacoesPendentes =
+              results[1] as List<Map<String, dynamic>>;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _erro = 'Erro ao carregar vagas.');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _responderIndicacao(int candidaturaId, bool confirmar) async {
+    try {
+      await _api.confirmarIndicacao(
+          candidaturaId: candidaturaId, confirmar: confirmar);
+      setState(() {
+        _indicacoesPendentes
+            .removeWhere((i) => i['id'] == candidaturaId);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(confirmar
+              ? 'Indicação confirmada! ⭐'
+              : 'Indicação recusada.'),
+          backgroundColor:
+              confirmar ? const Color(0xFFF59E0B) : Colors.grey.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erro ao registrar resposta. Tente novamente.'),
+          backgroundColor: Colors.red,
+        ));
+      }
     }
   }
 
@@ -122,41 +162,76 @@ class _EuCrioOportunidadesScreenState
 
           // ── Corpo ───────────────────────────────────────────────
           Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF8F9FC),
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(28)),
-                    ),
-                    child: _loading
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF10B981),
-                            ),
-                          )
-                        : _erro != null
-                            ? _buildErro()
-                            : _vagas.isEmpty
-                                ? _buildVazio()
-                                : RefreshIndicator(
-                                    color: const Color(0xFF10B981),
-                                    onRefresh: _carregar,
-                                    child: ListView.separated(
-                                      padding: const EdgeInsets.all(20),
-                                      itemCount: _vagas.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(height: 12),
-                                      itemBuilder: (_, i) =>
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8F9FC),
+                borderRadius:
+                    BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF10B981),
+                      ),
+                    )
+                  : _erro != null
+                      ? _buildErro()
+                      : RefreshIndicator(
+                          color: const Color(0xFF10B981),
+                          onRefresh: _carregar,
+                          child: ListView(
+                            padding: const EdgeInsets.all(20),
+                            children: [
+                              // ── Indicações pendentes ─────────────────
+                              if (_indicacoesPendentes.isNotEmpty) ...[
+                                _sectionHeader(
+                                  '⭐ Confirmação de indicação',
+                                  'Alguém colocou seu nome como indicador',
+                                  const Color(0xFFF59E0B),
+                                ),
+                                const SizedBox(height: 12),
+                                ..._indicacoesPendentes.map((ind) =>
+                                    _CardIndicacaoPendente(
+                                      indicacao: ind,
+                                      onConfirmar: () => _responderIndicacao(
+                                          ind['id'] as int, true),
+                                      onRecusar: () => _responderIndicacao(
+                                          ind['id'] as int, false),
+                                    )),
+                                const SizedBox(height: 24),
+                                const Divider(height: 1),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // ── Vagas ────────────────────────────────
+                              if (_vagas.isEmpty)
+                                _buildVazio()
+                              else ...[
+                                _sectionHeader(
+                                  'Vagas abertas',
+                                  'Candidate-se ou indique alguém',
+                                  const Color(0xFF10B981),
+                                ),
+                                const SizedBox(height: 12),
+                                ..._vagas
+                                    .asMap()
+                                    .entries
+                                    .expand((e) => [
                                           _CardVaga(
-                                        vaga: _vagas[i],
-                                        onTap: () =>
-                                            _abrirOpcoes(_vagas[i]),
-                                      ),
-                                    ),
-                                  ),
-                  ),
-                ),
+                                            vaga: e.value,
+                                            onTap: () =>
+                                                _abrirOpcoes(e.value),
+                                          ),
+                                          if (e.key < _vagas.length - 1)
+                                            const SizedBox(height: 12),
+                                        ]),
+                              ],
+                            ],
+                          ),
+                        ),
+            ),
+          ),
               ],
             ),
     );
@@ -194,16 +269,171 @@ class _EuCrioOportunidadesScreenState
 
   Widget _buildVazio() {
     return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🔍', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 12),
+            Text(
+              'Nenhuma vaga aberta\nno momento.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                  color: Colors.grey.shade600, fontSize: 15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String titulo, String subtitulo, Color cor) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 36,
+          decoration: BoxDecoration(
+            color: cor,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(titulo,
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: Colors.black87)),
+            Text(subtitulo,
+                style: GoogleFonts.poppins(
+                    fontSize: 11, color: Colors.grey.shade500)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Card de Indicação Pendente ───────────────────────────────────────────────
+
+class _CardIndicacaoPendente extends StatelessWidget {
+  final Map<String, dynamic> indicacao;
+  final VoidCallback onConfirmar;
+  final VoidCallback onRecusar;
+
+  const _CardIndicacaoPendente({
+    required this.indicacao,
+    required this.onConfirmar,
+    required this.onRecusar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final candidato = indicacao['candidatos'] as Map<String, dynamic>? ?? {};
+    final vaga = indicacao['vagas'] as Map<String, dynamic>? ?? {};
+    final nomeCandidato = candidato['nome'] as String? ?? 'Candidato';
+    final tituloVaga = vaga['titulo'] as String? ?? 'Vaga';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('🔍', style: TextStyle(fontSize: 48)),
-          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.person_outline,
+                    color: Color(0xFFF59E0B), size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(nomeCandidato,
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: Colors.black87)),
+                    Text(tituloVaga,
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFFF59E0B),
+                            fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
           Text(
-            'Nenhuma vaga aberta\nno momento.',
-            textAlign: TextAlign.center,
+            'Este candidato disse que foi indicado por você.',
             style: GoogleFonts.poppins(
-                color: Colors.grey.shade600, fontSize: 15),
+                fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRecusar,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.grey.shade300),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: Text('Não fui eu',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: onConfirmar,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.star_rounded,
+                      color: Colors.white, size: 18),
+                  label: Text('Sim, indiquei!',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
