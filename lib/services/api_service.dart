@@ -778,15 +778,22 @@ class ApiService {
 
   // ─── Lojinha ──────────────────────────────────────────────────────────────────
 
-  /// Busca produtos ativos com estoque > 0, incluindo foto do produto
-  Future<List<LojinhaProdutoModel>> buscarProdutosLojinha() async {
+  /// Busca produtos ativos com estoque > 0, filtrando pelos centros visíveis do funcionário.
+  Future<List<LojinhaProdutoModel>> buscarProdutosLojinha({
+    List<String> centros = const [],
+  }) async {
+    var query = _client
+        .from('lojinha_produtos')
+        .select()
+        .eq('ativo', true)
+        .gt('estoque', 0);
+
+    if (centros.isNotEmpty) {
+      query = query.inFilter('centro', centros);
+    }
+
     final results = await Future.wait([
-      _client
-          .from('lojinha_produtos')
-          .select()
-          .eq('ativo', true)
-          .gt('estoque', 0)
-          .order('descricao', ascending: true),
+      query.order('descricao', ascending: true),
       _client.from('lojinha_fotos').select('material, foto_url'),
     ]);
 

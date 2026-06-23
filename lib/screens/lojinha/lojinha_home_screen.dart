@@ -165,16 +165,45 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
 
                           const SizedBox(height: 28),
 
-                          // ── Último pedido ────────────────────────────
-                          if (dados != null && dados.pedidos.isNotEmpty) ...[
-                            Text('Último pedido',
-                                style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.cinzaTexto,
-                                    letterSpacing: 0.4)),
-                            const SizedBox(height: 10),
-                            _ultimoPedidoCard(dados.pedidos.first),
+                          // ── Pedidos vigentes ─────────────────────────
+                          if (dados != null) ...[
+                            Builder(builder: (_) {
+                              final vigentes = (dados.pedidos
+                                  .where((p) => p.isVigente)
+                                  .toList()
+                                ..sort((a, b) => b.criacao.compareTo(a.criacao)))
+                                  .take(3)
+                                  .toList();
+                              if (vigentes.isEmpty) return const SizedBox.shrink();
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 8, height: 8,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade500,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text('Sendo descontado agora',
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.cinzaTexto,
+                                              letterSpacing: 0.4)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ...vigentes.map((p) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: _ultimoPedidoCard(p),
+                                  )),
+                                ],
+                              );
+                            }),
                           ],
                         ],
                       ),
@@ -365,6 +394,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   }
 
   Widget _ultimoPedidoCard(LojinhaPedidoResumoModel p) {
+    final cor = p.isVigente ? Colors.green.shade600 : AppColors.laranja;
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -383,41 +413,61 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                 offset: const Offset(0, 3))
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                  color: AppColors.laranja.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12)),
-              child: Icon(Icons.receipt_rounded,
-                  color: AppColors.laranja, size: 22),
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                      color: cor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Icon(Icons.receipt_rounded, color: cor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Pedido nº ${p.ordem}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, fontWeight: FontWeight.w700)),
+                      Text(p.criacaoFormatada,
+                          style: GoogleFonts.poppins(
+                              fontSize: 11, color: AppColors.cinzaTexto)),
+                    ],
+                  ),
+                ),
+                Text(
+                  'R\$ ${p.valorTotal.toStringAsFixed(2).replaceAll('.', ',')}',
+                  style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: cor),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded,
+                    color: AppColors.cinzaTexto, size: 18),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Pedido nº ${p.ordem}',
-                      style: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w700)),
-                  Text(p.criacaoFormatada,
-                      style: GoogleFonts.poppins(
-                          fontSize: 11, color: AppColors.cinzaTexto)),
-                ],
+            if (p.status.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: cor.withOpacity(0.2)),
+                ),
+                child: Text(p.status,
+                    style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: cor)),
               ),
-            ),
-            Text(
-              'R\$ ${p.valorTotal.toStringAsFixed(2).replaceAll('.', ',')}',
-              style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.laranja),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded,
-                color: AppColors.cinzaTexto, size: 18),
+            ],
           ],
         ),
       ),

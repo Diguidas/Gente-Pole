@@ -67,7 +67,9 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
   Future<void> _carregarProdutos() async {
     setState(() => _carregando = true);
-    _todos = await _api.buscarProdutosLojinha(); // já filtra estoque > 0
+    _todos = await _api.buscarProdutosLojinha(
+      centros: widget.dadosFuncionario?.centrosVisiveis ?? [],
+    );
     _aplicarFiltros();
     setState(() => _carregando = false);
   }

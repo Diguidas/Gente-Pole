@@ -70,6 +70,7 @@ class LojinhaFuncionarioModel {
   final double limiteTotal;
   final double limiteDisp;
   final String bloqueio;
+  final String centro;
   final List<LojinhaPedidoResumoModel> pedidos;
   final String mensagem;
 
@@ -77,6 +78,7 @@ class LojinhaFuncionarioModel {
     required this.limiteTotal,
     required this.limiteDisp,
     required this.bloqueio,
+    required this.centro,
     required this.pedidos,
     required this.mensagem,
   });
@@ -86,12 +88,22 @@ class LojinhaFuncionarioModel {
   double get percentualUsado =>
       limiteTotal > 0 ? (limiteUsado / limiteTotal).clamp(0.0, 1.0) : 0.0;
 
+  /// Centros cujos produtos este funcionário pode ver.
+  List<String> get centrosVisiveis {
+    switch (centro) {
+      case '2100': return ['2100', '2014'];
+      case '2002': return ['2002', '2015'];
+      default:     return [centro];
+    }
+  }
+
   factory LojinhaFuncionarioModel.fromJson(Map<String, dynamic> j) {
     final pedidosJson = (j['PEDIDOS'] as List? ?? []);
     return LojinhaFuncionarioModel(
       limiteTotal: _parseDouble(j['LIMITETOTAL']),
       limiteDisp:  _parseDouble(j['LIMITEDISP']),
       bloqueio:    (j['BLOQUEIO'] as String? ?? '').trim(),
+      centro:      (j['CENTRO']   as String? ?? '').trim(),
       mensagem:    (j['MENSAGEM'] as String? ?? '').trim(),
       pedidos:     pedidosJson
           .map((e) => LojinhaPedidoResumoModel.fromJson(e as Map<String, dynamic>))
@@ -111,11 +123,15 @@ class LojinhaPedidoResumoModel {
   final String ordem;
   final String criacao; // yyyyMMdd
   final double valorTotal;
+  final String situacao; // VIGENTE | FUTURO | ...
+  final String status;   // "Liberado para faturamento" etc.
 
   LojinhaPedidoResumoModel({
     required this.ordem,
     required this.criacao,
     required this.valorTotal,
+    required this.situacao,
+    required this.status,
   });
 
   /// Formata data yyyyMMdd → dd/MM/yyyy
@@ -124,11 +140,16 @@ class LojinhaPedidoResumoModel {
     return '${criacao.substring(6)}/${criacao.substring(4, 6)}/${criacao.substring(0, 4)}';
   }
 
+  bool get isVigente => situacao.toUpperCase() == 'VIGENTE';
+  bool get isFuturo  => situacao.toUpperCase() == 'FUTURO';
+
   factory LojinhaPedidoResumoModel.fromJson(Map<String, dynamic> j) =>
       LojinhaPedidoResumoModel(
         ordem:      (j['ORDEM'] as String).trim(),
         criacao:    (j['CRIACAO'] as String).trim(),
         valorTotal: double.tryParse((j['VALORTOTAL'] as String).trim()) ?? 0.0,
+        situacao:   (j['SITUACAO'] as String? ?? '').trim(),
+        status:     (j['STATUS'] as String? ?? '').trim(),
       );
 }
 
