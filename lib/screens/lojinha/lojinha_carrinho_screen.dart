@@ -42,12 +42,12 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   }
 
   Future<void> _buscarEstoque() async {
-    final materiais = _itens.map((i) => i.produto.material).toList();
-    if (materiais.isEmpty) {
+    final produtos = _itens.map((i) => i.produto).toList();
+    if (produtos.isEmpty) {
       setState(() => _carregandoEstoque = false);
       return;
     }
-    final result = await _api.buscarEstoqueVisivel(materiais);
+    final result = await _api.buscarEstoqueVisivel(produtos);
     if (!mounted) return;
     setState(() {
       _estoqueVisivel = result;

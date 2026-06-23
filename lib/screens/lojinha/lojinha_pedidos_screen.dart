@@ -4,25 +4,55 @@ import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
 
-class LojinhaPedidosScreen extends StatelessWidget {
+enum _Filtro { cobradoAgora, aCobrar, historico }
+
+class LojinhaPedidosScreen extends StatefulWidget {
   final List<LojinhaPedidoResumoModel> pedidos;
 
   const LojinhaPedidosScreen({super.key, required this.pedidos});
 
   @override
-  Widget build(BuildContext context) {
-    int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
-        b.criacao.compareTo(a.criacao);
+  State<LojinhaPedidosScreen> createState() => _LojinhaPedidosScreenState();
+}
 
-    final vigentes  = pedidos.where((p) => p.isVigente).toList()..sort(_desc);
-    final futuros   = pedidos.where((p) => p.isFuturo).toList()..sort(_desc);
-    final historico = pedidos.where((p) => !p.isVigente && !p.isFuturo).toList()..sort(_desc);
+class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
+  final _ativos = <_Filtro>{_Filtro.cobradoAgora, _Filtro.aCobrar, _Filtro.historico};
+
+  int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
+      b.criacao.compareTo(a.criacao);
+
+  List<LojinhaPedidoResumoModel> get _vigentes =>
+      widget.pedidos.where((p) => p.isVigente).toList()..sort(_desc);
+  List<LojinhaPedidoResumoModel> get _futuros =>
+      widget.pedidos.where((p) => p.isFuturo).toList()..sort(_desc);
+  List<LojinhaPedidoResumoModel> get _historico =>
+      widget.pedidos.where((p) => !p.isVigente && !p.isFuturo).toList()..sort(_desc);
+
+  void _toggle(_Filtro f) => setState(() {
+        if (_ativos.contains(f)) {
+          if (_ativos.length > 1) _ativos.remove(f);
+        } else {
+          _ativos.add(f);
+        }
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    final mostrarVigentes  = _ativos.contains(_Filtro.cobradoAgora);
+    final mostrarFuturos   = _ativos.contains(_Filtro.aCobrar);
+    final mostrarHistorico = _ativos.contains(_Filtro.historico);
+
+    final visiveis = [
+      if (mostrarVigentes)  ..._vigentes,
+      if (mostrarFuturos)   ..._futuros,
+      if (mostrarHistorico) ..._historico,
+    ];
 
     return Scaffold(
       body: Stack(
         children: [
           Container(
-            height: 180,
+            height: 200,
             decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
           ),
           SafeArea(
@@ -48,7 +78,7 @@ class LojinhaPedidosScreen extends StatelessWidget {
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700)),
                           Text(
-                              '${pedidos.length} pedido${pedidos.length != 1 ? 's' : ''} no total',
+                              '${widget.pedidos.length} pedido${widget.pedidos.length != 1 ? 's' : ''} no total',
                               style: GoogleFonts.poppins(
                                   color: Colors.white.withOpacity(0.8),
                                   fontSize: 12)),
@@ -58,20 +88,59 @@ class LojinhaPedidosScreen extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
 
-                // ── Lista agrupada ─────────────────────────────────────
+                // ── Filtros ────────────────────────────────────────────
+                SizedBox(
+                  height: 36,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    children: [
+                      _Chip(
+                        label: 'Sendo cobrado',
+                        icone: Icons.radio_button_checked_rounded,
+                        cor: Colors.green.shade600,
+                        ativo: _ativos.contains(_Filtro.cobradoAgora),
+                        onTap: () => _toggle(_Filtro.cobradoAgora),
+                        count: _vigentes.length,
+                      ),
+                      const SizedBox(width: 8),
+                      _Chip(
+                        label: 'A cobrar',
+                        icone: Icons.schedule_rounded,
+                        cor: Colors.blue.shade600,
+                        ativo: _ativos.contains(_Filtro.aCobrar),
+                        onTap: () => _toggle(_Filtro.aCobrar),
+                        count: _futuros.length,
+                      ),
+                      const SizedBox(width: 8),
+                      _Chip(
+                        label: 'Histórico',
+                        icone: Icons.history_rounded,
+                        cor: Colors.grey.shade500,
+                        ativo: _ativos.contains(_Filtro.historico),
+                        onTap: () => _toggle(_Filtro.historico),
+                        count: _historico.length,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Lista ──────────────────────────────────────────────
                 Expanded(
                   child: Container(
                     decoration: const BoxDecoration(
                         color: Color(0xFFF8F9FC),
                         borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-                    child: pedidos.isEmpty
+                    child: visiveis.isEmpty
                         ? _vazio()
                         : ListView(
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                             children: [
-                              if (vigentes.isNotEmpty) ...[
+                              if (mostrarVigentes && _vigentes.isNotEmpty) ...[
                                 _GrupoHeader(
                                   icone: Icons.radio_button_checked_rounded,
                                   label: 'Sendo descontado',
@@ -79,10 +148,10 @@ class LojinhaPedidosScreen extends StatelessWidget {
                                   descricao: 'Pedidos que estão sendo cobrados no seu salário agora.',
                                 ),
                                 const SizedBox(height: 10),
-                                ...vigentes.map((p) => _CardPedido(pedido: p)),
+                                ..._vigentes.map((p) => _CardPedido(pedido: p)),
                                 const SizedBox(height: 24),
                               ],
-                              if (futuros.isNotEmpty) ...[
+                              if (mostrarFuturos && _futuros.isNotEmpty) ...[
                                 _GrupoHeader(
                                   icone: Icons.schedule_rounded,
                                   label: 'Próximos descontos',
@@ -90,10 +159,10 @@ class LojinhaPedidosScreen extends StatelessWidget {
                                   descricao: 'Pedidos que serão descontados nos próximos meses.',
                                 ),
                                 const SizedBox(height: 10),
-                                ...futuros.map((p) => _CardPedido(pedido: p)),
+                                ..._futuros.map((p) => _CardPedido(pedido: p)),
                                 const SizedBox(height: 24),
                               ],
-                              if (historico.isNotEmpty) ...[
+                              if (mostrarHistorico && _historico.isNotEmpty) ...[
                                 _GrupoHeader(
                                   icone: Icons.history_rounded,
                                   label: 'Histórico',
@@ -101,7 +170,7 @@ class LojinhaPedidosScreen extends StatelessWidget {
                                   descricao: 'Pedidos já encerrados ou finalizados.',
                                 ),
                                 const SizedBox(height: 10),
-                                ...historico.map((p) => _CardPedido(pedido: p)),
+                                ..._historico.map((p) => _CardPedido(pedido: p)),
                               ],
                             ],
                           ),
@@ -120,11 +189,76 @@ class LojinhaPedidosScreen extends StatelessWidget {
           Icon(Icons.receipt_long_rounded,
               size: 60, color: AppColors.cinzaTexto.withOpacity(0.3)),
           const SizedBox(height: 12),
-          Text('Nenhum pedido ainda',
+          Text('Nenhum pedido encontrado',
               style: GoogleFonts.poppins(color: AppColors.cinzaTexto, fontSize: 14)),
         ]),
       );
 }
+
+// ── Chip de filtro ─────────────────────────────────────────────────────────────
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final IconData icone;
+  final Color cor;
+  final bool ativo;
+  final VoidCallback onTap;
+  final int count;
+
+  const _Chip({
+    required this.label,
+    required this.icone,
+    required this.cor,
+    required this.ativo,
+    required this.onTap,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: ativo ? cor : Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: ativo ? cor : Colors.white.withOpacity(0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icone, color: Colors.white, size: 13),
+            const SizedBox(width: 5),
+            Text(label,
+                style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+            if (count > 0) ...[
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('$count',
+                    style: GoogleFonts.poppins(
+                        color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Cabeçalho de grupo ─────────────────────────────────────────────────────────
 
 class _GrupoHeader extends StatelessWidget {
   final IconData icone;
@@ -175,6 +309,8 @@ class _GrupoHeader extends StatelessWidget {
   }
 }
 
+// ── Card de pedido ─────────────────────────────────────────────────────────────
+
 class _CardPedido extends StatelessWidget {
   final LojinhaPedidoResumoModel pedido;
   const _CardPedido({required this.pedido});
@@ -193,13 +329,18 @@ class _CardPedido extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final labelEntrega = pedido.labelEntrega;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-              builder: (_) => LojinhaPedidoDetalheScreen(ordem: pedido.ordem)),
+              builder: (_) => LojinhaPedidoDetalheScreen(
+                    ordem: pedido.ordem,
+                    criacao: pedido.criacao,
+                  )),
         ),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -252,27 +393,66 @@ class _CardPedido extends StatelessWidget {
                   ]),
                 ],
               ),
-              if (pedido.status.isNotEmpty) ...[
+
+              // ── Tags ─────────────────────────────────────────────
+              if (pedido.status.isNotEmpty || labelEntrega != null) ...[
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _corFundoSituacao,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _corSituacao.withOpacity(0.25)),
-                  ),
-                  child: Text(
-                    pedido.status,
-                    style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: _corSituacao),
-                  ),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (pedido.status.isNotEmpty)
+                      _Tag(
+                        label: pedido.status,
+                        cor: _corSituacao,
+                        fundo: _corFundoSituacao,
+                      ),
+                    if (labelEntrega != null)
+                      _Tag(
+                        label: labelEntrega,
+                        icone: Icons.local_shipping_outlined,
+                        cor: AppColors.laranja,
+                        fundo: AppColors.laranja.withOpacity(0.08),
+                      ),
+                  ],
                 ),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  final String label;
+  final IconData? icone;
+  final Color cor;
+  final Color fundo;
+
+  const _Tag({required this.label, this.icone, required this.cor, required this.fundo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: fundo,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cor.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icone != null) ...[
+            Icon(icone, color: cor, size: 12),
+            const SizedBox(width: 4),
+          ],
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 11, fontWeight: FontWeight.w500, color: cor)),
+        ],
       ),
     );
   }

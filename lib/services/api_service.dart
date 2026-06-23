@@ -852,15 +852,19 @@ class ApiService {
     }
   }
 
-  /// Estoque visível de uma lista de materiais (cache SAP − carrinhos ativos de outros)
-  Future<Map<String, int>> buscarEstoqueVisivel(List<String> materiais) async {
+  /// Estoque visível de uma lista de produtos (cache SAP − carrinhos ativos de outros)
+  Future<Map<String, int>> buscarEstoqueVisivel(List<LojinhaProdutoModel> produtos) async {
     final colaborador = colaboradorAtual!;
     try {
       final res = await _client.functions.invoke(
         'get-estoque-produto',
         body: {
           'colaborador_id': colaborador.id,
-          'materiais': materiais,
+          'materiais': produtos.map((p) => {
+            'material': p.material,
+            'centro':   p.centro ?? '',
+            'deposito': p.deposito ?? '',
+          }).toList(),
         },
       );
       debugPrint('buscarEstoqueVisivel raw: ${res.data}');
@@ -908,8 +912,8 @@ class ApiService {
     }
   }
 
-  /// Envia pedido via Edge Function
-  Future<({bool ok, String retorno, String? numeroPedido, String? remessa})>
+  /// Envia pedido via Edge Function — pode gerar múltiplos pedidos (um por centro)
+  Future<({bool ok, String retorno, List<LojinhaPedidoCentroResult> pedidos})>
   finalizarPedidoLojinha({required List<CarrinhoItem> itens}) async {
     final colaborador = colaboradorAtual!;
     final hoje = DateTime.now();
@@ -927,11 +931,14 @@ class ApiService {
     );
 
     final data = res.data as Map<String, dynamic>;
+    final pedidosRaw = data['pedidos'] as List? ?? [];
+    final pedidos = pedidosRaw
+        .map((p) => LojinhaPedidoCentroResult.fromJson(p as Map<String, dynamic>))
+        .toList();
     return (
       ok: data['ok'] as bool,
       retorno: data['retorno'] as String,
-      numeroPedido: data['numeroPedido'] as String?,
-      remessa: data['remessa'] as String?,
+      pedidos: pedidos,
     );
   }
 

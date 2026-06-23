@@ -262,18 +262,19 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
     if (result.ok) {
       widget.onPedidoCriado();
-      if (mounted && result.numeroPedido != null) {
-        // pushReplacement: substitui esta tela na pilha, então ao pressionar
-        // "voltar" no detalhe do pedido o usuário retorna à Home da Lojinha.
+      final primeiroPedido = result.pedidos
+          .where((p) => p.ok && p.numeroPedido != null)
+          .map((p) => p.numeroPedido!)
+          .firstOrNull;
+      if (mounted && primeiroPedido != null) {
         await Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                LojinhaPedidoDetalheScreen(ordem: result.numeroPedido!),
+            builder: (_) => LojinhaPedidoDetalheScreen(ordem: primeiroPedido),
           ),
         );
       } else if (mounted) {
-        Navigator.pop(context); // volta para Home caso não haja número de pedido
+        Navigator.pop(context);
       }
     } else {
       _mostrarErro(result.retorno);

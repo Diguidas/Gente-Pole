@@ -13,6 +13,8 @@ class LojinhaProdutoModel {
   final String? linha;
   final String? grupo;
   final String? fotoUrl;
+  final String? centro;
+  final String? deposito;
 
   LojinhaProdutoModel({
     required this.id,
@@ -27,6 +29,8 @@ class LojinhaProdutoModel {
     this.linha,
     this.grupo,
     this.fotoUrl,
+    this.centro,
+    this.deposito,
   });
 
   factory LojinhaProdutoModel.fromJson(Map<String, dynamic> j) =>
@@ -43,6 +47,35 @@ class LojinhaProdutoModel {
         linha:         j['linha'] as String?,
         grupo:         j['grupo'] as String?,
         fotoUrl:       j['foto_url'] as String?,
+        centro:        j['centro'] as String?,
+        deposito:      j['deposito'] as String?,
+      );
+}
+
+// ─── Resultado de pedido por centro ──────────────────────────────────────────
+
+class LojinhaPedidoCentroResult {
+  final String centro;
+  final bool ok;
+  final String retorno;
+  final String? numeroPedido;
+  final String? remessa;
+
+  LojinhaPedidoCentroResult({
+    required this.centro,
+    required this.ok,
+    required this.retorno,
+    this.numeroPedido,
+    this.remessa,
+  });
+
+  factory LojinhaPedidoCentroResult.fromJson(Map<String, dynamic> j) =>
+      LojinhaPedidoCentroResult(
+        centro:       j['centro'] as String,
+        ok:           j['ok'] as bool,
+        retorno:      j['retorno'] as String,
+        numeroPedido: j['numeroPedido'] as String?,
+        remessa:      j['remessa'] as String?,
       );
 }
 
@@ -61,6 +94,10 @@ class CarrinhoItem {
         'unidvenda':  produto.unidadeVenda,
         'quantidade': quantidade.toString(),
         'preco':      produto.preco.toStringAsFixed(2),
+        // centro e deposito usados pela Edge Function para agrupar pedidos por centro;
+        // são removidos antes do envio ao SAP
+        'centro':     produto.centro ?? '',
+        'deposito':   produto.deposito ?? '',
       };
 }
 
@@ -142,6 +179,39 @@ class LojinhaPedidoResumoModel {
 
   bool get isVigente => situacao.toUpperCase() == 'VIGENTE';
   bool get isFuturo  => situacao.toUpperCase() == 'FUTURO';
+
+  /// Sexta-feira de entrega com base na data de criação.
+  /// Ciclo: seg/ter/qua → sexta desta semana | qui/sex/sáb/dom → sexta da próxima semana.
+  DateTime get dataEntrega {
+    if (criacao.length != 8) return DateTime.now();
+    final d = DateTime(
+      int.parse(criacao.substring(0, 4)),
+      int.parse(criacao.substring(4, 6)),
+      int.parse(criacao.substring(6, 8)),
+    );
+    // weekday: Mon=1 … Sun=7
+    const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
+    return d.add(Duration(days: diasMap[d.weekday]!));
+  }
+
+  /// Tag de entrega a exibir nos pedidos ativos. Retorna null se não aplicável.
+  String? get labelEntrega {
+    if (!isVigente && !isFuturo) return null;
+    final entrega = DateTime(dataEntrega.year, dataEntrega.month, dataEntrega.day);
+    final hoje = DateTime.now();
+    final hojeDate = DateTime(hoje.year, hoje.month, hoje.day);
+    if (entrega.isBefore(hojeDate)) return null;
+
+    // Próxima sexta a partir de hoje (mesma lógica)
+    const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
+    final proximaSexta = hojeDate.add(Duration(days: diasMap[hojeDate.weekday]!));
+
+    if (entrega == proximaSexta) return 'Chega nessa sexta';
+    if (entrega == proximaSexta.add(const Duration(days: 7))) return 'Chega na próxima sexta';
+    final dia = entrega.day.toString().padLeft(2, '0');
+    final mes = entrega.month.toString().padLeft(2, '0');
+    return 'Chega em $dia/$mes';
+  }
 
   factory LojinhaPedidoResumoModel.fromJson(Map<String, dynamic> j) =>
       LojinhaPedidoResumoModel(

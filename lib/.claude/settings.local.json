@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/guilherme.franklin.REG_NT/Videos/gentepole/**)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter pub *)",
+      "Bash(dir \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\gentepole\\\\android\\\\app\" /b)",
+      "Bash(dart analyze *)",
+      "Bash(find \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\gentepole_admin\\\\lib\" -iname \"*gestor*\" -o -iname \"*manager*\")",
+      "Bash(xargs grep -l \"class.*Manager\\\\|class.*Gestor\")",
+      "Bash(find \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\" -type f \\\\\\( -name \"schema.sql\" -o -name \"*database*\" -o -name \"*SCHEMA*\" \\\\\\) 2>/dev/null)",
+      "Bash(python3 -c ' *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(dart run *)",
+      "Bash(git add *)",
+      "Bash(git -C \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\gentepole\" ls-files ios/Runner/GoogleService-Info.plist)",
+      "Bash(xargs grep -l \"Provider\\\\|Riverpod\\\\|ChangeNotifier\\\\|StateNotifier\")",
+      "Bash(ls \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\\" 2>/dev/null || dir \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\\")",
+      "Bash(ls /c/Users/guilherme.franklin.REG_NT/Videos/)",
+      "Bash(xargs grep -l \"feed_posts\")",
+      "Bash(ls -la \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\gentepole_admin\" | head -50)",
+      "Bash(grep -E '^[a-z_]+$')",
+      "Bash(mkdir -p \"C:/Users/guilherme.franklin.REG_NT/Videos/gentepole_admin/lib/features/colaborador/presentation/screens\")"
+    ]
+  }
+}

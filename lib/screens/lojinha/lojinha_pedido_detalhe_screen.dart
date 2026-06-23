@@ -6,8 +6,10 @@ import '../../services/api_service.dart';
 
 class LojinhaPedidoDetalheScreen extends StatefulWidget {
   final String ordem;
+  /// Data de criação do pedido (yyyyMMdd). Quando fornecida, exibe a tag de entrega.
+  final String? criacao;
 
-  const LojinhaPedidoDetalheScreen({super.key, required this.ordem});
+  const LojinhaPedidoDetalheScreen({super.key, required this.ordem, this.criacao});
 
   @override
   State<LojinhaPedidoDetalheScreen> createState() =>
@@ -146,12 +148,50 @@ class _LojinhaPedidoDetalheScreenState
 
   Widget _conteudo() {
     final d = _detalhe!;
-    final totalPedido =
-        d.itens.fold(0.0, (s, i) => s + i.valorTotal);
+    final totalPedido = d.itens.fold(0.0, (s, i) => s + i.valorTotal);
+
+    // Tag de entrega (calculada a partir da criação, se disponível)
+    String? labelEntrega;
+    if (widget.criacao != null) {
+      // Reutiliza a lógica do model criando um resumo temporário
+      final resumo = LojinhaPedidoResumoModel(
+        ordem: d.ordem,
+        criacao: widget.criacao!,
+        valorTotal: totalPedido,
+        situacao: 'VIGENTE',
+        status: '',
+      );
+      labelEntrega = resumo.labelEntrega;
+    }
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // ── Tag de entrega ───────────────────────────────────────────
+        if (labelEntrega != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.laranja.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.laranja.withOpacity(0.25)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.local_shipping_outlined,
+                    color: AppColors.laranja, size: 18),
+                const SizedBox(width: 8),
+                Text(labelEntrega,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.laranja)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
         // ── Info do pedido ───────────────────────────────────────────
         Container(
           padding: const EdgeInsets.all(16),

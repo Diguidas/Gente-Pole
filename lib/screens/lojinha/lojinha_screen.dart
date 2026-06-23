@@ -119,6 +119,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
     final result = await _api.finalizarPedidoLojinha(
       itens: _carrinho.values.toList(),
     );
+    debugPrint('finalizarPedido: ok=${result.ok} retorno=${result.retorno}');
 
     if (!mounted) return;
     setState(() {
@@ -126,7 +127,11 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
       if (result.ok) _carrinho.clear();
     });
 
-    _mostrarResultado(result.ok, result.retorno, result.numeroPedido);
+    final primeiroPedido = result.pedidos
+        .where((p) => p.ok && p.numeroPedido != null)
+        .map((p) => p.numeroPedido!)
+        .firstOrNull;
+    _mostrarResultado(result.ok, result.retorno, primeiroPedido);
   }
 
   void _mostrarResultado(bool ok, String retorno, String? numeroPedido) {
