@@ -8,6 +8,7 @@ const supabase = createClient(
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Content-Type": "application/json",
 };
 
@@ -19,7 +20,6 @@ serve(async (req) => {
       headers: {
         ...CORS,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
       },
     });
   }

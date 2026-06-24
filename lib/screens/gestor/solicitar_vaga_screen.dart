@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
@@ -27,6 +29,12 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   bool _carregandoEquipe = false;
   final _motivoCtrl = TextEditingController();
   bool _enviando = false;
+
+  // Novos campos
+  int _quantidade = 1;
+  TimeOfDay? _horarioEntrada;
+  TimeOfDay? _horarioSaida;
+  PlatformFile? _docAprovacao;
 
   @override
   void initState() {
@@ -73,6 +81,10 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _ehSubstituicao = false;
       _colaboradorSubstituido = null;
       _motivoCtrl.clear();
+      _quantidade = 1;
+      _horarioEntrada = null;
+      _horarioSaida = null;
+      _docAprovacao = null;
     });
   }
 
@@ -83,6 +95,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     });
     if (substituicao && _equipe.isEmpty) _carregarEquipe();
   }
+
+  String _timeStr(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Future<void> _enviar() async {
     final t = _templateSelecionado!;
@@ -96,6 +111,20 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     }
     if (motivo.isNotEmpty) {
       descricao += '${descricao.isNotEmpty ? '\n\n' : ''}Motivo: $motivo';
+    }
+
+    // Upload do documento se houver
+    String? docUrl;
+    if (!_ehSubstituicao && _docAprovacao != null) {
+      final bytes = _docAprovacao!.bytes != null
+          ? Uint8List.fromList(_docAprovacao!.bytes!)
+          : null;
+      if (bytes != null) {
+        docUrl = await _api.uploadDocAprovacaoDiretoria(
+          fileName: _docAprovacao!.name,
+          bytes: bytes,
+        );
+      }
     }
 
     final vaga = VagaModel(
@@ -113,6 +142,10 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       statusRequisicao: 'AGUARDANDO_APROVACAO_RH',
       createdAt: DateTime.now(),
       templateId: t['id'] as int?,
+      quantidadeVagas: _quantidade,
+      horarioEntrada: _horarioEntrada != null ? _timeStr(_horarioEntrada!) : null,
+      horarioSaida: _horarioSaida != null ? _timeStr(_horarioSaida!) : null,
+      docAprovacaoUrl: docUrl,
     );
 
     final ok = await _api.solicitarVaga(vaga);
@@ -425,6 +458,159 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           const SizedBox(height: 20),
         ],
 
+        // Quantidade de vagas
+        _secao('Quantidade de vagas'),
+        const SizedBox(height: 4),
+        Text(
+          'A vaga é encerrada automaticamente quando o número for atingido.',
+          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: _quantidade > 1
+                    ? () => setState(() => _quantidade--)
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline_rounded),
+                color: AppColors.magenta,
+                disabledColor: AppColors.cinzaTexto.withOpacity(0.3),
+              ),
+              Expanded(
+                child: Text(
+                  '$_quantidade',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() => _quantidade++),
+                icon: const Icon(Icons.add_circle_outline_rounded),
+                color: AppColors.magenta,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Horário
+        _secao('Horário da vaga'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _horarioPicker(
+              label: 'Entrada',
+              valor: _horarioEntrada,
+              onSelecionado: (t) => setState(() => _horarioEntrada = t),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _horarioPicker(
+              label: 'Saída',
+              valor: _horarioSaida,
+              onSelecionado: (t) => setState(() => _horarioSaida = t),
+            )),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Documento de aprovação (só nova vaga)
+        if (!_ehSubstituicao) ...[
+          _secao('Documento de aprovação da diretoria'),
+          const SizedBox(height: 4),
+          Text(
+            'Obrigatório para aumento de quadro.',
+            style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () async {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                withData: true,
+              );
+              if (result != null && result.files.isNotEmpty) {
+                setState(() => _docAprovacao = result.files.first);
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _docAprovacao != null
+                      ? AppColors.magenta
+                      : const Color(0xFFE5E7EB),
+                  width: _docAprovacao != null ? 1.5 : 1,
+                ),
+              ),
+              child: _docAprovacao == null
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.upload_file_outlined,
+                            color: AppColors.cinzaTexto.withOpacity(0.6), size: 22),
+                        const SizedBox(width: 10),
+                        Text('Selecionar documento',
+                            style: GoogleFonts.poppins(
+                                fontSize: 13, color: AppColors.cinzaTexto)),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.magenta.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.description_outlined,
+                              color: AppColors.magenta, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_docAprovacao!.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.dark)),
+                              Text(
+                                '${(_docAprovacao!.size / 1024).toStringAsFixed(0)} KB',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 11, color: AppColors.cinzaTexto),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => setState(() => _docAprovacao = null),
+                          icon: const Icon(Icons.close_rounded,
+                              size: 18, color: AppColors.cinzaTexto),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+
         // Motivo
         _secao('Motivo / Justificativa'),
         const SizedBox(height: 8),
@@ -557,6 +743,54 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         style: GoogleFonts.poppins(
             fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark),
       );
+
+  Widget _horarioPicker({
+    required String label,
+    required TimeOfDay? valor,
+    required ValueChanged<TimeOfDay> onSelecionado,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: valor ?? const TimeOfDay(hour: 8, minute: 0),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+        );
+        if (picked != null) onSelecionado(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: valor != null ? AppColors.laranja : const Color(0xFFE5E7EB),
+            width: valor != null ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.access_time_rounded,
+                size: 18,
+                color: valor != null ? AppColors.laranja : AppColors.cinzaTexto),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                valor != null ? _timeStr(valor) : label,
+                style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: valor != null ? FontWeight.w600 : FontWeight.normal,
+                    color: valor != null ? AppColors.dark : AppColors.cinzaTexto),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _botaoTipo({
     required String label,

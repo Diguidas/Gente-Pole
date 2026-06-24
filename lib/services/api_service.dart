@@ -367,6 +367,33 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  Future<String?> uploadDocAprovacaoDiretoria({
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    try {
+      final path = 'aprovacoes_diretoria/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      await _client.storage.from('documentos').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(contentType: _mimeType(fileName), upsert: true),
+      );
+      return _client.storage.from('documentos').getPublicUrl(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _mimeType(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    return switch (ext) {
+      'pdf' => 'application/pdf',
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      _ => 'application/octet-stream',
+    };
+  }
+
   Future<bool> solicitarVaga(VagaModel vaga) async {
     try {
       await _client.from('vagas').insert(vaga.toInsertMap());

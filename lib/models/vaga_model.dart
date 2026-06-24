@@ -15,6 +15,10 @@ class VagaModel {
   final String statusRequisicao;
   final DateTime createdAt;
   final int? templateId;
+  final int quantidadeVagas;
+  final String? horarioEntrada;
+  final String? horarioSaida;
+  final String? docAprovacaoUrl;
 
   VagaModel({
     required this.id,
@@ -33,6 +37,10 @@ class VagaModel {
     required this.statusRequisicao,
     required this.createdAt,
     this.templateId,
+    this.quantidadeVagas = 1,
+    this.horarioEntrada,
+    this.horarioSaida,
+    this.docAprovacaoUrl,
   });
 
   factory VagaModel.fromJson(Map<String, dynamic> json) {
@@ -52,6 +60,10 @@ class VagaModel {
       requisitadoPorId: json['requisitado_por_id'] as int?,
       statusRequisicao: json['status_requisicao'] ?? 'APROVADA',
       templateId: json['template_id'] as int?,
+      quantidadeVagas: json['quantidade_vagas'] as int? ?? 1,
+      horarioEntrada: json['horario_entrada'] as String?,
+      horarioSaida: json['horario_saida'] as String?,
+      docAprovacaoUrl: json['doc_aprovacao_url'] as String?,
       createdAt: DateTime.parse(
         (json['created_at'] ?? json['criado_em']) as String,
       ),
@@ -74,6 +86,10 @@ class VagaModel {
       'requisitado_por_id': requisitadoPorId,
       'status_requisicao': 'AGUARDANDO_APROVACAO_RH',
       if (templateId != null) 'template_id': templateId,
+      'quantidade_vagas': quantidadeVagas,
+      if (horarioEntrada != null) 'horario_entrada': horarioEntrada,
+      if (horarioSaida != null) 'horario_saida': horarioSaida,
+      if (docAprovacaoUrl != null) 'doc_aprovacao_url': docAprovacaoUrl,
     };
   }
 }
