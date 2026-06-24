@@ -195,7 +195,8 @@ class ApiService {
         'mensagem': mensagem.trim(),
       });
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('ERRO enviarParabens: $e');
       return false;
     }
   }

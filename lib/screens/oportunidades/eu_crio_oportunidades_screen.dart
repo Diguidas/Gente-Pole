@@ -525,11 +525,14 @@ class _CardVaga extends StatelessWidget {
                         Icon(Icons.location_on_outlined,
                             size: 13, color: Colors.grey.shade400),
                         const SizedBox(width: 3),
-                        Text(
-                          vaga.localidade!,
-                          style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: Colors.grey.shade500),
+                        Flexible(
+                          child: Text(
+                            vaga.localidade!,
+                            style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.grey.shade500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         const SizedBox(width: 10),
                       ],

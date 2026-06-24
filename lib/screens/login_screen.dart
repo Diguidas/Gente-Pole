@@ -10,20 +10,8 @@ import 'main_layout.dart';
 import 'massoterapia/admin_massoterapia_screen.dart';
 import 'nutricionista/admin_nutricionista_screen.dart';
 
-// ─── Tokens visuais alinhados ao web ────────────────────────────────────────
-// Mesmos valores usados no login_screen.dart do sistema web.
 const _kLaranjaPrimario = Color(0xFFFF8000);
-const _kGradiente = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  stops: [0.0, 0.55, 1.0],
-  colors: [
-    Color(0xFFFFD000), // amarelo vibrante
-    Color(0xFFFF8000), // laranja médio
-    Color(0xFFE84E00), // laranja queimado
-  ],
-);
-const _kFillColor = Color(0xFFF8F9FC);
+const _kFillColor = Color(0xCCFFFFFF); // branco com leve transparência
 const _kBorderRadius = 12.0;
 
 class LoginScreen extends StatefulWidget {
@@ -78,8 +66,6 @@ class _LoginScreenState extends State<LoginScreen>
     _dataController.dispose();
     super.dispose();
   }
-
-  // ─── Lógica (inalterada) ──────────────────────────────────────────────────
 
   Future<void> _continuar() async {
     final cpf = _cpfController.text.trim();
@@ -223,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg, style: GoogleFonts.poppins(fontSize: 13)),
-        backgroundColor: AppColors.erro, // mesmo token do web
+        backgroundColor: AppColors.erro,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_kBorderRadius),
@@ -232,259 +218,226 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ─── UI ──────────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final colaborador = _api.colaboradorAtual;
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // ── Banner com gradiente (mesmo do web) ───────────────────────────
-          Container(
-            height: 300,
-            decoration: const BoxDecoration(gradient: _kGradiente),
-            child: Stack(
-              children: [
-                // Bolhas decorativas — mesma linguagem visual do web
-                Positioned(
-                  top: -60,
-                  right: -60,
-                  child: _bolha(220, Colors.white, 0.06),
-                ),
-                Positioned(
-                  bottom: 20,
-                  left: -40,
-                  child: _bolha(160, Colors.white, 0.06),
-                ),
-                Positioned(
-                  top: 80,
-                  right: 40,
-                  child: _bolha(70, Colors.white, 0.08),
-                ),
-
-                // Logo centralizada no banner
-                SafeArea(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Image.asset(
-                        'assets/logo.png',
-                        width: 300,
-                        height: 300,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          // Fundo full-screen
+          Positioned.fill(
+            child: Image.asset('assets/fundo.png', fit: BoxFit.cover),
           ),
 
-          // ── Card branco flutuante ─────────────────────────────────────────
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              height: MediaQuery.of(context).size.height * 0.65,
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(32, 36, 32, 24),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x18000000),
-                    blurRadius: 24,
-                    offset: Offset(0, -4),
-                  ),
-                ],
+          // Botão voltar
+          if (_etapa > 0)
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Color(0xFF5C3A1E), size: 20),
+                  onPressed: _resetar,
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Saudação ───────────────────────────────────────────
-                  Text(
-                    _etapa == 0 ? 'Boas-vindas!' : 'Olá,',
-                    style: GoogleFonts.poppins(
-                      fontSize: _etapa == 0 ? 26 : 15,
-                      fontWeight: _etapa == 0
-                          ? FontWeight.w800
-                          : FontWeight.w400,
-                      color: _etapa == 0
-                          ? AppColors.dark
-                          : AppColors.cinzaTexto,
-                      letterSpacing: _etapa == 0 ? -0.5 : 0,
-                    ),
-                  ),
+            ),
 
-                  if (_etapa == 0)
-                    Text(
-                      'Faça login para acessar',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: AppColors.cinzaTexto,
-                      ),
-                    ),
-
-                  // Nome do colaborador com fade
-                  if (_etapa > 0 && colaborador != null) ...[
-                    FadeTransition(
-                      opacity: _fadeAnim,
-                      child: Text(
-                        colaborador.nome,
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.dark,
-                          height: 1.1,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                    FadeTransition(
-                      opacity: _fadeAnim,
-                      child: Text(
-                        [colaborador.cargo, colaborador.setor]
-                            .where((e) => e != null && e.isNotEmpty)
-                            .join(' · '),
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: _kLaranjaPrimario, // laranja em vez de magenta
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ] else if (_etapa > 0)
-                    FadeTransition(
-                      opacity: _fadeAnim,
-                      child: Text(
-                        'Gente Pole',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.dark,
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 28),
-
-                  // ── Campo CPF ───────────────────────────────────────────
-                  _campo(
-                    controller: _cpfController,
-                    label: 'CPF',
-                    icon: Icons.badge_outlined,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [_cpfMask],
-                    enabled: _etapa == 0,
-                  ),
-
-                  // ── Campos extras animados ──────────────────────────────
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeInOut,
-                    child: _etapa > 0
-                        ? Column(
-                            children: [
-                              const SizedBox(height: 14),
-                              _campoSenha(
-                                label: _etapa == 1 ? 'Criar senha' : 'Senha',
-                              ),
-                              if (_etapa == 1) ...[
-                                const SizedBox(height: 14),
-                                _campo(
-                                  controller: _dataController,
-                                  label: 'Data de nascimento (DD/MM/AAAA)',
-                                  icon: Icons.cake_outlined,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [_dateMask],
-                                  hintText: 'Para confirmar sua identidade',
-                                ),
-                              ],
-                            ],
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-
-                  const Spacer(),
-
-                  // ── Botão principal ─────────────────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _carregando ? null : _continuar,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _kLaranjaPrimario, // laranja do web
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(_kBorderRadius),
-                        ),
-                      ),
-                      child: _carregando
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              _etapa == 0
-                                  ? 'Continuar'
-                                  : _etapa == 1
-                                      ? 'Criar conta'
-                                      : 'Entrar',
+          // Conteúdo principal — scroll para suportar teclado
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(28, 0, 28, 56),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Topo ──────────────────────────────────────────
+                          const SizedBox(height: 24),
+                          Center(
+                            child: Image.asset(
+                              'assets/logo1.png',
+                              width: 140,
+                              height: 140,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            _etapa == 0 ? 'Boas-vindas!' : 'Olá,',
+                            style: GoogleFonts.poppins(
+                              fontSize: _etapa == 0 ? 28 : 16,
+                              fontWeight: _etapa == 0 ? FontWeight.w800 : FontWeight.w400,
+                              color: const Color(0xFF3D2000),
+                            ),
+                          ),
+                          if (_etapa == 0)
+                            Text(
+                              'Faça login para acessar\nsua conta.',
                               style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: Colors.white,
+                                fontSize: 14,
+                                color: const Color(0xFF7A5230),
+                                height: 1.5,
                               ),
                             ),
-                    ),
-                  ),
+                          if (_etapa > 0 && colaborador != null) ...[
+                            FadeTransition(
+                              opacity: _fadeAnim,
+                              child: Text(
+                                colaborador.nome,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF3D2000),
+                                  height: 1.1,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            FadeTransition(
+                              opacity: _fadeAnim,
+                              child: Text(
+                                [colaborador.cargo, colaborador.setor]
+                                    .where((e) => e != null && e.isNotEmpty)
+                                    .join(' • '),
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: _kLaranjaPrimario,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ] else if (_etapa > 0)
+                            FadeTransition(
+                              opacity: _fadeAnim,
+                              child: Text(
+                                'Gente Pole',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF3D2000),
+                                ),
+                              ),
+                            ),
 
-                  if (_etapa > 0)
-                    Center(
-                      child: TextButton(
-                        onPressed: _resetar,
-                        child: Text(
-                          'Usar outro CPF',
-                          style: GoogleFonts.poppins(
-                            color: AppColors.cinzaTexto,
-                            fontSize: 13,
+                          SizedBox(height: constraints.maxHeight * 0.22),
+
+                          // ── Fundo ─────────────────────────────────────────
+                          _campo(
+                            controller: _cpfController,
+                            label: 'CPF',
+                            icon: Icons.person_outline,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [_cpfMask],
+                            enabled: _etapa == 0,
                           ),
-                        ),
-                      ),
-                    ),
 
-                  // ── Rodapé ──────────────────────────────────────────────
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Acesso restrito a colaboradores autorizados',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppColors.cinzaTexto,
-                        ),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeInOut,
+                            child: _etapa > 0
+                                ? Column(
+                                    children: [
+                                      const SizedBox(height: 14),
+                                      _campoSenha(
+                                        label: _etapa == 1 ? 'Criar senha' : 'Sua senha',
+                                      ),
+                                      if (_etapa == 1) ...[
+                                        const SizedBox(height: 14),
+                                        _campo(
+                                          controller: _dataController,
+                                          label: 'Data de nascimento (DD/MM/AAAA)',
+                                          icon: Icons.cake_outlined,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [_dateMask],
+                                          hintText: 'Para confirmar sua identidade',
+                                        ),
+                                      ],
+                                    ],
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: _carregando ? null : _continuar,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _kLaranjaPrimario,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: _carregando
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                          color: Colors.white, strokeWidth: 2.5),
+                                    )
+                                  : Text(
+                                      _etapa == 0
+                                          ? 'Continuar'
+                                          : _etapa == 1
+                                              ? 'Criar conta'
+                                              : 'Entrar',
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ),
+
+                          if (_etapa > 0)
+                            Center(
+                              child: TextButton(
+                                onPressed: _resetar,
+                                child: Text(
+                                  'Usar outro CPF',
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(0xFF7A5230),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 24),
+                          Center(
+                            child: Text(
+                              'Acesso restrito a colaboradores autorizados',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: const Color(0xFF7A5230),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
       ),
     );
   }
-
-  // ─── Helpers de campo com estilo alinhado ao web ──────────────────────────
 
   Widget _campo({
     required TextEditingController controller,
@@ -504,9 +457,11 @@ class _LoginScreenState extends State<LoginScreen>
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,
-        labelStyle: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
-        hintStyle: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
-        prefixIcon: Icon(icon, color: AppColors.cinzaTexto, size: 20),
+        labelStyle:
+            GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+        hintStyle:
+            GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
+        prefixIcon: Icon(icon, color: _kLaranjaPrimario, size: 20),
         filled: true,
         fillColor: _kFillColor,
         border: OutlineInputBorder(
@@ -536,8 +491,8 @@ class _LoginScreenState extends State<LoginScreen>
         labelText: label,
         labelStyle:
             GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
-        prefixIcon: const Icon(Icons.lock_outlined,
-            color: AppColors.cinzaTexto, size: 20),
+        prefixIcon: const Icon(Icons.lock_outline_rounded,
+            color: _kLaranjaPrimario, size: 20),
         suffixIcon: IconButton(
           icon: Icon(
             _senhaVisivel
@@ -560,17 +515,6 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      ),
-    );
-  }
-
-  Widget _bolha(double size, Color cor, double opacidade) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: cor.withOpacity(opacidade),
       ),
     );
   }

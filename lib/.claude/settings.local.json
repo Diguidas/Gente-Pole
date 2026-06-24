@@ -21,7 +21,9 @@
       "Bash(xargs grep -l \"feed_posts\")",
       "Bash(ls -la \"C:\\\\Users\\\\guilherme.franklin.REG_NT\\\\Videos\\\\gentepole_admin\" | head -50)",
       "Bash(grep -E '^[a-z_]+$')",
-      "Bash(mkdir -p \"C:/Users/guilherme.franklin.REG_NT/Videos/gentepole_admin/lib/features/colaborador/presentation/screens\")"
+      "Bash(mkdir -p \"C:/Users/guilherme.franklin.REG_NT/Videos/gentepole_admin/lib/features/colaborador/presentation/screens\")",
+      "PowerShell(ls \"$env:LOCALAPPDATA\\\\Pub\\\\Cache\\\\hosted\\\\pub.dev\\\\file_picker-8.3.7\\\\android\")",
+      "Bash(find /c/Users/guilherme.franklin.REG_NT -maxdepth 4 -type d -name \"gentepole_admin\" 2>/dev/null)"
     ]
   }
 }
