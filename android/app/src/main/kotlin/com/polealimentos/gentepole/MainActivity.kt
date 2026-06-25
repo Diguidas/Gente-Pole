@@ -1,4 +1,4 @@
-package com.example.gentepole
+package com.polealimentos.gentepole
 
 import io.flutter.embedding.android.FlutterActivity
 
