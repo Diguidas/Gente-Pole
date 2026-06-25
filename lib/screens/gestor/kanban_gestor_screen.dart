@@ -18,8 +18,9 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
   String _filtroStatus = 'TODOS';
 
   // Grupos para os chips de filtro
+  static const _grupoTriagem = {'INSCRITO', 'TRIAGEM', 'AVALIACAO_COMP', 'ENTREV_RH'};
   static const _grupoEntrevista = {'ENTREV_GESTOR', 'PROPOSTA'};
-  static const _grupoAso = {'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'};
+  static const _grupoAso = {'AGUARDANDO_SESMT', 'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO'};
   static const _grupoAdmissao = {
     'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS',
     'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS',
@@ -28,7 +29,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   // Status que entram na barra de progresso
   static const _statusProgresso = {
-    'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO',
+    'AGUARDANDO_SESMT', 'ASO_AGENDADO', 'ASO_REALIZADO', 'ASO_APROVADO',
     'AGUARDANDO_DADOS', 'ADMISSAO_INICIADA', 'DADOS_ENVIADOS',
     'DOCUMENTOS_EM_ANALISE', 'DOCUMENTOS_APROVADOS',
     'CONTRATO_ENVIADO', 'CONTRATO_ASSINADO', 'INTEGRACAO',
@@ -48,6 +49,8 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   List<CandidaturaGestorModel> _filtrar(List<CandidaturaGestorModel> lista) {
     switch (_filtroStatus) {
+      case 'GRUPO_TRIAGEM':
+        return lista.where((c) => _grupoTriagem.contains(c.statusEfetivo)).toList();
       case 'GRUPO_ENTREVISTA':
         return lista.where((c) => _grupoEntrevista.contains(c.statusEfetivo)).toList();
       case 'GRUPO_ASO':
@@ -125,6 +128,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                     child: Row(
                       children: [
                         _chipFiltro('TODOS', 'Todos'),
+                        _chipFiltro('GRUPO_TRIAGEM', 'Triagem'),
                         _chipFiltro('GRUPO_ENTREVISTA', 'Entrevista'),
                         _chipFiltro('GRUPO_ASO', 'ASO'),
                         _chipFiltro('GRUPO_ADMISSAO', 'Admissão'),
@@ -582,9 +586,14 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   Color _corStatus(String status) {
     switch (status) {
+      case 'INSCRITO':       return AppColors.cinzaTexto;
+      case 'TRIAGEM':        return const Color(0xFF64748B);
+      case 'AVALIACAO_COMP': return const Color(0xFF8B5CF6);
+      case 'ENTREV_RH':      return const Color(0xFF0EA5E9);
       case 'ENTREV_GESTOR': return AppColors.amarelo;
       case 'PROPOSTA':      return AppColors.laranja;
       case 'AGUARDANDO_DADOS': return AppColors.cinzaTexto;
+      case 'AGUARDANDO_SESMT': return const Color(0xFF0EA5E9);
       case 'ASO_AGENDADO':
       case 'ASO_REALIZADO': return const Color(0xFF6366F1);
       case 'ASO_APROVADO':  return const Color(0xFF10B981);
@@ -601,9 +610,14 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
   String _labelStatus(String status) {
     switch (status) {
+      case 'INSCRITO':            return 'Inscrito';
+      case 'TRIAGEM':             return 'Triagem';
+      case 'AVALIACAO_COMP':      return 'Aval. Comportamental';
+      case 'ENTREV_RH':           return 'Entrevista RH';
       case 'ENTREV_GESTOR':       return 'Entrevista';
       case 'PROPOSTA':            return 'Proposta';
       case 'AGUARDANDO_DADOS':    return 'Aguardando';
+      case 'AGUARDANDO_SESMT':    return 'Aguard. SESMT';
       case 'ASO_AGENDADO':        return 'ASO Agendado';
       case 'ASO_REALIZADO':       return 'ASO Realizado';
       case 'ASO_APROVADO':        return 'ASO Aprovado';

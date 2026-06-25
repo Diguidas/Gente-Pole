@@ -427,12 +427,14 @@ class ApiService {
         .from('candidaturas')
         .select('*, candidatos(*), admissoes(id, status)')
         .eq('vaga_id', vagaId)
-        .inFilter('status', ['ENTREV_GESTOR', 'PROPOSTA', 'APROVADO'])
+        .inFilter('status', [
+          'INSCRITO', 'TRIAGEM', 'AVALIACAO_COMP', 'ENTREV_RH',
+          'ENTREV_GESTOR', 'PROPOSTA', 'APROVADO',
+        ])
         .order('created_at', ascending: false);
 
     return (data as List)
         .map((e) => CandidaturaGestorModel.fromJson(e as Map<String, dynamic>))
-        // Remove candidatos cuja admissão já foi concluída
         .where((c) => c.admissaoStatus != 'CONCLUIDO')
         .toList();
   }
