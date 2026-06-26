@@ -36,16 +36,32 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   TimeOfDay? _horarioSaida;
   PlatformFile? _docAprovacao;
 
+  // Campos da vaga
+  final _centroCustoCtrl = TextEditingController();
+  final _liderancaMatriculaCtrl = TextEditingController();
+  List<Map<String, dynamic>> _filiais = [];
+  String? _filialSelecionada;
+
   @override
   void initState() {
     super.initState();
     _carregarTemplates();
+    _carregarFiliais();
   }
 
   @override
   void dispose() {
     _motivoCtrl.dispose();
+    _centroCustoCtrl.dispose();
+    _liderancaMatriculaCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarFiliais() async {
+    try {
+      final lista = await _api.listarFiliais();
+      if (mounted) setState(() => _filiais = lista);
+    } catch (_) {}
   }
 
   Future<void> _carregarTemplates() async {
@@ -85,6 +101,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _horarioEntrada = null;
       _horarioSaida = null;
       _docAprovacao = null;
+      _filialSelecionada = null;
     });
   }
 
@@ -137,7 +154,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       salarioAExibir: false,
       testePratico: t['teste_pratico'] as bool? ?? false,
       status: 'FECHADA',
-      tipoVaga: t['tipo_vaga'] as String? ?? 'UNICA',
+      tipoVaga: _quantidade > 1 ? 'MULTIPLA' : (t['tipo_vaga'] as String? ?? 'UNICA'),
       requisitadoPorId: _api.colaboradorAtual?.id,
       statusRequisicao: 'AGUARDANDO_APROVACAO_RH',
       createdAt: DateTime.now(),
@@ -146,6 +163,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       horarioEntrada: _horarioEntrada != null ? _timeStr(_horarioEntrada!) : null,
       horarioSaida: _horarioSaida != null ? _timeStr(_horarioSaida!) : null,
       docAprovacaoUrl: docUrl,
+      centroCusto: _centroCustoCtrl.text.trim().isEmpty ? null : _centroCustoCtrl.text.trim(),
+      liderancaDiretaMatricula: _liderancaMatriculaCtrl.text.trim().isEmpty ? null : _liderancaMatriculaCtrl.text.trim(),
+      filial: _filialSelecionada,
     );
 
     final ok = await _api.solicitarVaga(vaga);
@@ -611,6 +631,24 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           const SizedBox(height: 20),
         ],
 
+        // Informações da vaga
+        _secao('Informações da vaga'),
+        const SizedBox(height: 10),
+        _campoTexto(
+          ctrl: _centroCustoCtrl,
+          label: 'Centro de custo',
+          icone: Icons.account_balance_outlined,
+        ),
+        const SizedBox(height: 10),
+        _campoTexto(
+          ctrl: _liderancaMatriculaCtrl,
+          label: 'Matrícula da liderança direta',
+          icone: Icons.badge_outlined,
+        ),
+        const SizedBox(height: 10),
+        _dropdownFilial(),
+        const SizedBox(height: 20),
+
         // Motivo
         _secao('Motivo / Justificativa'),
         const SizedBox(height: 8),
@@ -825,6 +863,73 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       ),
     );
   }
+
+  Widget _campoTexto({
+    required TextEditingController ctrl,
+    required String label,
+    required IconData icone,
+  }) =>
+      Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: TextField(
+          controller: ctrl,
+          style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle:
+                GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
+            prefixIcon:
+                Icon(icone, size: 18, color: AppColors.cinzaTexto),
+            border: InputBorder.none,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+      );
+
+  Widget _dropdownFilial() => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _filialSelecionada != null
+                ? AppColors.laranja
+                : const Color(0xFFE5E7EB),
+            width: _filialSelecionada != null ? 1.5 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Row(children: [
+          Icon(Icons.location_city_outlined,
+              size: 18, color: AppColors.cinzaTexto),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _filialSelecionada,
+                hint: Text('Filial',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13, color: AppColors.cinzaTexto)),
+                isExpanded: true,
+                style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+                items: _filiais.map((f) {
+                  final nome = f['nome'] as String;
+                  final chave = f['chave'] as String;
+                  return DropdownMenuItem<String>(
+                    value: nome,
+                    child: Text('$nome ($chave)'),
+                  );
+                }).toList(),
+                onChanged: (v) => setState(() => _filialSelecionada = v),
+              ),
+            ),
+          ),
+        ]),
+      );
 
   Widget _tag(String label, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

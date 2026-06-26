@@ -1932,4 +1932,13 @@ class ApiService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> listarFiliais() async {
+    final res = await _client
+        .from('hierarquia_nomes')
+        .select('id, chave, nome')
+        .eq('tipo', 'filial')
+        .order('nome');
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
 }

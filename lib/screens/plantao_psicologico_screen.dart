@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _roxo = Color(0xFF7C3AED);
-const _roxoClaro = Color(0xFFF5F3FF);
+const _amarelo = Color(0xFFFFB800);
+const _amareloClaro = Color(0xFFFFF8E1);
 
 class PlantaoPsicologicoScreen extends StatelessWidget {
   const PlantaoPsicologicoScreen({super.key});
 
   Future<void> _abrirLink() async {
     final uri = Uri.parse('https://www-amarelosaudemental-com-br.rds.land/lp-pole-alimentos');
-    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
   }
 
   @override
@@ -21,12 +25,12 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: _roxo),
+          icon: const Icon(Icons.arrow_back, color: _amarelo),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text('Plantão Psicológico',
             style: GoogleFonts.poppins(
-                color: _roxo, fontWeight: FontWeight.w700, fontSize: 16)),
+                color: _amarelo, fontWeight: FontWeight.w700, fontSize: 16)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -39,7 +43,7 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [_roxo, Color(0xFF6D28D9)],
+                  colors: [_amarelo, Color(0xFFFFD000)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -149,7 +153,7 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
                       color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _roxo,
+                  backgroundColor: _amarelo,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -184,9 +188,9 @@ class _Card extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _roxoClaro,
+        color: _amareloClaro,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _roxo.withOpacity(0.15)),
+        border: Border.all(color: _amarelo.withOpacity(0.3)),
       ),
       child: child,
     );
@@ -205,7 +209,7 @@ class _Secao extends StatelessWidget {
           style: GoogleFonts.poppins(
               fontWeight: FontWeight.w700,
               fontSize: 14,
-              color: _roxo)),
+              color: _amarelo)),
     );
   }
 }
@@ -232,7 +236,7 @@ class _ContatoItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icone, color: _roxo, size: 20),
+        Icon(icone, color: _amarelo, size: 20),
         const SizedBox(width: 10),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,7 +246,7 @@ class _ContatoItem extends StatelessWidget {
                     fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
             Text(valor,
                 style: GoogleFonts.poppins(
-                    fontSize: 14, color: _roxo, fontWeight: FontWeight.w700)),
+                    fontSize: 14, color: _amarelo, fontWeight: FontWeight.w700)),
           ],
         ),
       ],
