@@ -348,55 +348,170 @@ class _FeedScreenState extends State<FeedScreen> {
                               await _carregarHumor();
                               await _carregarExame();
                             },
-                            child: ListView.builder(
-                              controller: _scrollCtrl,
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 12, 16, 40),
-                              itemCount: _posts.length +
-                                  2 + // humor + composer
-                                  (_exameAgendado != null ? 1 : 0) +
-                                  (_carregandoMais ? 1 : 0),
-                              itemBuilder: (ctx, i) {
-                                // Item 0: humor card
-                                if (i == 0) return _buildHumorCard();
-                                // Item 1: exame card (se houver)
-                                if (i == 1 && _exameAgendado != null) {
-                                  return _buildExameCard(_exameAgendado!);
-                                }
-                                final offset = _exameAgendado != null ? 1 : 0;
-                                // Item 1 ou 2: composer inline
-                                if (i == 1 + offset) {
-                                  return _InlineComposer(
-                                    api: _api,
-                                    onPublicado: () =>
-                                        _carregarFeed(reiniciar: true),
+                            child: Builder(builder: (ctx) {
+                              final meuId = _api.colaboradorAtual?.id;
+                              // Separa posts pendentes/rejeitados do próprio usuário
+                              final meusPendentes = meuId == null
+                                  ? <FeedPostModel>[]
+                                  : _posts
+                                      .where((p) =>
+                                          p.autorId == meuId &&
+                                          !p.isAprovado)
+                                      .toList();
+                              // Feed principal: aprovados + qualquer post de outros
+                              final feedPrincipal = _posts
+                                  .where((p) =>
+                                      p.isAprovado ||
+                                      (meuId != null && p.autorId != meuId))
+                                  .toList();
+
+                              final temPendentes = meusPendentes.isNotEmpty;
+                              final extraItems = (_exameAgendado != null ? 1 : 0) +
+                                  (temPendentes ? 1 : 0);
+
+                              return ListView.builder(
+                                controller: _scrollCtrl,
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+                                itemCount: feedPrincipal.length +
+                                    2 + // humor + composer
+                                    extraItems +
+                                    (_carregandoMais ? 1 : 0),
+                                itemBuilder: (_, i) {
+                                  // Item 0: humor card
+                                  if (i == 0) return _buildHumorCard();
+                                  // Item 1: exame card (se houver)
+                                  if (i == 1 && _exameAgendado != null) {
+                                    return _buildExameCard(_exameAgendado!);
+                                  }
+                                  final exameOff = _exameAgendado != null ? 1 : 0;
+                                  // Composer
+                                  if (i == 1 + exameOff) {
+                                    return _InlineComposer(
+                                      api: _api,
+                                      onPublicado: () =>
+                                          _carregarFeed(reiniciar: true),
+                                    );
+                                  }
+                                  // Seção de pendentes/rejeitados
+                                  if (temPendentes && i == 2 + exameOff) {
+                                    return _buildPendentesSection(meusPendentes);
+                                  }
+                                  final pendOff = temPendentes ? 1 : 0;
+                                  final postIdx = i - 2 - exameOff - pendOff;
+                                  if (postIdx == feedPrincipal.length) {
+                                    return const Padding(
+                                      padding: EdgeInsets.all(24),
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                            color: AppColors.magenta),
+                                      ),
+                                    );
+                                  }
+                                  if (feedPrincipal.isEmpty) return _vazioWidget();
+                                  return _PostCard(
+                                    post: feedPrincipal[postIdx],
+                                    meuId: meuId,
+                                    onExcluir: () =>
+                                        _confirmarExclusao(feedPrincipal[postIdx]),
                                   );
-                                }
-                                final postIdx = i - 2 - offset;
-                                if (postIdx == _posts.length) {
-                                  return const Padding(
-                                    padding: EdgeInsets.all(24),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                          color: AppColors.magenta),
-                                    ),
-                                  );
-                                }
-                                if (_posts.isEmpty) return _vazioWidget();
-                                return _PostCard(
-                                  post: _posts[postIdx],
-                                  meuId: _api.colaboradorAtual?.id,
-                                  onExcluir: () =>
-                                      _confirmarExclusao(_posts[postIdx]),
-                                );
-                              },
-                            ),
+                                },
+                              );
+                            }),
                           ),
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── Pendentes / Rejeitados do próprio usuário ────────────────────────────────
+
+  Widget _buildPendentesSection(List<FeedPostModel> posts) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.hourglass_top_rounded,
+                    size: 16, color: Color(0xFFB45309)),
+                const SizedBox(width: 6),
+                Text(
+                  posts.any((p) => p.isPendente)
+                      ? 'Aguardando aprovação do RH'
+                      : 'Publicações rejeitadas',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFFB45309),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFFDE68A)),
+          ...posts.map((p) => Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: p.isPendente
+                            ? const Color(0xFFFEF3C7)
+                            : const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        p.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: p.isPendente
+                              ? const Color(0xFFB45309)
+                              : const Color(0xFFB91C1C),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        p.conteudo ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: const Color(0xFF78350F),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    if (p.isRejeitado)
+                      GestureDetector(
+                        onTap: () => _confirmarExclusao(p),
+                        child: const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: Icon(Icons.delete_outline_rounded,
+                              size: 18, color: Color(0xFFB91C1C)),
+                        ),
+                      ),
+                  ],
+                ),
+              )),
         ],
       ),
     );
@@ -750,6 +865,7 @@ class _InlineComposerState extends State<_InlineComposer> {
       final fragmento = antes.substring(absStart);
       if (!fragmento.contains('\n')) {
         final query = fragmento.substring(1);
+        // Dispara sugestões mesmo para query vazia (logo após o @)
         if (_mencaoStart != absStart || query != _queryMencao) {
           _mencaoStart = absStart;
           _queryMencao = query;

@@ -1821,32 +1821,53 @@ class ApiService {
   /// Retorna uma lista de Maps com 'tipo' ('colaborador' | 'setor'),
   /// 'label' (texto exibido) e 'valor' (string gravada no campo destinatario).
   Future<List<Map<String, String>>> buscarSugestoesMencao(String query) async {
-    if (query.isEmpty) return [];
     final q = query.toLowerCase();
- 
-    // Busca colaboradores
+
+    // Busca setores distintos
+    final setoresRaw = await _client
+        .from('colaboradores')
+        .select('setor')
+        .not('setor', 'is', null)
+        .then((r) => r as List);
+
+    final todosSetores = setoresRaw
+        .map((e) => e['setor'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+
+    // Query vazia: mostra "Todos" + todos os setores (sem busca de colaborador)
+    if (q.isEmpty) {
+      return [
+        {
+          'tipo': 'todos',
+          'label': 'Todos',
+          'sublabel': 'Todos os colaboradores',
+          'valor': 'todos',
+        },
+        ...todosSetores.take(6).map((s) => {
+              'tipo': 'setor',
+              'label': '@$s',
+              'sublabel': 'Setor',
+              'valor': '@setor:$s',
+            }),
+      ];
+    }
+
+    // Com query: filtra
+    final setoresFiltrados = todosSetores
+        .where((s) => s.toLowerCase().contains(q))
+        .take(4)
+        .toList();
+
     final colabs = await _client
         .from('colaboradores')
         .select('id, nome, cargo')
         .ilike('nome', '%$q%')
         .limit(6);
- 
-    // Busca setores distintos
-    final setoresRaw = await _client
-        .from('colaboradores')
-        .select('setor')
-        .ilike('setor', '%$q%');
- 
-    final setores = (setoresRaw as List)
-        .map((e) => e['setor'] as String?)
-        .whereType<String>()
-        .toSet() // deduplica
-        .take(4)
-        .toList();
- 
+
     final sugestoes = <Map<String, String>>[];
- 
-    // Adiciona 'todos' se o query bater
+
     if ('todos'.contains(q)) {
       sugestoes.add({
         'tipo': 'todos',
@@ -1855,8 +1876,8 @@ class ApiService {
         'valor': 'todos',
       });
     }
- 
-    for (final s in setores) {
+
+    for (final s in setoresFiltrados) {
       sugestoes.add({
         'tipo': 'setor',
         'label': '@$s',
@@ -1864,7 +1885,7 @@ class ApiService {
         'valor': '@setor:$s',
       });
     }
- 
+
     for (final c in (colabs as List)) {
       sugestoes.add({
         'tipo': 'colaborador',
@@ -1873,7 +1894,7 @@ class ApiService {
         'valor': '@colaborador:${c['id']}',
       });
     }
- 
+
     return sugestoes;
   }
 
