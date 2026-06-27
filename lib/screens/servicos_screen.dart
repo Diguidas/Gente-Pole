@@ -77,8 +77,9 @@ class _ServicosScreenState extends State<ServicosScreen> {
       body: Stack(
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(28),
+            ),
             child: Image.asset(
               'assets/banner_servicos.png',
               height: 200,
@@ -125,9 +126,14 @@ class _ServicosScreenState extends State<ServicosScreen> {
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : const Icon(Icons.refresh_rounded,
-                                color: Colors.white),
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.refresh_rounded,
+                                color: Colors.white,
+                              ),
                         tooltip: 'Atualizar',
                       ),
                     ],
@@ -153,13 +159,17 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
                           // ── Painel do Gestor ──────────────────────────────
                           if (!_loadingPerfis && _ehGestor) ...[
-                            _sectionLabel('Painel do Gestor', AppColors.laranja),
+                            _sectionLabel(
+                              'Painel do Gestor',
+                              AppColors.laranja,
+                            ),
                             const SizedBox(height: 10),
                             _botaoServico(
                               context,
                               icone: Icons.work_outline_rounded,
                               titulo: 'Painel do Gestor',
-                              subtitulo: 'Solicite vagas e acompanhe candidatos',
+                              subtitulo:
+                                  'Solicite vagas e acompanhe candidatos',
                               cor: AppColors.laranja,
                               emBreve: false,
                               onTap: () => Navigator.push(
@@ -237,23 +247,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               ),
                             ),
                             const SizedBox(height: 14),
-
-                            _botaoServico(
+                          ],
+                          _botaoServico(
+                            context,
+                            icone: Icons.poll_outlined,
+                            titulo: 'Pesquisas',
+                            subtitulo: 'Responda às pesquisas da empresa',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
                               context,
-                              icone: Icons.poll_outlined,
-                              titulo: 'Pesquisas',
-                              subtitulo: 'Responda às pesquisas da empresa',
-                              cor: AppColors.magenta,
-                              emBreve: false,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const PesquisaListScreen(),
-                                ),
+                              MaterialPageRoute(
+                                builder: (_) => const PesquisaListScreen(),
                               ),
                             ),
-                            const SizedBox(height: 14),
-                          ],
+                          ),
+                          const SizedBox(height: 14),
 
                           // ── Cardápio ──────────────────────────────────────
                           _botaoServico(
@@ -299,19 +308,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             emBreve: !_nutricionistaAtivo,
                             onTap: _nutricionistaAtivo
                                 ? () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const NutricionistaScreen(),
-                                      ),
-                                    )
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const NutricionistaScreen(),
+                                    ),
+                                  )
                                 : () => ScaffoldMessenger.of(context)
-                                        .showSnackBar(const SnackBar(
-                                      content: Text(
-                                          'Sem datas disponíveis no momento.'),
-                                      backgroundColor: Color(0xFF10B981),
-                                      behavior: SnackBarBehavior.floating,
-                                    )),
+                                      .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Sem datas disponíveis no momento.',
+                                          ),
+                                          backgroundColor: Color(0xFF10B981),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      ),
                           ),
                           const SizedBox(height: 14),
 
@@ -325,7 +337,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const PlantaoPsicologicoScreen(),
+                                builder: (_) =>
+                                    const PlantaoPsicologicoScreen(),
                               ),
                             ),
                           ),
@@ -335,7 +348,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             context,
                             icone: Icons.favorite_outline_rounded,
                             titulo: 'Conexões do Bem',
-                            subtitulo: 'Voluntariado e indicação de instituições',
+                            subtitulo:
+                                'Voluntariado e indicação de instituições',
                             cor: const Color(0xFFEC4899),
                             emBreve: false,
                             onTap: () => Navigator.push(
@@ -431,7 +445,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
     required VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: onTap ??
+      onTap:
+          onTap ??
           () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

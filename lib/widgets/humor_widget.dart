@@ -182,7 +182,7 @@ class _HumorWidgetState extends State<HumorWidget> {
     final textoApoio = _banner?['texto_apoio'] as String?;
 
     return Container(
-      height: 140,
+      constraints: const BoxConstraints(minHeight: 120),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: const LinearGradient(

@@ -55,8 +55,10 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
     });
   }
 
-  int _disponivelPara(LojinhaProdutoModel p) =>
-      _estoqueVisivel[p.material] ?? p.estoque.toInt();
+  int _disponivelPara(LojinhaProdutoModel p) {
+    final estoque = _estoqueVisivel[p.material] ?? p.estoque.toInt();
+    return p.limiteEfetivo(estoque);
+  }
 
   String _moeda(double v) =>
       'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';

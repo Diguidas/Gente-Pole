@@ -825,18 +825,27 @@ class ApiService {
     final results = await Future.wait([
       query.order('descricao', ascending: true),
       _client.from('lojinha_fotos').select('material, foto_url'),
+      _client.from('lojinha_regras').select('material, dias_semana, limite_qtd, periodo_limite'),
     ]);
 
-    // Mapa material (sem zeros) → foto_url
     final fotos = <String, String>{
       for (final f in (results[1] as List))
         (f['material'] as String): (f['foto_url'] as String),
+    };
+
+    final regras = <String, Map<String, dynamic>>{
+      for (final r in (results[2] as List))
+        (r['material'] as String): Map<String, dynamic>.from(r as Map),
     };
 
     return (results[0] as List).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
       final matSemZeros = (m['material'] as String).replaceAll(RegExp(r'^0+'), '');
       m['foto_url'] = fotos[matSemZeros];
+      final regra = regras[matSemZeros] ?? regras[m['material'] as String? ?? ''];
+      m['dias_semana'] = regra?['dias_semana'];
+      m['limite_qtd'] = regra?['limite_qtd'];
+      m['periodo_limite'] = regra?['periodo_limite'];
       return LojinhaProdutoModel.fromJson(m);
     }).toList();
   }

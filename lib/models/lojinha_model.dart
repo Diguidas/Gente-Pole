@@ -15,6 +15,9 @@ class LojinhaProdutoModel {
   final String? fotoUrl;
   final String? centro;
   final String? deposito;
+  final List<int>? diasSemana;
+  final int? limiteQtd;
+  final String? periodoLimite;
 
   LojinhaProdutoModel({
     required this.id,
@@ -31,6 +34,9 @@ class LojinhaProdutoModel {
     this.fotoUrl,
     this.centro,
     this.deposito,
+    this.diasSemana,
+    this.limiteQtd,
+    this.periodoLimite,
   });
 
   factory LojinhaProdutoModel.fromJson(Map<String, dynamic> j) =>
@@ -49,7 +55,18 @@ class LojinhaProdutoModel {
         fotoUrl:       j['foto_url'] as String?,
         centro:        j['centro'] as String?,
         deposito:      j['deposito'] as String?,
+        diasSemana:    (j['dias_semana'] as List?)?.cast<int>(),
+        limiteQtd:     j['limite_qtd'] as int?,
+        periodoLimite: j['periodo_limite'] as String?,
       );
+
+  bool get disponivelHoje {
+    if (diasSemana == null || diasSemana!.isEmpty) return true;
+    return diasSemana!.contains(DateTime.now().weekday);
+  }
+
+  int limiteEfetivo(int estoqueVisivel) =>
+      limiteQtd != null ? limiteQtd!.clamp(0, estoqueVisivel) : estoqueVisivel;
 }
 
 // ─── Resultado de pedido por centro ──────────────────────────────────────────

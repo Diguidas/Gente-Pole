@@ -701,7 +701,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                         ? 'Selecione quem será substituído'
                         : 'Enviar para o RH',
                     style: GoogleFonts.poppins(
-                        fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
+                        fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
           ),
         ),

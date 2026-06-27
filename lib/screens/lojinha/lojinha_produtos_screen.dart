@@ -78,6 +78,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     final busca = _searchCtrl.text.toLowerCase().trim();
     setState(() {
       _filtrados = _todos.where((p) {
+        if (!p.disponivelHoje) return false;
         if (_marcaSel != null && p.marca != _marcaSel) return false;
         if (_categoriaSel != null && p.categoria != _categoriaSel) return false;
         if (_linhaSel != null && p.linha != _linhaSel) return false;
@@ -144,6 +145,9 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       _carrinho.values.fold(0.0, (s, i) => s + i.subtotal);
 
   void _adicionar(LojinhaProdutoModel p) {
+    final atual = _carrinho[p.id]?.quantidade ?? 0;
+    final limite = p.limiteEfetivo(p.estoque.toInt());
+    if (atual >= limite) return;
     setState(() {
       _carrinho.containsKey(p.id)
           ? _carrinho[p.id]!.quantidade++
