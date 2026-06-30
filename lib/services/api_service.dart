@@ -825,7 +825,7 @@ class ApiService {
     final results = await Future.wait([
       query.order('descricao', ascending: true),
       _client.from('lojinha_fotos').select('material, foto_url'),
-      _client.from('lojinha_regras').select('material, dias_semana, limite_qtd, periodo_limite'),
+      _client.from('lojinha_regras').select('id, dias_semana, materiais'),
     ]);
 
     final fotos = <String, String>{
@@ -833,21 +833,48 @@ class ApiService {
         (f['material'] as String): (f['foto_url'] as String),
     };
 
-    final regras = <String, Map<String, dynamic>>{
-      for (final r in (results[2] as List))
-        (r['material'] as String): Map<String, dynamic>.from(r as Map),
-    };
+    // Nova estrutura: uma regra → N materiais. Expande para mapa material → dias
+    final diasPorMaterial = <String, List<int>>{};
+    for (final r in (results[2] as List)) {
+      final dias = (r['dias_semana'] as List?)?.cast<int>();
+      final materiais = (r['materiais'] as List?)?.cast<String>() ?? [];
+      for (final mat in materiais) {
+        if (dias != null) diasPorMaterial[mat] = dias;
+      }
+    }
 
     return (results[0] as List).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
       final matSemZeros = (m['material'] as String).replaceAll(RegExp(r'^0+'), '');
       m['foto_url'] = fotos[matSemZeros];
-      final regra = regras[matSemZeros] ?? regras[m['material'] as String? ?? ''];
-      m['dias_semana'] = regra?['dias_semana'];
-      m['limite_qtd'] = regra?['limite_qtd'];
-      m['periodo_limite'] = regra?['periodo_limite'];
+      m['dias_semana'] = diasPorMaterial[matSemZeros];
+      m['limite_qtd'] = null;
+      m['periodo_limite'] = null;
       return LojinhaProdutoModel.fromJson(m);
     }).toList();
+  }
+
+  Future<Map<String, dynamic>> buscarConfigLojinha() async {
+    final data = await _client
+        .from('lojinha_config')
+        .select('limite_qtd, periodo_dias')
+        .eq('id', 1)
+        .maybeSingle();
+    if (data == null) return {'limite_qtd': null, 'periodo_dias': null};
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<int> buscarComprasRecentesColab(String colaboradorId, int periodoDias) async {
+    final desde = DateTime.now().subtract(Duration(days: periodoDias - 1));
+    final dataStr =
+        '${desde.year}-${desde.month.toString().padLeft(2, '0')}-${desde.day.toString().padLeft(2, '0')}';
+    final data = await _client
+        .from('lojinha_compras')
+        .select('quantidade_total')
+        .eq('colaborador_id', colaboradorId)
+        .gte('data', dataStr);
+    final list = data as List;
+    return list.fold<int>(0, (s, r) => s + ((r['quantidade_total'] as int?) ?? 0));
   }
 
   /// Dados do funcionário no SAP: limites + histórico de pedidos
@@ -951,34 +978,90 @@ class ApiService {
     }
   }
 
-  /// Envia pedido via Edge Function — pode gerar múltiplos pedidos (um por centro)
+  Future<List<LojinhaProdutoModel>> buscarExclusivosLojinha() async {
+    final data = await _client
+        .from('lojinha_exclusivos')
+        .select('id, material, nome, descricao, foto_url, preco, estoque')
+        .eq('ativo', true)
+        .order('ordem', ascending: true);
+    return (data as List)
+        .map((j) => LojinhaProdutoModel.fromExclusivo(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Envia pedido via Edge Function — pode gerar múltiplos pedidos (um por centro).
+  /// Itens exclusivos NÃO vão ao SAP: são registrados diretamente no Supabase.
   Future<({bool ok, String retorno, List<LojinhaPedidoCentroResult> pedidos})>
   finalizarPedidoLojinha({required List<CarrinhoItem> itens}) async {
     final colaborador = colaboradorAtual!;
     final hoje = DateTime.now();
+    final dataStr =
+        '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
     final datacriacao =
         '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
 
-    final res = await _client.functions.invoke(
-      'lojinha-pedido',
-      body: {
-        'colaborador_id': colaborador.id,
-        'cliente_sap': colaborador.clienteSap,
-        'datacriacao': datacriacao,
-        'itens': itens.map((i) => i.toSapItem()).toList(),
-      },
-    );
+    final itensRegulares = itens.where((i) => !i.produto.isExclusivo).toList();
+    final itensExclusivos = itens.where((i) => i.produto.isExclusivo).toList();
 
-    final data = res.data as Map<String, dynamic>;
-    final pedidosRaw = data['pedidos'] as List? ?? [];
-    final pedidos = pedidosRaw
-        .map((p) => LojinhaPedidoCentroResult.fromJson(p as Map<String, dynamic>))
-        .toList();
-    return (
-      ok: data['ok'] as bool,
-      retorno: data['retorno'] as String,
-      pedidos: pedidos,
-    );
+    bool ok = true;
+    String retorno = '';
+    List<LojinhaPedidoCentroResult> pedidos = [];
+
+    // Itens regulares → SAP
+    if (itensRegulares.isNotEmpty) {
+      final res = await _client.functions.invoke(
+        'lojinha-pedido',
+        body: {
+          'colaborador_id': colaborador.id,
+          'cliente_sap': colaborador.clienteSap,
+          'datacriacao': datacriacao,
+          'itens': itensRegulares.map((i) => i.toSapItem()).toList(),
+        },
+      );
+      final data = res.data as Map<String, dynamic>;
+      ok = data['ok'] as bool;
+      retorno = data['retorno'] as String;
+      final pedidosRaw = data['pedidos'] as List? ?? [];
+      pedidos = pedidosRaw
+          .map((p) => LojinhaPedidoCentroResult.fromJson(p as Map<String, dynamic>))
+          .toList();
+    }
+
+    // Itens exclusivos → Supabase (independente do resultado SAP)
+    if (itensExclusivos.isNotEmpty) {
+      final matricula = colaborador.matricula;
+      final colabNome = colaborador.nome;
+      for (final item in itensExclusivos) {
+        await _client.from('lojinha_compras_itens').insert({
+          'colaborador_id': matricula,
+          'colaborador_nome': colabNome,
+          'material': item.produto.material,
+          'quantidade': item.quantidade,
+          'data': dataStr,
+        });
+        // Debita estoque
+        await _client.rpc('decrementar_estoque_exclusivo', params: {
+          'p_material': item.produto.material,
+          'p_quantidade': item.quantidade,
+        });
+      }
+      if (itensRegulares.isEmpty) {
+        ok = true;
+        retorno = 'Pedido exclusivo registrado com sucesso!';
+      }
+    }
+
+    // Registra total em lojinha_compras (para controle de limite global)
+    if (ok) {
+      final qtdTotal = itens.fold<int>(0, (s, i) => s + i.quantidade);
+      await _client.from('lojinha_compras').insert({
+        'colaborador_id': colaborador.matricula,
+        'quantidade_total': qtdTotal,
+        'data': dataStr,
+      });
+    }
+
+    return (ok: ok, retorno: retorno, pedidos: pedidos);
   }
 
   // ─── Cole estes métodos no api_service.dart DO APP, dentro da classe ApiService ───

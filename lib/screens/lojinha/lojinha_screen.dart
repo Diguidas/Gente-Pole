@@ -20,9 +20,14 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
   List<LojinhaProdutoModel> _filtrados = [];
   final Map<int, CarrinhoItem> _carrinho = {};
 
-  String? _categoriaSelecionada; // null = todas
+  String? _categoriaSelecionada;
   bool _carregando = true;
   bool _enviando = false;
+
+  // Limite global por colaborador
+  int? _limiteQtdGlobal;
+  int? _periodoDiasGlobal;
+  int _comprasRecentes = 0;
 
   // ── Ciclo de vida ────────────────────────────────────────────────────────────
 
@@ -53,15 +58,33 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
 
   Future<void> _carregarProdutos() async {
     setState(() => _carregando = true);
-    _todos = await _api.buscarProdutosLojinha();
+    final colabId = _api.colaboradorAtual?.matricula ?? '';
+    final results = await Future.wait([
+      _api.buscarProdutosLojinha(),
+      _api.buscarConfigLojinha(),
+    ]);
+    _todos = results[0] as List<LojinhaProdutoModel>;
+    final config = results[1] as Map<String, dynamic>;
+    final limiteQtd = config['limite_qtd'] as int?;
+    final periodoDias = config['periodo_dias'] as int?;
+    int comprasRecentes = 0;
+    if (limiteQtd != null && periodoDias != null && colabId.isNotEmpty) {
+      comprasRecentes = await _api.buscarComprasRecentesColab(colabId, periodoDias);
+    }
+    setState(() {
+      _limiteQtdGlobal = limiteQtd;
+      _periodoDiasGlobal = periodoDias;
+      _comprasRecentes = comprasRecentes;
+      _carregando = false;
+    });
     _aplicarFiltros();
-    setState(() => _carregando = false);
   }
 
   void _aplicarFiltros() {
     final busca = _searchCtrl.text.toLowerCase().trim();
     setState(() {
       _filtrados = _todos.where((p) {
+        if (!p.disponivelHoje) return false;
         final matchCategoria =
             _categoriaSelecionada == null ||
             p.categoria == _categoriaSelecionada;
@@ -73,6 +96,15 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
       }).toList();
     });
   }
+
+  int get _itensRestantes {
+    if (_limiteQtdGlobal == null) return 999;
+    return (_limiteQtdGlobal! - _comprasRecentes).clamp(0, _limiteQtdGlobal!);
+  }
+
+  bool get _limiteAtingido => _limiteQtdGlobal != null && _itensRestantes <= 0;
+
+  int get _totalItensCarrinho => _carrinho.values.fold(0, (s, i) => s + i.quantidade);
 
   /// Lista de categorias únicas (com estoque > 0 já filtrado no buscarProdutosLojinha)
   List<String> get _categorias {
@@ -89,6 +121,18 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
       _carrinho.values.fold(0.0, (s, i) => s + i.subtotal);
 
   void _adicionar(LojinhaProdutoModel p) {
+    if (_limiteQtdGlobal != null && _totalItensCarrinho >= _itensRestantes) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Limite de $_limiteQtdGlobal item${_limiteQtdGlobal != 1 ? 'ns' : ''} a cada $_periodoDiasGlobal dias atingido.',
+          style: GoogleFonts.poppins(color: Colors.white),
+        ),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      return;
+    }
     setState(() {
       if (_carrinho.containsKey(p.id)) {
         _carrinho[p.id]!.quantidade++;
@@ -212,6 +256,9 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
         onRemover: _remover,
         onFinalizar: _finalizarPedido,
         enviando: _enviando,
+        itensRestantes: _itensRestantes,
+        limiteQtdGlobal: _limiteQtdGlobal,
+        periodoDiasGlobal: _periodoDiasGlobal,
       ),
     );
   }
@@ -395,6 +442,57 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
                                     });
                                     _aplicarFiltros();
                                   },
+                                ),
+
+                              // ── Banner de limite global ──────────────
+                              if (_limiteQtdGlobal != null)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _limiteAtingido
+                                          ? Colors.red.shade50
+                                          : Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _limiteAtingido
+                                            ? Colors.red.shade200
+                                            : Colors.orange.shade200,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _limiteAtingido
+                                              ? Icons.block_rounded
+                                              : Icons.shopping_bag_outlined,
+                                          size: 16,
+                                          color: _limiteAtingido
+                                              ? Colors.red.shade700
+                                              : Colors.orange.shade700,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            _limiteAtingido
+                                                ? 'Limite de $_limiteQtdGlobal itens a cada $_periodoDiasGlobal dias atingido.'
+                                                : 'Restam $_itensRestantes de $_limiteQtdGlobal itens disponíveis (a cada $_periodoDiasGlobal dias).',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                              color: _limiteAtingido
+                                                  ? Colors.red.shade700
+                                                  : Colors.orange.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
 
                               // ── Contador de resultados ───────────────
@@ -704,13 +802,33 @@ class _CardProduto extends StatelessWidget {
               ),
               child: Stack(
                 children: [
-                  Center(
-                    child: Icon(
-                      Icons.inventory_2_outlined,
-                      size: 44,
-                      color: AppColors.laranja.withOpacity(0.4),
+                  if (produto.fotoUrl != null && produto.fotoUrl!.isNotEmpty)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                        child: Image.network(
+                          produto.fotoUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Icon(
+                              Icons.inventory_2_outlined,
+                              size: 44,
+                              color: AppColors.laranja.withOpacity(0.4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Center(
+                      child: Icon(
+                        Icons.inventory_2_outlined,
+                        size: 44,
+                        color: AppColors.laranja.withOpacity(0.4),
+                      ),
                     ),
-                  ),
                   // Badge "Últimas unidades"
                   if (produto.estoque > 0 && produto.estoque <= 3)
                     Positioned(
@@ -897,6 +1015,9 @@ class _CarrinhoSheet extends StatelessWidget {
   final void Function(LojinhaProdutoModel) onRemover;
   final VoidCallback onFinalizar;
   final bool enviando;
+  final int? itensRestantes;
+  final int? limiteQtdGlobal;
+  final int? periodoDiasGlobal;
 
   const _CarrinhoSheet({
     required this.carrinho,
@@ -905,7 +1026,16 @@ class _CarrinhoSheet extends StatelessWidget {
     required this.onRemover,
     required this.onFinalizar,
     required this.enviando,
+    this.itensRestantes,
+    this.limiteQtdGlobal,
+    this.periodoDiasGlobal,
   });
+
+  int get _totalItensCarrinho =>
+      carrinho.values.fold(0, (sum, i) => sum + i.quantidade);
+
+  bool get _ultrapassaLimite =>
+      limiteQtdGlobal != null && _totalItensCarrinho > (itensRestantes ?? limiteQtdGlobal!);
 
   @override
   Widget build(BuildContext context) {
@@ -980,18 +1110,30 @@ class _CarrinhoSheet extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.laranja.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.inventory_2_outlined,
-                          color: AppColors.laranja,
-                          size: 22,
-                        ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: item.produto.fotoUrl != null &&
+                                item.produto.fotoUrl!.isNotEmpty
+                            ? Image.network(
+                                item.produto.fotoUrl!,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: AppColors.laranja.withOpacity(0.1),
+                                  child: Icon(Icons.inventory_2_outlined,
+                                      color: AppColors.laranja, size: 22),
+                                ),
+                              )
+                            : Container(
+                                width: 44,
+                                height: 44,
+                                color: AppColors.laranja.withOpacity(0.1),
+                                child: Icon(Icons.inventory_2_outlined,
+                                    color: AppColors.laranja, size: 22),
+                              ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1079,12 +1221,44 @@ class _CarrinhoSheet extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (_ultrapassaLimite) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              color: Colors.red.shade700, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Carrinho ultrapassa o limite de $limiteQtdGlobal itens a cada $periodoDiasGlobal dias.',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.laranja,
+                        backgroundColor: _ultrapassaLimite
+                            ? Colors.grey.shade400
+                            : AppColors.laranja,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -1092,7 +1266,7 @@ class _CarrinhoSheet extends StatelessWidget {
                         ),
                         elevation: 0,
                       ),
-                      onPressed: enviando ? null : onFinalizar,
+                      onPressed: (enviando || _ultrapassaLimite) ? null : onFinalizar,
                       child: enviando
                           ? const SizedBox(
                               width: 22,

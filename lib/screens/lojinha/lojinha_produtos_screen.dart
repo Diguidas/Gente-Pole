@@ -39,6 +39,10 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   bool _carregando = true;
   bool _enviando = false;
 
+  int? _limiteQtdGlobal;
+  int? _periodoDiasGlobal;
+  int _comprasRecentes = 0;
+
   Timer? _debounce;
 
   @override
@@ -67,12 +71,37 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
   Future<void> _carregarProdutos() async {
     setState(() => _carregando = true);
-    _todos = await _api.buscarProdutosLojinha(
-      centros: widget.dadosFuncionario?.centrosVisiveis ?? [],
-    );
+    final colabId = _api.colaboradorAtual?.matricula ?? '';
+    final results = await Future.wait([
+      _api.buscarProdutosLojinha(centros: widget.dadosFuncionario?.centrosVisiveis ?? []),
+      _api.buscarConfigLojinha(),
+      _api.buscarExclusivosLojinha(),
+    ]);
+    final regulares = results[0] as List<LojinhaProdutoModel>;
+    final exclusivos = results[2] as List<LojinhaProdutoModel>;
+    _todos = [...exclusivos, ...regulares];
+    final config = results[1] as Map<String, dynamic>;
+    final limiteQtd = config['limite_qtd'] as int?;
+    final periodoDias = config['periodo_dias'] as int?;
+    int comprasRecentes = 0;
+    if (limiteQtd != null && periodoDias != null && colabId.isNotEmpty) {
+      comprasRecentes = await _api.buscarComprasRecentesColab(colabId, periodoDias);
+    }
+    setState(() {
+      _limiteQtdGlobal = limiteQtd;
+      _periodoDiasGlobal = periodoDias;
+      _comprasRecentes = comprasRecentes;
+      _carregando = false;
+    });
     _aplicarFiltros();
-    setState(() => _carregando = false);
   }
+
+  int get _totalItensCarrinho => _carrinho.values.fold(0, (s, i) => s + i.quantidade);
+  int get _itensRestantes {
+    if (_limiteQtdGlobal == null) return 999;
+    return (_limiteQtdGlobal! - _comprasRecentes).clamp(0, _limiteQtdGlobal!);
+  }
+  bool get _limiteAtingido => _limiteQtdGlobal != null && _itensRestantes <= 0;
 
   void _aplicarFiltros() {
     final busca = _searchCtrl.text.toLowerCase().trim();
@@ -148,6 +177,18 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     final atual = _carrinho[p.id]?.quantidade ?? 0;
     final limite = p.limiteEfetivo(p.estoque.toInt());
     if (atual >= limite) return;
+    if (_limiteQtdGlobal != null && _totalItensCarrinho >= _itensRestantes) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Limite de $_limiteQtdGlobal item${_limiteQtdGlobal != 1 ? 'ns' : ''} a cada $_periodoDiasGlobal dias atingido.',
+          style: GoogleFonts.poppins(color: Colors.white),
+        ),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      return;
+    }
     setState(() {
       _carrinho.containsKey(p.id)
           ? _carrinho[p.id]!.quantidade++
@@ -359,6 +400,9 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
           onRemover: _remover,
           onFinalizar: _finalizarPedido,
           enviando: _enviando,
+          itensRestantes: _itensRestantes,
+          limiteQtdGlobal: _limiteQtdGlobal,
+          periodoDiasGlobal: _periodoDiasGlobal,
         ),
       ),
     ).then((_) => setState(() {})); // rebuild ao voltar para refletir qty alteradas

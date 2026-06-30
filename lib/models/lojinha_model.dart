@@ -18,6 +18,7 @@ class LojinhaProdutoModel {
   final List<int>? diasSemana;
   final int? limiteQtd;
   final String? periodoLimite;
+  final bool isExclusivo;
 
   LojinhaProdutoModel({
     required this.id,
@@ -37,7 +38,20 @@ class LojinhaProdutoModel {
     this.diasSemana,
     this.limiteQtd,
     this.periodoLimite,
+    this.isExclusivo = false,
   });
+
+  factory LojinhaProdutoModel.fromExclusivo(Map<String, dynamic> j) =>
+      LojinhaProdutoModel(
+        id:           (j['id'].hashCode).abs(),
+        material:     j['material'] as String,
+        descricao:    j['nome'] as String,
+        unidadeVenda: 'UN',
+        preco:        (j['preco'] as num).toDouble(),
+        estoque:      (j['estoque'] as num).toDouble(),
+        fotoUrl:      j['foto_url'] as String?,
+        isExclusivo:  true,
+      );
 
   factory LojinhaProdutoModel.fromJson(Map<String, dynamic> j) =>
       LojinhaProdutoModel(

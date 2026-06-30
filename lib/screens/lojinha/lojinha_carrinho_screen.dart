@@ -10,6 +10,9 @@ class LojinhaCarrinhoScreen extends StatefulWidget {
   final void Function(LojinhaProdutoModel) onRemover;
   final Future<void> Function() onFinalizar;
   final bool enviando;
+  final int? itensRestantes;
+  final int? limiteQtdGlobal;
+  final int? periodoDiasGlobal;
 
   const LojinhaCarrinhoScreen({
     super.key,
@@ -18,6 +21,9 @@ class LojinhaCarrinhoScreen extends StatefulWidget {
     required this.onRemover,
     required this.onFinalizar,
     required this.enviando,
+    this.itensRestantes,
+    this.limiteQtdGlobal,
+    this.periodoDiasGlobal,
   });
 
   @override
@@ -34,6 +40,9 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   List<CarrinhoItem> get _itens => widget.carrinho.values.toList();
   double get _total => _itens.fold(0.0, (s, i) => s + i.subtotal);
   int get _totalItens => _itens.fold(0, (s, i) => s + i.quantidade);
+  bool get _ultrapassaLimite =>
+      widget.limiteQtdGlobal != null &&
+      _totalItens > (widget.itensRestantes ?? widget.limiteQtdGlobal!);
 
   @override
   void initState() {
@@ -310,12 +319,39 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
                         ),
                       ],
                     ),
+                    if (_ultrapassaLimite) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded,
+                                color: Colors.red.shade700, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Carrinho ultrapassa o limite de ${widget.limiteQtdGlobal} itens a cada ${widget.periodoDiasGlobal} dias.',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 11, color: Colors.red.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.laranja,
+                          backgroundColor: _ultrapassaLimite
+                              ? Colors.grey.shade400
+                              : AppColors.laranja,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -323,7 +359,7 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           elevation: 0,
                         ),
-                        onPressed: widget.enviando ? null : _confirmarPedido,
+                        onPressed: (widget.enviando || _ultrapassaLimite) ? null : _confirmarPedido,
                         child: widget.enviando
                             ? const SizedBox(
                                 width: 20,
