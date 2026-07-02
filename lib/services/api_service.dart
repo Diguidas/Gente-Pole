@@ -85,11 +85,11 @@ class ApiService {
         .maybeSingle();
 
     if (resultColaborador == null) {
-      // Verifica se é um fornecedor cadastrado em usuarios_app (usa matricula)
+      // Verifica se é um fornecedor cadastrado em usuarios_app (por CPF)
       final resultFornecedor = await _client
           .from('usuarios_app')
           .select('id')
-          .eq('matricula', cpf.trim())
+          .eq('cpf', cpfLimpo)
           .eq('ativo', true)
           .maybeSingle();
       if (resultFornecedor != null) {
@@ -1007,61 +1007,76 @@ class ApiService {
     String retorno = '';
     List<LojinhaPedidoCentroResult> pedidos = [];
 
-    // Itens regulares → SAP
-    if (itensRegulares.isNotEmpty) {
-      final res = await _client.functions.invoke(
-        'lojinha-pedido',
-        body: {
-          'colaborador_id': colaborador.id,
-          'cliente_sap': colaborador.clienteSap,
-          'datacriacao': datacriacao,
-          'itens': itensRegulares.map((i) => i.toSapItem()).toList(),
-        },
-      );
-      final data = res.data as Map<String, dynamic>;
-      ok = data['ok'] as bool;
-      retorno = data['retorno'] as String;
-      final pedidosRaw = data['pedidos'] as List? ?? [];
-      pedidos = pedidosRaw
-          .map((p) => LojinhaPedidoCentroResult.fromJson(p as Map<String, dynamic>))
-          .toList();
-    }
+    try {
+      // Itens regulares → SAP
+      if (itensRegulares.isNotEmpty) {
+        final res = await _client.functions.invoke(
+          'lojinha-pedido',
+          body: {
+            'colaborador_id': colaborador.id,
+            'cliente_sap': colaborador.clienteSap,
+            'datacriacao': datacriacao,
+            'itens': itensRegulares.map((i) => i.toSapItem()).toList(),
+          },
+        );
+        final data = res.data as Map<String, dynamic>;
+        ok = data['ok'] as bool;
+        retorno = data['retorno'] as String;
+        final pedidosRaw = data['pedidos'] as List? ?? [];
+        pedidos = pedidosRaw
+            .map((p) => LojinhaPedidoCentroResult.fromJson(p as Map<String, dynamic>))
+            .toList();
+      }
 
-    // Itens exclusivos → Supabase (independente do resultado SAP)
-    if (itensExclusivos.isNotEmpty) {
-      final matricula = colaborador.matricula;
-      final colabNome = colaborador.nome;
-      for (final item in itensExclusivos) {
-        await _client.from('lojinha_compras_itens').insert({
-          'colaborador_id': matricula,
-          'colaborador_nome': colabNome,
-          'material': item.produto.material,
-          'quantidade': item.quantidade,
+      // Itens exclusivos → Supabase (independente do resultado SAP)
+      if (itensExclusivos.isNotEmpty) {
+        final matricula = colaborador.matricula;
+        final colabNome = colaborador.nome;
+        for (final item in itensExclusivos) {
+          await _client.from('lojinha_compras_itens').insert({
+            'colaborador_id': matricula,
+            'colaborador_nome': colabNome,
+            'material': item.produto.material,
+            'quantidade': item.quantidade,
+            'data': dataStr,
+          });
+          // Debita estoque
+          try {
+            await _client.rpc('decrementar_estoque_exclusivo', params: {
+              'p_material': item.produto.material,
+              'p_quantidade': item.quantidade,
+            });
+          } catch (e) {
+            // O item já foi registrado como comprado; falha em debitar o
+            // estoque não deve travar o pedido nem esconder o problema.
+            debugPrint('decrementar_estoque_exclusivo falhou p/ ${item.produto.material}: $e');
+          }
+        }
+        if (itensRegulares.isEmpty) {
+          ok = true;
+          retorno = 'Pedido exclusivo registrado com sucesso!';
+        }
+      }
+
+      // Registra total em lojinha_compras (para controle de limite global)
+      if (ok) {
+        final qtdTotal = itens.fold<int>(0, (s, i) => s + i.quantidade);
+        await _client.from('lojinha_compras').insert({
+          'colaborador_id': colaborador.matricula,
+          'quantidade_total': qtdTotal,
           'data': dataStr,
         });
-        // Debita estoque
-        await _client.rpc('decrementar_estoque_exclusivo', params: {
-          'p_material': item.produto.material,
-          'p_quantidade': item.quantidade,
-        });
       }
-      if (itensRegulares.isEmpty) {
-        ok = true;
-        retorno = 'Pedido exclusivo registrado com sucesso!';
-      }
-    }
 
-    // Registra total em lojinha_compras (para controle de limite global)
-    if (ok) {
-      final qtdTotal = itens.fold<int>(0, (s, i) => s + i.quantidade);
-      await _client.from('lojinha_compras').insert({
-        'colaborador_id': colaborador.matricula,
-        'quantidade_total': qtdTotal,
-        'data': dataStr,
-      });
+      return (ok: ok, retorno: retorno, pedidos: pedidos);
+    } catch (e) {
+      debugPrint('finalizarPedidoLojinha falhou: $e');
+      return (
+        ok: false,
+        retorno: 'Não foi possível concluir o pedido. Verifique sua conexão e tente novamente.',
+        pedidos: <LojinhaPedidoCentroResult>[],
+      );
     }
-
-    return (ok: ok, retorno: retorno, pedidos: pedidos);
   }
 
   // ─── Cole estes métodos no api_service.dart DO APP, dentro da classe ApiService ───
@@ -1120,17 +1135,18 @@ class ApiService {
     return _client.storage.from('assinaturas-massoterapia').getPublicUrl(path);
   }
 
-  /// Login pela matrícula do fornecedor (massoterapeuta).
+  /// Login pelo CPF do fornecedor (massoterapeuta/nutricionista).
   /// Retorna o map do usuário se válido, null caso contrário.
   Future<Map<String, dynamic>?> loginFornecedor({
-    required String matricula, // ex: '9999'
+    required String cpf,
     required String senha,
   }) async {
+    final cpfLimpo = cpf.replaceAll(RegExp(r'[^0-9]'), '');
     final senhaHash = _hash(senha);
     final res = await _client
         .from('usuarios_app')
         .select()
-        .eq('matricula', matricula.trim())
+        .eq('cpf', cpfLimpo)
         .eq('senha_hash', senhaHash)
         .eq('ativo', true)
         .maybeSingle();

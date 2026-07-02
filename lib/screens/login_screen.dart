@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -144,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (_ehFornecedor) {
         final fornecedor = await _api.loginFornecedor(
-          matricula: cpf,
+          cpf: cpf,
           senha: _senhaController.text,
         );
         setState(() => _carregando = false);
@@ -182,12 +184,18 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _irParaHome() async {
     await _api.salvarSessao(_colaboradorEncontrado!.matricula);
-    await NotificationService.init();
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const MainLayout()),
     );
+    // Não bloqueia a navegação: no iOS, requestPermission() do FCM pode
+    // demorar/travar aguardando a resposta do usuário ao diálogo do sistema
+    // (mesmo motivo pelo qual main.dart já pula essa chamada no iOS ao
+    // restaurar sessão). Dispara em segundo plano, depois de já ter entrado.
+    if (!Platform.isIOS) {
+      NotificationService.init();
+    }
   }
 
   void _resetar() {
