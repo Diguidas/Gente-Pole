@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
+import '../../services/api_service.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
 
 enum _Filtro { cobradoAgora, aCobrar, historico }
@@ -19,7 +21,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
   final _ativos = <_Filtro>{_Filtro.cobradoAgora, _Filtro.aCobrar, _Filtro.historico};
 
   int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
-      b.criacao.compareTo(a.criacao);
+      b.dataOrdenacao.compareTo(a.dataOrdenacao);
 
   List<LojinhaPedidoResumoModel> get _vigentes =>
       widget.pedidos.where((p) => p.isVigente).toList()..sort(_desc);
@@ -311,9 +313,19 @@ class _GrupoHeader extends StatelessWidget {
 
 // ── Card de pedido ─────────────────────────────────────────────────────────────
 
-class _CardPedido extends StatelessWidget {
+class _CardPedido extends StatefulWidget {
   final LojinhaPedidoResumoModel pedido;
   const _CardPedido({required this.pedido});
+
+  @override
+  State<_CardPedido> createState() => _CardPedidoState();
+}
+
+class _CardPedidoState extends State<_CardPedido> {
+  final _api = ApiService();
+  bool _baixandoNota = false;
+
+  LojinhaPedidoResumoModel get pedido => widget.pedido;
 
   Color get _corSituacao {
     if (pedido.isVigente) return Colors.green.shade600;
@@ -325,6 +337,34 @@ class _CardPedido extends StatelessWidget {
     if (pedido.isVigente) return Colors.green.shade50;
     if (pedido.isFuturo)  return Colors.blue.shade50;
     return Colors.grey.shade100;
+  }
+
+  Future<void> _baixarNotaFiscal() async {
+    setState(() => _baixandoNota = true);
+    final url = await _api.buscarDanfeUrlPorDocnum(pedido.docnum);
+    if (!mounted) return;
+    setState(() => _baixandoNota = false);
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Nota fiscal ainda não disponível.',
+            style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Não foi possível abrir a nota fiscal.',
+            style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
   }
 
   @override
@@ -340,6 +380,10 @@ class _CardPedido extends StatelessWidget {
               builder: (_) => LojinhaPedidoDetalheScreen(
                     ordem: pedido.ordem,
                     criacao: pedido.criacao,
+                    docnum: pedido.docnum,
+                    descricaoExclusivo: pedido.descricaoExclusivo,
+                    quantidadeExclusivo: pedido.quantidadeExclusivo,
+                    valorExclusivo: pedido.isExclusivo ? pedido.valorTotal : null,
                   )),
         ),
         child: Container(
@@ -371,7 +415,11 @@ class _CardPedido extends StatelessWidget {
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Pedido nº ${pedido.ordem}',
+                          Text(
+                              pedido.isExclusivo
+                                  ? '${pedido.descricaoExclusivo} × ${pedido.quantidadeExclusivo}'
+                                  : 'Pedido nº ${pedido.ordem}',
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.poppins(
                                   fontSize: 13, fontWeight: FontWeight.w700)),
                           Text(pedido.criacaoFormatada,
@@ -395,12 +443,22 @@ class _CardPedido extends StatelessWidget {
               ),
 
               // ── Tags ─────────────────────────────────────────────
-              if (pedido.status.isNotEmpty || labelEntrega != null) ...[
+              if (pedido.status.isNotEmpty ||
+                  labelEntrega != null ||
+                  pedido.isRefaturado ||
+                  pedido.isExclusivo) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
+                    if (pedido.isExclusivo)
+                      _Tag(
+                        label: 'Exclusivo',
+                        icone: Icons.storefront_outlined,
+                        cor: Colors.teal.shade600,
+                        fundo: Colors.teal.shade50,
+                      ),
                     if (pedido.status.isNotEmpty)
                       _Tag(
                         label: pedido.status,
@@ -414,7 +472,49 @@ class _CardPedido extends StatelessWidget {
                         cor: AppColors.laranja,
                         fundo: AppColors.laranja.withOpacity(0.08),
                       ),
+                    if (pedido.isRefaturado)
+                      _Tag(
+                        label: 'Refaturado',
+                        icone: Icons.sync_alt_rounded,
+                        cor: Colors.purple.shade600,
+                        fundo: Colors.purple.shade50,
+                      ),
                   ],
+                ),
+              ],
+
+              // ── Baixar nota fiscal ───────────────────────────────
+              if (pedido.docnum.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _baixandoNota ? null : _baixarNotaFiscal,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.laranja.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.laranja.withOpacity(0.25)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      _baixandoNota
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.laranja),
+                            )
+                          : const Icon(Icons.file_download_outlined,
+                              size: 16, color: AppColors.laranja),
+                      const SizedBox(width: 6),
+                      Text('Baixar nota fiscal',
+                          style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.laranja)),
+                    ]),
+                  ),
                 ),
               ],
             ],

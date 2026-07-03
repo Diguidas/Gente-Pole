@@ -171,7 +171,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                               final vigentes = (dados.pedidos
                                   .where((p) => p.isVigente)
                                   .toList()
-                                ..sort((a, b) => b.criacao.compareTo(a.criacao)))
+                                ..sort((a, b) =>
+                                    b.dataOrdenacao.compareTo(a.dataOrdenacao)))
                                   .take(3)
                                   .toList();
                               if (vigentes.isEmpty) return const SizedBox.shrink();
@@ -399,7 +400,14 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-            builder: (_) => LojinhaPedidoDetalheScreen(ordem: p.ordem)),
+            builder: (_) => LojinhaPedidoDetalheScreen(
+                  ordem: p.ordem,
+                  criacao: p.criacao,
+                  docnum: p.docnum,
+                  descricaoExclusivo: p.descricaoExclusivo,
+                  quantidadeExclusivo: p.quantidadeExclusivo,
+                  valorExclusivo: p.isExclusivo ? p.valorTotal : null,
+                )),
       ),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -431,7 +439,11 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Pedido nº ${p.ordem}',
+                      Text(
+                          p.isExclusivo
+                              ? '${p.descricaoExclusivo} × ${p.quantidadeExclusivo}'
+                              : 'Pedido nº ${p.ordem}',
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(
                               fontSize: 13, fontWeight: FontWeight.w700)),
                       Text(p.criacaoFormatada,

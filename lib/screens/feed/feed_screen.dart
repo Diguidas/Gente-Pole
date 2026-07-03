@@ -183,7 +183,12 @@ class _FeedScreenState extends State<FeedScreen> {
           ? '$nome está se sentindo $label $emoji\n\n"$motivo"'
           : '$nome está se sentindo $label $emoji';
 
-      await _api.criarPost(conteudo: conteudo, destinatario: 'todos');
+      await _api.criarPost(
+        conteudo: conteudo,
+        destinatario: 'todos',
+        tipo: 'humor',
+        temTextoLivre: motivo.isNotEmpty,
+      );
       _carregarFeed(reiniciar: true);
     }
   }

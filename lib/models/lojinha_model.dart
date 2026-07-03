@@ -193,6 +193,14 @@ class LojinhaPedidoResumoModel {
   final double valorTotal;
   final String situacao; // VIGENTE | FUTURO | ...
   final String status;   // "Liberado para faturamento" etc.
+  final String docnum;
+  final String refaturado; // vazio = não refaturado; senão, número da nova ordem
+  final bool isExclusivo;
+  final String? descricaoExclusivo;
+  final int? quantidadeExclusivo;
+  /// Timestamp exato da compra (só preenchido para exclusivos, via
+  /// `criado_em`). Usado para ordenar corretamente compras do mesmo dia.
+  final DateTime? criadoEm;
 
   LojinhaPedidoResumoModel({
     required this.ordem,
@@ -200,7 +208,55 @@ class LojinhaPedidoResumoModel {
     required this.valorTotal,
     required this.situacao,
     required this.status,
+    this.docnum = '',
+    this.refaturado = '',
+    this.isExclusivo = false,
+    this.descricaoExclusivo,
+    this.quantidadeExclusivo,
+    this.criadoEm,
   });
+
+  /// Compra de produto exclusivo (não passa pelo SAP, então não tem
+  /// ORDEM/DOCNUM/SITUACAO reais). A situação é inferida pela mesma regra de
+  /// entrega (chega na sexta a contar da data da compra): enquanto a entrega
+  /// não passou é "vigente", depois vira "histórico".
+  factory LojinhaPedidoResumoModel.exclusivo({
+    required String data, // yyyy-MM-dd
+    required String descricao,
+    required int quantidade,
+    required double preco,
+    String? criadoEm,
+  }) {
+    final criacao = data.replaceAll('-', '');
+    return LojinhaPedidoResumoModel(
+      ordem: '',
+      criacao: criacao,
+      valorTotal: preco * quantidade,
+      situacao: _situacaoExclusivo(data),
+      status: '',
+      isExclusivo: true,
+      descricaoExclusivo: descricao,
+      quantidadeExclusivo: quantidade,
+      criadoEm: criadoEm != null ? DateTime.tryParse(criadoEm) : null,
+    );
+  }
+
+  static String _situacaoExclusivo(String data) {
+    try {
+      final partes = data.split('-');
+      final d = DateTime(
+          int.parse(partes[0]), int.parse(partes[1]), int.parse(partes[2]));
+      const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
+      final entrega = d.add(Duration(days: diasMap[d.weekday]!));
+      final hoje = DateTime.now();
+      final hojeDate = DateTime(hoje.year, hoje.month, hoje.day);
+      return hojeDate.isAfter(entrega) ? 'PASSADO' : 'VIGENTE';
+    } catch (_) {
+      return 'PASSADO';
+    }
+  }
+
+  bool get isRefaturado => refaturado.isNotEmpty;
 
   /// Formata data yyyyMMdd → dd/MM/yyyy
   String get criacaoFormatada {
@@ -210,6 +266,21 @@ class LojinhaPedidoResumoModel {
 
   bool get isVigente => situacao.toUpperCase() == 'VIGENTE';
   bool get isFuturo  => situacao.toUpperCase() == 'FUTURO';
+
+  /// Chave de ordenação (mais recente primeiro). Usa o timestamp exato
+  /// quando disponível (exclusivos); senão cai para a data de criação.
+  DateTime get dataOrdenacao {
+    if (criadoEm != null) return criadoEm!;
+    if (criacao.length == 8) {
+      final ano = int.tryParse(criacao.substring(0, 4));
+      final mes = int.tryParse(criacao.substring(4, 6));
+      final dia = int.tryParse(criacao.substring(6, 8));
+      if (ano != null && mes != null && dia != null) {
+        return DateTime(ano, mes, dia);
+      }
+    }
+    return DateTime(1970);
+  }
 
   /// Sexta-feira de entrega com base na data de criação.
   /// Ciclo: seg/ter/qua → sexta desta semana | qui/sex/sáb/dom → sexta da próxima semana.
@@ -251,6 +322,8 @@ class LojinhaPedidoResumoModel {
         valorTotal: double.tryParse((j['VALORTOTAL'] as String).trim()) ?? 0.0,
         situacao:   (j['SITUACAO'] as String? ?? '').trim(),
         status:     (j['STATUS'] as String? ?? '').trim(),
+        docnum:     (j['DOCNUM'] as String? ?? '').trim(),
+        refaturado: (j['REFATURADO'] as String? ?? '').trim(),
       );
 }
 

@@ -372,54 +372,6 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         '${agora.year}-${agora.month.toString().padLeft(2, '0')}-${agora.day.toString().padLeft(2, '0')}';
     final hojeDisponivel = _diasDisponiveis.contains(hojeStr);
 
-    if (_diasDisponiveis.isEmpty || !hojeDisponivel) {
-      final proxima = _diasDisponiveis.isNotEmpty ? _diasDisponiveis.first : null;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppColors.laranja.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.event_busy_rounded,
-                  size: 40,
-                  color: AppColors.laranja,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Hoje não tem massoterapia',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                proxima != null
-                    ? 'A próxima sessão será em\n${_formatarData(proxima)}'
-                    : 'Nenhuma sessão agendada no momento.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return RefreshIndicator(
       color: AppColors.laranja,
       onRefresh: _carregar,
@@ -429,35 +381,89 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Banner do meu agendamento
+            // Banner do meu agendamento — sempre visível (com o botão de
+            // cancelar), mesmo quando hoje não é dia de massoterapia, já que
+            // o agendamento pode ser para uma data futura.
             if (_meuAgendamento != null) _buildMeuAgendamentoBanner(),
             if (_meuAgendamento != null) const SizedBox(height: 20),
 
-            // Seletor de data
-            _buildSectionLabel('📅 Escolha o dia'),
-            const SizedBox(height: 10),
-            _buildSeletorDatas(),
-            const SizedBox(height: 24),
-
-            // Info de vagas do setor
-            if (_configSetor != null) _buildInfoVagasSetor(),
-            if (_configSetor != null) const SizedBox(height: 20),
-
-            // Grade de horários (só se não tiver agendamento)
-            if (_meuAgendamento == null ||
-                _meuAgendamento!.status == 'CANCELADO') ...[
-              _buildSectionLabel('🕐 Escolha o horário'),
+            if (_diasDisponiveis.isEmpty || !hojeDisponivel)
+              _buildSemMassoterapiaHoje()
+            else ...[
+              // Seletor de data
+              _buildSectionLabel('📅 Escolha o dia'),
               const SizedBox(height: 10),
-              _buildGradeHorarios(),
+              _buildSeletorDatas(),
               const SizedBox(height: 24),
-              _buildBotaoAgendar(),
-              const SizedBox(height: 28),
-            ],
 
-            // Lista de quem agendou no dia
-            _buildSectionLabel('👥 Quem vai hoje'),
-            const SizedBox(height: 10),
-            _buildListaAgendados(),
+              // Info de vagas do setor
+              if (_configSetor != null) _buildInfoVagasSetor(),
+              if (_configSetor != null) const SizedBox(height: 20),
+
+              // Grade de horários (só se não tiver agendamento)
+              if (_meuAgendamento == null ||
+                  _meuAgendamento!.status == 'CANCELADO') ...[
+                _buildSectionLabel('🕐 Escolha o horário'),
+                const SizedBox(height: 10),
+                _buildGradeHorarios(),
+                const SizedBox(height: 24),
+                _buildBotaoAgendar(),
+                const SizedBox(height: 28),
+              ],
+
+              // Lista de quem agendou no dia
+              _buildSectionLabel('👥 Quem vai hoje'),
+              const SizedBox(height: 10),
+              _buildListaAgendados(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSemMassoterapiaHoje() {
+    final proxima = _diasDisponiveis.isNotEmpty ? _diasDisponiveis.first : null;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.laranja.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.event_busy_rounded,
+                size: 40,
+                color: AppColors.laranja,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Hoje não tem massoterapia',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              proxima != null
+                  ? 'A próxima sessão será em\n${_formatarData(proxima)}'
+                  : 'Nenhuma sessão agendada no momento.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.grey.shade500,
+              ),
+            ),
           ],
         ),
       ),

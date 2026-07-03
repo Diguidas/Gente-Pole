@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:gentepole/models/comunicado_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
@@ -709,12 +710,15 @@ class ApiService {
     }
   }
 
-  /// Cancela um agendamento (muda status para CANCELADO).
+  /// Cancela um agendamento. Apaga a linha em vez de só marcar como
+  /// CANCELADO — se só marcássemos o status, a linha continuaria ocupando o
+  /// dia na constraint única (colaborador_id, data), impedindo um novo
+  /// agendamento no mesmo dia em outro horário.
   Future<bool> cancelarMassoterapia(int agendamentoId) async {
     try {
       await _client
           .from('massoterapia_agendamentos')
-          .update({'status': 'CANCELADO'})
+          .delete()
           .eq('id', agendamentoId)
           .eq('colaborador_id', colaboradorAtual!.id); // segurança: só o dono
       return true;
@@ -878,6 +882,7 @@ class ApiService {
   }
 
   /// Dados do funcionário no SAP: limites + histórico de pedidos
+  /// (mesclado com compras de produtos exclusivos, que não passam pelo SAP)
   Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
     final clienteSap = colaboradorAtual?.clienteSap;
     if (clienteSap == null) return null;
@@ -892,9 +897,95 @@ class ApiService {
       );
       final map = res.data as Map<String, dynamic>;
       if (map['ok'] != true) return null;
-      return LojinhaFuncionarioModel.fromJson(
+      final dados = LojinhaFuncionarioModel.fromJson(
         map['data'] as Map<String, dynamic>,
       );
+
+      final matricula = colaboradorAtual?.matricula;
+      if (matricula == null || matricula.isEmpty) return dados;
+      final exclusivos = await buscarComprasExclusivasLojinha(matricula);
+      if (exclusivos.isEmpty) return dados;
+
+      return LojinhaFuncionarioModel(
+        limiteTotal: dados.limiteTotal,
+        limiteDisp: dados.limiteDisp,
+        bloqueio: dados.bloqueio,
+        centro: dados.centro,
+        mensagem: dados.mensagem,
+        pedidos: [
+          ...dados.pedidos,
+          ...exclusivos.map((c) => LojinhaPedidoResumoModel.exclusivo(
+                data: c['data'] as String,
+                descricao: c['descricao'] as String,
+                quantidade: c['quantidade'] as int,
+                preco: c['preco'] as double,
+                criadoEm: c['criado_em'] as String?,
+              )),
+        ],
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Compras de produtos exclusivos (fora do SAP) do colaborador, já
+  /// enriquecidas com descrição e preço do catálogo de exclusivos.
+  Future<List<Map<String, dynamic>>> buscarComprasExclusivasLojinha(
+      String matricula) async {
+    final compras = await _client
+        .from('lojinha_compras_itens')
+        .select('material, quantidade, data, criado_em')
+        .eq('colaborador_id', matricula)
+        .order('criado_em', ascending: false);
+    final comprasList = List<Map<String, dynamic>>.from(compras as List);
+    if (comprasList.isEmpty) return [];
+
+    final materiais =
+        comprasList.map((c) => c['material'] as String).toSet().toList();
+    final exclusivos = await _client
+        .from('lojinha_exclusivos')
+        .select('material, nome, preco')
+        .inFilter('material', materiais);
+    final catalogo = {
+      for (final e in List<Map<String, dynamic>>.from(exclusivos as List))
+        e['material'] as String: e,
+    };
+
+    return comprasList.map((c) {
+      final info = catalogo[c['material']];
+      return {
+        'material': c['material'],
+        'quantidade': c['quantidade'],
+        'data': c['data'],
+        'criado_em': c['criado_em'],
+        'descricao': info?['nome'] as String? ?? 'Produto exclusivo',
+        'preco': (info?['preco'] as num?)?.toDouble() ?? 0.0,
+      };
+    }).toList();
+  }
+
+  static const _nfeBaseUrl =
+      'https://jyfovmyvhfyfxczaorxx.supabase.co/rest/v1/view_nfe_documents';
+  static const _nfeApiKey = 'sb_publishable_i73HLNj65X34K2IJmI4lJg_stIVnMCb';
+
+  /// Busca a URL do DANFE (nota fiscal) de um pedido a partir do DOCNUM.
+  /// Retorna null se não encontrado ou em caso de erro.
+  Future<String?> buscarDanfeUrlPorDocnum(String docnum) async {
+    if (docnum.isEmpty) return null;
+    try {
+      final uri = Uri.parse(_nfeBaseUrl).replace(queryParameters: {
+        'docnum': 'eq.$docnum',
+        'select': 'danfe_url',
+        'limit': '1',
+      });
+      final res = await http.get(uri, headers: {
+        'Content-Type': 'application/json',
+        'apikey': _nfeApiKey,
+      }).timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      final list = jsonDecode(res.body) as List;
+      if (list.isEmpty) return null;
+      return (list.first as Map<String, dynamic>)['danfe_url'] as String?;
     } catch (_) {
       return null;
     }
@@ -1644,11 +1735,16 @@ class ApiService {
     }
   }
 
+  /// Apaga a linha em vez de só marcar como CANCELADO — se só marcássemos o
+  /// status, a linha continuaria ocupando o dia na constraint única
+  /// (colaborador_id, data), impedindo um novo agendamento no mesmo dia em
+  /// outro horário.
   Future<bool> cancelarNutricionista(int agendamentoId) async {
     try {
       await _client
           .from('nutricionista_agendamentos')
-          .update({'status': 'CANCELADO'}).eq('id', agendamentoId);
+          .delete()
+          .eq('id', agendamentoId);
       return true;
     } catch (_) {
       return false;
@@ -1871,12 +1967,14 @@ class ApiService {
     required String destinatario,
     List<int>? imagemBytes,
     String? imagemNome,
+    String tipo = 'post',
+    bool temTextoLivre = false,
   }) async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return false;
     try {
       String? imagemUrl;
- 
+
       // Faz upload da imagem se houver
       if (imagemBytes != null && imagemNome != null) {
         final ext = imagemNome.split('.').last.toLowerCase();
@@ -1890,12 +1988,22 @@ class ApiService {
             );
         imagemUrl = _client.storage.from('feed-imagens').getPublicUrl(caminho);
       }
- 
-      // Posts para 'todos' precisam de aprovação do RH; demais vão direto
-      final status = destinatario == 'todos' ? 'pendente' : 'aprovado';
+
+      // Posts para 'todos' precisam de aprovação do RH; demais vão direto.
+      // Posts de humor sem motivo são só o nível selecionado (sem texto
+      // livre do usuário) e saem aprovados direto; com motivo preenchido,
+      // vira texto livre e precisa da mesma aprovação de qualquer post.
+      final precisaAprovacao = destinatario == 'todos' &&
+          (tipo != 'humor' || temTextoLivre);
+      final status = precisaAprovacao ? 'pendente' : 'aprovado';
+      // A constraint `feed_posts_tipo_check` só aceita os tipos originais
+      // ('post', 'comunicado', 'aniversario', 'aniversario_empresa') —
+      // 'humor' é só um marcador local para decidir a aprovação, não é
+      // persistido.
+      final tipoDb = tipo == 'humor' ? 'post' : tipo;
       await _client.from('feed_posts').insert({
         'autor_id': meuId,
-        'tipo': 'post',
+        'tipo': tipoDb,
         'conteudo': conteudo.trim(),
         'imagem_url': imagemUrl,
         'destinatario': destinatario,

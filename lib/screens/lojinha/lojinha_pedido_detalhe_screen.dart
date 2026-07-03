@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
@@ -8,8 +9,25 @@ class LojinhaPedidoDetalheScreen extends StatefulWidget {
   final String ordem;
   /// Data de criação do pedido (yyyyMMdd). Quando fornecida, exibe a tag de entrega.
   final String? criacao;
+  /// Número do documento (DOCNUM) para download da nota fiscal, se disponível.
+  final String? docnum;
+  /// Quando preenchidos, indica que é uma compra de produto exclusivo (fora
+  /// do SAP) — não há itens/API para consultar, os dados já vêm prontos.
+  final String? descricaoExclusivo;
+  final int? quantidadeExclusivo;
+  final double? valorExclusivo;
 
-  const LojinhaPedidoDetalheScreen({super.key, required this.ordem, this.criacao});
+  const LojinhaPedidoDetalheScreen({
+    super.key,
+    required this.ordem,
+    this.criacao,
+    this.docnum,
+    this.descricaoExclusivo,
+    this.quantidadeExclusivo,
+    this.valorExclusivo,
+  });
+
+  bool get isExclusivo => descricaoExclusivo != null;
 
   @override
   State<LojinhaPedidoDetalheScreen> createState() =>
@@ -22,11 +40,16 @@ class _LojinhaPedidoDetalheScreenState
   LojinhaPedidoDetalheModel? _detalhe;
   bool _carregando = true;
   String? _erro;
+  bool _baixandoNota = false;
 
   @override
   void initState() {
     super.initState();
-    _carregar();
+    if (widget.isExclusivo) {
+      _carregando = false;
+    } else {
+      _carregar();
+    }
   }
 
   Future<void> _carregar() async {
@@ -41,6 +64,35 @@ class _LojinhaPedidoDetalheScreenState
 
   String _moeda(double v) =>
       'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+
+  Future<void> _baixarNotaFiscal() async {
+    if (widget.docnum == null || widget.docnum!.isEmpty) return;
+    setState(() => _baixandoNota = true);
+    final url = await _api.buscarDanfeUrlPorDocnum(widget.docnum!);
+    if (!mounted) return;
+    setState(() => _baixandoNota = false);
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Nota fiscal ainda não disponível.',
+            style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Não foi possível abrir a nota fiscal.',
+            style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +122,10 @@ class _LojinhaPedidoDetalheScreenState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Pedido nº ${widget.ordem}',
+                            Text(
+                                widget.isExclusivo
+                                    ? widget.descricaoExclusivo!
+                                    : 'Pedido nº ${widget.ordem}',
                                 style: GoogleFonts.poppins(
                                     color: Colors.white,
                                     fontSize: 18,
@@ -85,17 +140,18 @@ class _LojinhaPedidoDetalheScreenState
                           ],
                         ),
                       ),
-                      GestureDetector(
-                        onTap: _carregar,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: const Icon(Icons.refresh_rounded,
-                              color: Colors.white, size: 18),
+                      if (!widget.isExclusivo)
+                        GestureDetector(
+                          onTap: _carregar,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10)),
+                            child: const Icon(Icons.refresh_rounded,
+                                color: Colors.white, size: 18),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -109,11 +165,13 @@ class _LojinhaPedidoDetalheScreenState
                         color: Color(0xFFF8F9FC),
                         borderRadius:
                             BorderRadius.vertical(top: Radius.circular(28))),
-                    child: _carregando
-                        ? const Center(child: CircularProgressIndicator())
-                        : _erro != null
-                            ? _erroWidget()
-                            : _conteudo(),
+                    child: widget.isExclusivo
+                        ? _conteudoExclusivo()
+                        : _carregando
+                            ? const Center(child: CircularProgressIndicator())
+                            : _erro != null
+                                ? _erroWidget()
+                                : _conteudo(),
                   ),
                 ),
               ],
@@ -145,6 +203,103 @@ class _LojinhaPedidoDetalheScreenState
           ),
         ]),
       );
+
+  Widget _conteudoExclusivo() {
+    final valor = widget.valorExclusivo ?? 0;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.teal.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.teal.withOpacity(0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.storefront_outlined,
+                  color: Colors.teal, size: 18),
+              const SizedBox(width: 8),
+              Text('Produto exclusivo',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.teal.shade700)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3))
+              ]),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                    color: Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.storefront_outlined,
+                    color: Colors.teal, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.descricaoExclusivo ?? '',
+                        style: GoogleFonts.poppins(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text('Quantidade: ${widget.quantidadeExclusivo}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, color: AppColors.cinzaTexto)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(_moeda(valor),
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.laranja)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+              gradient: AppColors.gradientePrincipal,
+              borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Total da compra',
+                  style: GoogleFonts.poppins(
+                      color: Colors.white, fontSize: 14)),
+              Text(_moeda(valor),
+                  style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
 
   Widget _conteudo() {
     final d = _detalhe!;
@@ -318,6 +473,36 @@ class _LojinhaPedidoDetalheScreenState
             ],
           ),
         ),
+
+        if (widget.docnum != null && widget.docnum!.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _baixandoNota ? null : _baixarNotaFiscal,
+              icon: _baixandoNota
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.laranja),
+                    )
+                  : const Icon(Icons.file_download_outlined,
+                      color: AppColors.laranja, size: 20),
+              label: Text('Baixar nota fiscal',
+                  style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.laranja)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.laranja),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
 
         const SizedBox(height: 20),
       ],
