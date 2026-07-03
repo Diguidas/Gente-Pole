@@ -29,6 +29,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
     _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+    _carregarJaParabenizados();
   }
 
   @override
@@ -37,10 +38,21 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     super.dispose();
   }
 
+  Future<void> _carregarJaParabenizados() async {
+    final ids = await _api.buscarParabensEnviadosHoje();
+    if (!mounted) return;
+    setState(() {
+      _jaParabenisei
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
   void _recarregar() => setState(() {
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
     _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+    _carregarJaParabenizados();
   });
 
   // ─── Build principal ─────────────────────────────────────────────────────────

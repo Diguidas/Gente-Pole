@@ -29,6 +29,28 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     setState(() => _carregando = true);
     _dados = await _api.buscarDadosFuncionarioLojinha();
     setState(() => _carregando = false);
+    await _retentarSeValorZerado();
+  }
+
+  /// O SAP pode levar um instante para calcular o valor total de um pedido
+  /// recém-criado — a primeira leitura logo após finalizar às vezes volta
+  /// com VALORTOTAL zerado, e só aparece certo numa atualização seguinte.
+  /// Tenta de novo algumas vezes antes de deixar o valor zerado na tela.
+  Future<void> _retentarSeValorZerado() async {
+    final hoje = DateTime.now();
+    final criacaoHoje =
+        '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
+    for (var tentativa = 0; tentativa < 3; tentativa++) {
+      final pendente = _dados?.pedidos
+              .any((p) => p.criacao == criacaoHoje && p.valorTotal == 0) ??
+          false;
+      if (!pendente) return;
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      final novosDados = await _api.buscarDadosFuncionarioLojinha();
+      if (!mounted) return;
+      setState(() => _dados = novosDados);
+    }
   }
 
   String _moeda(double v) =>

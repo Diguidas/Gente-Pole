@@ -184,6 +184,23 @@ class ApiService {
         .toList();
   }
 
+  /// IDs dos colaboradores que o usuário atual já parabenizou hoje —
+  /// usado para não deixar enviar parabéns duplicados no mesmo dia.
+  Future<Set<int>> buscarParabensEnviadosHoje() async {
+    final remetenteId = colaboradorAtual?.id;
+    if (remetenteId == null) return {};
+    final hoje = DateTime.now();
+    final inicioDia = DateTime(hoje.year, hoje.month, hoje.day).toIso8601String();
+    final data = await _client
+        .from('parabens')
+        .select('destinatario_id')
+        .eq('remetente_id', remetenteId)
+        .gte('criado_em', inicioDia);
+    return (data as List)
+        .map((e) => (e as Map)['destinatario_id'] as int)
+        .toSet();
+  }
+
   /// Envia parabéns. Retorna true se salvou.
   Future<bool> enviarParabens({
     required int destinatarioId,
