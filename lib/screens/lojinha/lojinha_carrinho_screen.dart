@@ -51,7 +51,10 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   }
 
   Future<void> _buscarEstoque() async {
-    final produtos = _itens.map((i) => i.produto).toList();
+    // Exclusivos não existem no SAP (não têm centro/deposito válidos), então
+    // não fazem parte dessa checagem — usam sempre o próprio campo `estoque`.
+    final produtos =
+        _itens.map((i) => i.produto).where((p) => !p.isExclusivo).toList();
     if (produtos.isEmpty) {
       setState(() => _carregandoEstoque = false);
       return;
@@ -65,6 +68,7 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   }
 
   int _disponivelPara(LojinhaProdutoModel p) {
+    if (p.isExclusivo) return p.limiteEfetivo(p.estoque.toInt());
     final estoque = _estoqueVisivel[p.material] ?? p.estoque.toInt();
     return p.limiteEfetivo(estoque);
   }
