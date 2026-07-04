@@ -1471,12 +1471,15 @@ class ApiService {
 
     if (colaboradorId == null) return filtradas;
 
-    // Busca todas as pesquisas já respondidas pelo colaborador de uma vez
+    // Busca todas as pesquisas já respondidas pelo colaborador de uma vez.
+    // Usa `pesquisa_participacoes` (não `pesquisa_respostas`) porque em
+    // pesquisas anônimas o colaborador_id da resposta é gravado como null de
+    // propósito — só a tabela de participação sabe quem já respondeu.
     final ids = filtradas.map((p) => p['id'] as int).toList();
     if (ids.isEmpty) return filtradas;
 
     final respondidas = await _client
-        .from('pesquisa_respostas')
+        .from('pesquisa_participacoes')
         .select('pesquisa_id')
         .eq('colaborador_id', colaboradorId)
         .inFilter('pesquisa_id', ids);
@@ -1537,6 +1540,18 @@ class ApiService {
       }).toList();
 
       await _client.from('pesquisa_resposta_itens').insert(itens);
+
+      // Marca participação separadamente do conteúdo da resposta (que pode
+      // ser anônimo) — é isso que faz a pesquisa virar "já respondida" e
+      // evita resposta duplicada, sem expor quem respondeu o quê.
+      if (meuId != null) {
+        await _client.from('pesquisa_participacoes').upsert({
+          'pesquisa_id': pesquisaId,
+          'colaborador_id': meuId,
+          'respondido_em': DateTime.now().toIso8601String(),
+        }, onConflict: 'pesquisa_id,colaborador_id');
+      }
+
       return true;
     } catch (_) {
       return false;
