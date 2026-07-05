@@ -18,6 +18,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   final _api = ApiService();
   LojinhaFuncionarioModel? _dados;
   bool _carregando = true;
+  bool _recalculando = false;
 
   @override
   void initState() {
@@ -36,21 +37,28 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   /// recém-criado — a primeira leitura logo após finalizar às vezes volta
   /// com VALORTOTAL zerado, e só aparece certo numa atualização seguinte.
   /// Tenta de novo algumas vezes antes de deixar o valor zerado na tela.
+  /// Enquanto tenta, `_recalculando` fica true pra esconder o "R$ 0,00"
+  /// (que é enganoso) e mostrar "Calculando..." no lugar.
   Future<void> _retentarSeValorZerado() async {
     final hoje = DateTime.now();
     final criacaoHoje =
         '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
+
+    bool pendente() => _dados?.pedidos
+            .any((p) => p.criacao == criacaoHoje && p.valorTotal == 0) ??
+        false;
+
+    if (!pendente()) return;
+    setState(() => _recalculando = true);
     for (var tentativa = 0; tentativa < 3; tentativa++) {
-      final pendente = _dados?.pedidos
-              .any((p) => p.criacao == criacaoHoje && p.valorTotal == 0) ??
-          false;
-      if (!pendente) return;
+      if (!pendente()) break;
       await Future.delayed(const Duration(seconds: 2));
       if (!mounted) return;
       final novosDados = await _api.buscarDadosFuncionarioLojinha();
       if (!mounted) return;
       setState(() => _dados = novosDados);
     }
+    if (mounted) setState(() => _recalculando = false);
   }
 
   String _moeda(double v) =>
@@ -222,7 +230,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                   const SizedBox(height: 10),
                                   ...vigentes.map((p) => Padding(
                                     padding: const EdgeInsets.only(bottom: 10),
-                                    child: _ultimoPedidoCard(p),
+                                    child: _ultimoPedidoCard(p, recalculando: _recalculando),
                                   )),
                                 ],
                               );
@@ -416,8 +424,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     );
   }
 
-  Widget _ultimoPedidoCard(LojinhaPedidoResumoModel p) {
+  Widget _ultimoPedidoCard(LojinhaPedidoResumoModel p, {required bool recalculando}) {
     final cor = p.isVigente ? Colors.green.shade600 : AppColors.laranja;
+    final aguardandoValor = recalculando && p.valorTotal == 0;
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -474,13 +483,31 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                     ],
                   ),
                 ),
-                Text(
-                  'R\$ ${p.valorTotal.toStringAsFixed(2).replaceAll('.', ',')}',
-                  style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: cor),
-                ),
+                aguardandoValor
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 11,
+                            height: 11,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: cor),
+                          ),
+                          const SizedBox(width: 6),
+                          Text('Calculando...',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.cinzaTexto)),
+                        ],
+                      )
+                    : Text(
+                        'R\$ ${p.valorTotal.toStringAsFixed(2).replaceAll('.', ',')}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: cor),
+                      ),
                 const SizedBox(width: 4),
                 Icon(Icons.chevron_right_rounded,
                     color: AppColors.cinzaTexto, size: 18),

@@ -5,6 +5,7 @@ import '../core/app_navigator.dart';
 import 'aniversariante_screen.dart';
 import 'perfil_screen.dart';
 import 'servicos_screen.dart';
+import 'atalhos/atalhos_sheet.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class MainLayout extends StatefulWidget {
@@ -33,6 +34,10 @@ class _MainLayoutState extends State<MainLayout> {
   void _onExternalTab() => _onTabTap(AppNavigator.tabIndex.value);
 
   void _onTabTap(int index) {
+    if (index == 4) {
+      abrirMenuAtalhos(context);
+      return;
+    }
     setState(() {
       _selectedIndex = index;
       _visitadas.add(index);
@@ -121,6 +126,11 @@ class _MainLayoutState extends State<MainLayout> {
           BottomNavigationBarItem(
             icon: _navItem(Icons.people_outline_rounded, 'Perfil', false),
             activeIcon: _navItem(Icons.people_rounded, 'Perfil', true),
+            label: '',
+          ),
+          BottomNavigationBarItem(
+            icon: _navItem(Icons.star_outline_rounded, 'Atalhos', false),
+            activeIcon: _navItem(Icons.star_outline_rounded, 'Atalhos', false),
             label: '',
           ),
         ],

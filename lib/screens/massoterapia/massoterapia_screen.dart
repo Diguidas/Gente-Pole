@@ -143,10 +143,28 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         .length;
   }
 
-  bool get _setorLotado {
-    final vagas = _configSetor?.vagasDia ?? 999;
-    return _vagasUsadasMeuSetor >= vagas;
+  /// Quantos horários ainda podem ser agendados hoje (não ocupados e não
+  /// passados) — é o teto real de vagas: não faz sentido mostrar "3 vagas"
+  /// se só sobra 1 horário livre até o fim do expediente.
+  int get _slotsLivresRestantes {
+    final ocupados = _slotsOcupados;
+    final passados = _slotsPassados;
+    return _todosSlots
+        .where((s) => !ocupados.contains(s) && !passados.contains(s))
+        .length;
   }
+
+  /// Vagas restantes do setor, já limitadas pelos horários que ainda restam
+  /// no dia.
+  int get _vagasRestantes {
+    final porHorarios = _slotsLivresRestantes;
+    final vagasSetor = _configSetor?.vagasDia ?? 0;
+    if (vagasSetor <= 0) return porHorarios;
+    final porSetor = vagasSetor - _vagasUsadasMeuSetor;
+    return porSetor < porHorarios ? (porSetor < 0 ? 0 : porSetor) : porHorarios;
+  }
+
+  bool get _setorLotado => _vagasRestantes <= 0;
 
   // ── Ações ────────────────────────────────────────────────────────────────
 
@@ -261,13 +279,18 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         children: [
           Stack(
             children: [
+              // Proporção real do asset (1440x540) — evita qualquer corte,
+              // lateral ou vertical, em qualquer largura de tela.
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(28)),
-                child: Image.asset(
-                  'assets/massoterapia.png',
-                  width: double.infinity,
-                  fit: BoxFit.fitWidth,
+                child: AspectRatio(
+                  aspectRatio: 1440 / 540,
+                  child: Image.asset(
+                    'assets/massoterapia.png',
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
               Positioned(
@@ -639,7 +662,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   Widget _buildInfoVagasSetor() {
     final usadas = _vagasUsadasMeuSetor;
     final total = _configSetor!.vagasDia;
-    final restam = total - usadas;
+    final restam = _vagasRestantes;
     final cor = restam == 0
         ? Colors.red.shade600
         : restam == 1
@@ -660,7 +683,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           Expanded(
             child: Text(
               restam == 0
-                  ? 'Seu setor não tem mais vagas hoje.'
+                  ? 'Não há mais vagas hoje.'
                   : restam == 1
                   ? 'Última vaga do seu setor hoje!'
                   : '$restam vagas disponíveis para seu setor hoje',

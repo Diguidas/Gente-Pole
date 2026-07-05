@@ -4,6 +4,8 @@ import '../models/aniversariante_model.dart';
 import '../services/api_service.dart';
 import '../widgets/avatar_colaborador.dart';
 
+const _douradoResposta = Color(0xFFB8860B);
+
 class AniversariantesScreen extends StatefulWidget {
   const AniversariantesScreen({super.key});
 
@@ -469,6 +471,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     final fotoUrl = msg['remetente_foto_url'] as String?;
     final texto = msg['mensagem'] as String? ?? '';
     final criadoEm = msg['criado_em'] as String? ?? '';
+    final resposta = msg['resposta'] as String?;
     final hora = criadoEm.length >= 16 ? criadoEm.substring(11, 16) : '';
 
     return Container(
@@ -516,6 +519,45 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     height: 1.4,
                   ),
                 ),
+                if (resposta != null && resposta.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _douradoResposta.withOpacity(.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _douradoResposta.withOpacity(.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('✨ Sua resposta',
+                            style: AppTextStyles.corpoMinimo.copyWith(
+                                fontWeight: FontWeight.w700, color: _douradoResposta)),
+                        const SizedBox(height: 4),
+                        Text(resposta,
+                            style: AppTextStyles.corpoCinza.copyWith(color: AppColors.dark, height: 1.4)),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _abrirModalResposta(msg),
+                      icon: const Icon(Icons.reply_rounded, size: 15),
+                      label: const Text('Responder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: _douradoResposta,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -837,6 +879,55 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     );
   }
 
+  // ─── Modal de resposta aos parabéns ─────────────────────────────────────────
+
+  void _abrirModalResposta(Map<String, dynamic> msg) {
+    final remetenteNome = msg['remetente_nome'] as String? ?? 'Colega';
+    final controller = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ModalResposta(
+        remetenteNome: remetenteNome,
+        controller: controller,
+        onEnviar: (resposta) async {
+          final ok = await _api.responderParabens(
+            parabensId: msg['id'] as int,
+            resposta: resposta,
+            remetenteId: msg['remetente_id'] as int,
+            remetenteNome: remetenteNome,
+          );
+          if (!mounted) return;
+          if (ok) {
+            setState(() {
+              _futureMensagens = _api.buscarMensagensParabens();
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Resposta enviada para $remetenteNome! 🎉',
+                    style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+                backgroundColor: _douradoResposta,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Erro ao responder. Tente novamente.',
+                    style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   Widget _avatar(colaborador, {double raio = 22, bool fonteGrande = false}) {
@@ -1104,5 +1195,107 @@ class _ModalParabensState extends State<_ModalParabens> {
         : nome.isNotEmpty
         ? nome[0].toUpperCase()
         : '?';
+  }
+}
+
+// ─── Modal de resposta aos parabéns ────────────────────────────────────────
+
+class _ModalResposta extends StatefulWidget {
+  final String remetenteNome;
+  final TextEditingController controller;
+  final Future<void> Function(String resposta) onEnviar;
+
+  const _ModalResposta({
+    required this.remetenteNome,
+    required this.controller,
+    required this.onEnviar,
+  });
+
+  @override
+  State<_ModalResposta> createState() => _ModalRespostaState();
+}
+
+class _ModalRespostaState extends State<_ModalResposta> {
+  bool _enviando = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.cinzaTextoOp30,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Responder a ${widget.remetenteNome}',
+                style: AppTextStyles.tituloMedio.copyWith(fontSize: 17)),
+            const SizedBox(height: 4),
+            Text('Sua resposta aparece no feed só pra ${widget.remetenteNome}.',
+                style: AppTextStyles.corpoMenor),
+            const SizedBox(height: 16),
+            TextField(
+              controller: widget.controller,
+              maxLines: 3,
+              maxLength: 280,
+              style: AppTextStyles.corpoNormal,
+              decoration: InputDecoration(
+                hintText: 'Escreva seu agradecimento...',
+                hintStyle: AppTextStyles.corpoCinza,
+                filled: true,
+                fillColor: AppColors.cinzaClaro,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.all(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _enviando
+                    ? null
+                    : () async {
+                        final msg = widget.controller.text.trim();
+                        if (msg.isEmpty) return;
+                        setState(() => _enviando = true);
+                        await widget.onEnviar(msg);
+                        if (mounted) Navigator.pop(context);
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _douradoResposta,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                child: _enviando
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text('✨ Enviar resposta', style: AppTextStyles.botaoPrimario),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

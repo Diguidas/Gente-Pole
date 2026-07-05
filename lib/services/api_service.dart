@@ -219,6 +219,40 @@ class ApiService {
     }
   }
 
+  /// O aniversariante responde a uma mensagem de parabéns específica.
+  /// Marca a resposta na própria linha de `parabens` e cria um post
+  /// individual no feed, visível só para quem mandou o parabéns original.
+  Future<bool> responderParabens({
+    required int parabensId,
+    required String resposta,
+    required int remetenteId,
+    required String remetenteNome,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      final respostaLimpa = resposta.trim();
+      await _client.from('parabens').update({
+        'resposta': respostaLimpa,
+        'respondido_em': DateTime.now().toIso8601String(),
+      }).eq('id', parabensId);
+
+      final meuPrimeiroNome = colaboradorAtual?.primeiroNome ?? 'Alguém';
+      await _client.from('feed_posts').insert({
+        'autor_id': meuId,
+        'tipo': 'resposta_parabens',
+        'conteudo':
+            '*$meuPrimeiroNome* respondeu aos parabéns de *$remetenteNome*:\n\n$respostaLimpa',
+        'destinatario': '@colaborador:$remetenteId|$remetenteNome',
+        'status': 'aprovado',
+      });
+      return true;
+    } catch (e) {
+      debugPrint('ERRO responderParabens: $e');
+      return false;
+    }
+  }
+
   // ─── Colaboradores ────────────────────────────────────────────────────────────
 
   Future<ColaboradorModel?> buscarSupervisor(int supervisorId) async {
@@ -636,26 +670,53 @@ class ApiService {
   // Import necessário no topo do arquivo:
   //   import '../models/massoterapia_model.dart';
 
-  /// Retorna APENAS o próximo dia disponível para massoterapia.
-  /// Inclui hoje se o dia da semana estiver ativo.
+  /// Resolve se [diaSemana] (1–7) é dia de massoterapia, considerando a regra
+  /// mais específica disponível para o colaborador: setor > segmento >
+  /// filial > global. Retorna false se nenhuma regra estiver configurada.
+  Future<bool> diaMassoterapiaAtivoParaColaborador({
+    required int diaSemana,
+    String? setor,
+    String? segmento,
+    String? filial,
+  }) async {
+    final res = await _client
+        .from('massoterapia_dias_config')
+        .select('escopo, chave, ativo')
+        .eq('dia_semana', diaSemana);
+    final linhas = List<Map<String, dynamic>>.from(res as List);
+
+    bool? buscar(String escopo, String? chave) {
+      if (chave == null) return null;
+      final achado =
+          linhas.where((l) => l['escopo'] == escopo && l['chave'] == chave);
+      return achado.isEmpty ? null : achado.first['ativo'] as bool;
+    }
+
+    final global = linhas.where((l) => l['escopo'] == 'global');
+
+    return buscar('setor', setor) ??
+        buscar('segmento', segmento) ??
+        buscar('filial', filial) ??
+        (global.isEmpty ? false : global.first['ativo'] as bool);
+  }
+
+  /// Retorna APENAS o próximo dia disponível para massoterapia, resolvendo a
+  /// regra específica do colaborador logado (setor > segmento > filial >
+  /// global). Inclui hoje se o dia da semana estiver ativo.
   Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
-    final configDias = await _client
-        .from('massoterapia_dias_disponiveis')
-        .select('dia_semana')
-        .eq('ativo', true);
-
-    final diasAtivos = (configDias as List)
-        .map((e) => e['dia_semana'] as int)
-        .toSet();
-
-    if (diasAtivos.isEmpty) return [];
-
+    final colaborador = colaboradorAtual;
     final agora = _brasilia();
     final hoje = DateTime(agora.year, agora.month, agora.day);
 
     for (var i = 0; i < 14; i++) {
       final d = hoje.add(Duration(days: i));
-      if (diasAtivos.contains(d.weekday)) {
+      final ativo = await diaMassoterapiaAtivoParaColaborador(
+        diaSemana: d.weekday,
+        setor: colaborador?.setor,
+        segmento: colaborador?.codSegmento,
+        filial: colaborador?.codFilial,
+      );
+      if (ativo) {
         final str =
             '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
         return [str];
@@ -1136,33 +1197,31 @@ class ApiService {
             .toList();
       }
 
-      // Itens exclusivos → Supabase (independente do resultado SAP)
+      // Itens exclusivos → Supabase (independente do resultado SAP).
+      // `comprar_exclusivo` debita o estoque e registra a compra numa única
+      // transação atômica no banco — só registra se realmente havia
+      // estoque suficiente (ver migrations/2026-07-04g_comprar_exclusivo_atomico.sql).
       if (itensExclusivos.isNotEmpty) {
         final matricula = colaborador.matricula;
         final colabNome = colaborador.nome;
+        final semEstoque = <String>[];
         for (final item in itensExclusivos) {
-          await _client.from('lojinha_compras_itens').insert({
-            'colaborador_id': matricula,
-            'colaborador_nome': colabNome,
-            'material': item.produto.material,
-            'quantidade': item.quantidade,
-            'data': dataStr,
-          });
-          // Debita estoque
-          try {
-            await _client.rpc('decrementar_estoque_exclusivo', params: {
-              'p_material': item.produto.material,
-              'p_quantidade': item.quantidade,
-            });
-          } catch (e) {
-            // O item já foi registrado como comprado; falha em debitar o
-            // estoque não deve travar o pedido nem esconder o problema.
-            debugPrint('decrementar_estoque_exclusivo falhou p/ ${item.produto.material}: $e');
-          }
+          final sucesso = await _client.rpc('comprar_exclusivo', params: {
+            'p_material': item.produto.material,
+            'p_quantidade': item.quantidade,
+            'p_colaborador_id': matricula,
+            'p_colaborador_nome': colabNome,
+            'p_data': dataStr,
+          }) as bool;
+          if (!sucesso) semEstoque.add(item.produto.descricao);
         }
         if (itensRegulares.isEmpty) {
-          ok = true;
-          retorno = 'Pedido exclusivo registrado com sucesso!';
+          ok = semEstoque.length < itensExclusivos.length;
+          retorno = semEstoque.isEmpty
+              ? 'Pedido exclusivo registrado com sucesso!'
+              : 'Sem estoque suficiente para: ${semEstoque.join(', ')}.';
+        } else if (semEstoque.isNotEmpty) {
+          retorno = '$retorno\nSem estoque suficiente para: ${semEstoque.join(', ')}.';
         }
       }
 
@@ -1306,6 +1365,7 @@ class ApiService {
         dataAdmissao: colaboradorAtual!.dataAdmissao,
         supervisorId: colaboradorAtual!.supervisorId,
         clienteSap: colaboradorAtual!.clienteSap,
+        codCentro: colaboradorAtual!.codCentro,
         fotoUrl: urlFinal,
       );
 
@@ -1507,6 +1567,75 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Resolve qual envio (`pesquisa_envios`) deu acesso a esta pesquisa para
+  /// o colaborador logado — usado só na hora de responder, pra gravar
+  /// `envio_id` na resposta (sem isso, o filtro por envio na tela de
+  /// detalhe do admin nunca encontra nada).
+  Future<int?> _resolverEnvioIdPesquisa(int pesquisaId) async {
+    final colab = colaboradorAtual;
+    if (colab == null) return null;
+
+    final hoje = DateTime.now().toIso8601String().substring(0, 10);
+    final envios = await _client
+        .from('pesquisa_envios')
+        .select('id, tipo_destinatario, setores_alvo, agrupamentos_alvo')
+        .eq('pesquisa_id', pesquisaId)
+        .or('data_inicio.is.null,data_inicio.lte.$hoje')
+        .or('data_fim.is.null,data_fim.gte.$hoje');
+    if ((envios as List).isEmpty) return null;
+
+    List<dynamic> parseLista(dynamic raw) {
+      if (raw == null) return [];
+      if (raw is List) return raw;
+      if (raw is String) {
+        try {
+          final decoded = jsonDecode(raw);
+          return decoded is List ? decoded : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [];
+    }
+
+    Set<int>? meusAgrupamentos;
+    Set<int>? meusEnviosColab;
+
+    for (final envio in envios) {
+      final tipo = envio['tipo_destinatario'] as String? ?? 'todos';
+      bool visivel;
+      switch (tipo) {
+        case 'todos':
+          visivel = true;
+          break;
+        case 'setor':
+          visivel = parseLista(envio['setores_alvo']).contains(colab.setor);
+          break;
+        case 'colaboradores':
+          meusEnviosColab ??= await _client
+              .from('pesquisa_envio_colaboradores')
+              .select('envio_id')
+              .eq('colaborador_id', colab.id)
+              .then((r) => (r as List).map((e) => e['envio_id'] as int).toSet());
+          visivel = meusEnviosColab!.contains(envio['id'] as int);
+          break;
+        case 'agrupamentos':
+          meusAgrupamentos ??= await _client
+              .from('agrupamento_membros')
+              .select('agrupamento_id')
+              .eq('colaborador_id', colab.id)
+              .then((r) => (r as List).map((e) => e['agrupamento_id'] as int).toSet());
+          visivel = parseLista(envio['agrupamentos_alvo']).any((g) =>
+              meusAgrupamentos!.contains(g is int ? g : int.tryParse(g.toString()) ?? -1));
+          break;
+        default:
+          visivel = true;
+      }
+      if (visivel) return envio['id'] as int;
+    }
+    return null;
+  }
+
   /// Envia todas as respostas de uma pesquisa.
   /// [respostas] é um Map de pergunta_id → valor (String, int ou bool).
   Future<bool> responderPesquisa({
@@ -1516,12 +1645,14 @@ class ApiService {
   }) async {
     final meuId = colaboradorAtual?.id;
     try {
+      final envioId = await _resolverEnvioIdPesquisa(pesquisaId);
       // 1. Insere cabeçalho
       final cabecalho = await _client
           .from('pesquisa_respostas')
           .insert({
             'pesquisa_id': pesquisaId,
             'colaborador_id': anonima ? null : meuId,
+            'envio_id': envioId,
           })
           .select('id')
           .single();
@@ -1699,6 +1830,285 @@ class ApiService {
   // ════════════════════════════════════════════════════════════════════════════
 // ADICIONAR NO api_service.dart — cole cada bloco na seção correspondente
 // ════════════════════════════════════════════════════════════════════════════
+
+// ─── Cardápio do Refeitório ────────────────────────────────────────────────
+
+  static const cardapioCategorias = [
+    'proteina',
+    'acompanhamento',
+    'salada',
+    'molho',
+    'sobremesa',
+    'outro',
+  ];
+
+  String _fmtDataCardapio(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Lista os dias com cardápio cadastrado num intervalo (sem os itens).
+  Future<List<Map<String, dynamic>>> listarDiasCardapio({
+    required DateTime inicio,
+    required DateTime fim,
+  }) async {
+    final res = await _client
+        .from('cardapio_dias')
+        .select('id, data, observacao')
+        .gte('data', _fmtDataCardapio(inicio))
+        .lte('data', _fmtDataCardapio(fim))
+        .order('data', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Busca o cardápio completo de um dia, com os itens agrupados por
+  /// categoria. Retorna null se o dia não tiver cardápio cadastrado.
+  Future<Map<String, dynamic>?> buscarCardapioDia(String data) async {
+    final dia = await _client
+        .from('cardapio_dias')
+        .select('id, data, observacao')
+        .eq('data', data)
+        .maybeSingle();
+    if (dia == null) return null;
+
+    final itens = await _client
+        .from('cardapio_itens')
+        .select('id, categoria, texto, ordem')
+        .eq('cardapio_dia_id', dia['id'])
+        .order('categoria')
+        .order('ordem', ascending: true);
+
+    return {...dia, 'itens': List<Map<String, dynamic>>.from(itens)};
+  }
+
+// ─── Calculadora de Ponto (Colaborador) ─────────────────────────────────────
+
+  static DateTime horarioBrasilia() => _brasilia();
+
+  Future<Map<String, dynamic>> buscarConfigPonto(String colaboradorId) async {
+    final res = await _client
+        .from('ponto_configuracao')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .maybeSingle();
+    return res ??
+        {
+          'colaborador_id': colaboradorId,
+          'entrada_padrao': '07:42:00',
+          'saida_padrao': '17:30:00',
+          'almoco_minutos': 60,
+        };
+  }
+
+  Future<bool> salvarConfigPonto({
+    required String colaboradorId,
+    required String entradaPadrao,
+    required String saidaPadrao,
+    required int almocoMinutos,
+  }) async {
+    try {
+      await _client.from('ponto_configuracao').upsert({
+        'colaborador_id': colaboradorId,
+        'entrada_padrao': entradaPadrao,
+        'saida_padrao': saidaPadrao,
+        'almoco_minutos': almocoMinutos,
+        'atualizado_em': DateTime.now().toIso8601String(),
+      }, onConflict: 'colaborador_id');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> buscarRegistrosPontoMes({
+    required String colaboradorId,
+    required int ano,
+    required int mes,
+  }) async {
+    final inicio = DateTime(ano, mes, 1);
+    final fim = DateTime(ano, mes + 1, 0);
+    final res = await _client
+        .from('ponto_registros')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .gte('data', _fmtDataCardapio(inicio))
+        .lte('data', _fmtDataCardapio(fim))
+        .order('data', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<bool> salvarRegistroPonto({
+    required String colaboradorId,
+    required String data,
+    String? entrada,
+    String? saida,
+  }) async {
+    try {
+      final existente = await _client
+          .from('ponto_registros')
+          .select()
+          .eq('colaborador_id', colaboradorId)
+          .eq('data', data)
+          .maybeSingle();
+
+      await _client.from('ponto_registros').upsert({
+        'colaborador_id': colaboradorId,
+        'data': data,
+        'entrada': entrada ?? existente?['entrada'],
+        'saida': saida ?? existente?['saida'],
+        'atualizado_em': DateTime.now().toIso8601String(),
+      }, onConflict: 'colaborador_id,data');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> excluirRegistroPonto(int id) async {
+    try {
+      await _client.from('ponto_registros').delete().eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Verifica se existe algum registro de ponto anterior à data informada
+  /// (usado pra decidir se vale a pena mostrar a seta "mês anterior").
+  Future<bool> existeRegistroPontoAnterior({
+    required String colaboradorId,
+    required DateTime antesDe,
+  }) async {
+    final res = await _client
+        .from('ponto_registros')
+        .select('id')
+        .eq('colaborador_id', colaboradorId)
+        .lt('data', _fmtDataCardapio(antesDe))
+        .limit(1);
+    return (res as List).isNotEmpty;
+  }
+
+  /// Horas extras/sobreaviso lançadas num mês — não entram no saldo da
+  /// jornada normal, são um total à parte (tipicamente pago em dinheiro).
+  Future<List<Map<String, dynamic>>> buscarHorasExtrasMes({
+    required String colaboradorId,
+    required int ano,
+    required int mes,
+  }) async {
+    final inicio = DateTime(ano, mes, 1);
+    final fim = DateTime(ano, mes + 1, 0);
+    final res = await _client
+        .from('ponto_horas_extras')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .gte('data', _fmtDataCardapio(inicio))
+        .lte('data', _fmtDataCardapio(fim))
+        .order('data', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<bool> registrarHoraExtra({
+    required String colaboradorId,
+    required String data,
+    required String horaInicio,
+    required String horaFim,
+    required int minutos,
+    String? observacao,
+  }) async {
+    try {
+      await _client.from('ponto_horas_extras').insert({
+        'colaborador_id': colaboradorId,
+        'data': data,
+        'hora_inicio': horaInicio,
+        'hora_fim': horaFim,
+        'minutos': minutos,
+        'observacao': observacao,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> excluirHoraExtra(int id) async {
+    try {
+      await _client.from('ponto_horas_extras').delete().eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+// ─── Reserva de Salas ────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> listarSalasReserva({bool apenasAtivas = false}) async {
+    var query = _client.from('salas_reserva').select();
+    if (apenasAtivas) query = query.eq('ativo', true);
+    final res = await query.order('ordem', ascending: true).order('nome', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> listarMinhasReservasSalas(String colaboradorId) async {
+    final res = await _client
+        .from('reservas_salas')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .order('data', ascending: false)
+        .order('hora_inicio', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Retorna null em sucesso, ou uma mensagem de erro amigável em caso de
+  /// falha (ex: conflito de horário).
+  Future<String?> reservarSala({
+    required int salaId,
+    required String data,
+    required String horaInicio,
+    required String horaFim,
+    required String colaboradorId,
+    required String colaboradorNome,
+    required String titulo,
+    String? subtipo,
+    required String responsavelNome,
+    required String responsavelContato,
+    String? observacao,
+  }) async {
+    try {
+      await _client.rpc('reservar_sala', params: {
+        'p_sala_id': salaId,
+        'p_data': data,
+        'p_hora_inicio': horaInicio,
+        'p_hora_fim': horaFim,
+        'p_colaborador_id': colaboradorId,
+        'p_colaborador_nome': colaboradorNome,
+        'p_titulo': titulo,
+        'p_subtipo': subtipo,
+        'p_responsavel_nome': responsavelNome,
+        'p_responsavel_contato': responsavelContato,
+        'p_observacao': observacao,
+      });
+      return null;
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('CONFLITO_HORARIO')) {
+        return 'Essa sala já está reservada nesse horário. Escolha outro horário.';
+      }
+      if (msg.contains('HORARIO_INVALIDO')) {
+        return 'O horário final precisa ser depois do horário inicial.';
+      }
+      if (msg.contains('SALA_INVALIDA')) {
+        return 'Essa sala não está mais disponível.';
+      }
+      return 'Não foi possível reservar. Tente novamente.';
+    }
+  }
+
+  Future<bool> cancelarReservaSala(int id) async {
+    try {
+      await _client.from('reservas_salas').delete().eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
 // ─── Nutricionista ───────────────────────────────────────────────────────────
 // Cole após os métodos de massoterapia
@@ -1882,6 +2292,7 @@ class ApiService {
 // Cole após os métodos de conexões
 
   Future<bool> salvarOuvidoria({
+    required String tipo,
     required String ocorrido,
     required String telefone,
     required String sugestao,
@@ -1892,6 +2303,7 @@ class ApiService {
       await _client.from('ouvidoria').insert({
         'colaborador_id': meuId,
         'matricula': colaboradorAtual!.matricula,
+        'tipo': tipo,
         'ocorrido': ocorrido,
         'telefone_contato': telefone,
         'sugestao': sugestao.isEmpty ? null : sugestao,
@@ -2028,14 +2440,9 @@ class ApiService {
       final precisaAprovacao = destinatario == 'todos' &&
           (tipo != 'humor' || temTextoLivre);
       final status = precisaAprovacao ? 'pendente' : 'aprovado';
-      // A constraint `feed_posts_tipo_check` só aceita os tipos originais
-      // ('post', 'comunicado', 'aniversario', 'aniversario_empresa') —
-      // 'humor' é só um marcador local para decidir a aprovação, não é
-      // persistido.
-      final tipoDb = tipo == 'humor' ? 'post' : tipo;
       await _client.from('feed_posts').insert({
         'autor_id': meuId,
-        'tipo': tipoDb,
+        'tipo': tipo,
         'conteudo': conteudo.trim(),
         'imagem_url': imagemUrl,
         'destinatario': destinatario,

@@ -121,21 +121,24 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 200,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(28)),
-                    child: Image.asset(
-                      'assets/conexoes.png',
-                      fit: BoxFit.cover,
-                    ),
+          Stack(
+            children: [
+              // Proporção real do asset (1440x540) — evita cortar as laterais
+              // ao ajustar pra largura da tela, diferente de uma altura fixa
+              // combinada com BoxFit.cover.
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(28)),
+                child: AspectRatio(
+                  aspectRatio: 1440 / 540,
+                  child: Image.asset(
+                    'assets/conexoes.png',
+                    width: double.infinity,
+                    fit: BoxFit.cover,
                   ),
                 ),
-                Positioned(
+              ),
+              Positioned(
                   top: 0,
                   left: 0,
                   child: SafeArea(
@@ -156,7 +159,6 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
                 ),
               ],
             ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: Column(

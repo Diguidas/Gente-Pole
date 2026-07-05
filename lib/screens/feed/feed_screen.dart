@@ -11,6 +11,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+const _douradoResposta = Color(0xFFB8860B);
+
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
@@ -176,12 +178,14 @@ class _FeedScreenState extends State<FeedScreen> {
       if (mounted) setState(() => _humorHoje = {'nivel': nivel});
       _carregarHumor(); // sincroniza com DB em background
 
-      // Cria post automático no feed
+      // Cria post automático no feed. *nome* entre asteriscos é o mesmo
+      // padrão usado nos posts de aniversário — o _PostCard reconhece e
+      // destaca automaticamente.
       final colab = _api.colaboradorAtual;
       final nome = colab?.primeiroNome ?? 'Alguém';
       final conteudo = motivo.isNotEmpty
-          ? '$nome está se sentindo $label $emoji\n\n"$motivo"'
-          : '$nome está se sentindo $label $emoji';
+          ? '*$nome* está se sentindo $label $emoji\n\n$motivo'
+          : '*$nome* está se sentindo $label $emoji';
 
       await _api.criarPost(
         conteudo: conteudo,
@@ -1476,19 +1480,31 @@ class _PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAniversario = post.isAniversario;
     final isDoSistema = post.isDoSistema;
+    final isHumor = post.isHumor;
+    final isRespostaParabens = post.isRespostaParabens;
+    final corDestaque = isRespostaParabens ? _douradoResposta : AppColors.magenta;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: (isHumor || isRespostaParabens)
+            ? LinearGradient(
+                colors: [corDestaque.withOpacity(0.08), Colors.white],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        color: (isHumor || isRespostaParabens) ? null : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: isAniversario
-            ? Border.all(
-                color: AppColors.laranja.withOpacity(0.4), width: 1.5)
-            : isDoSistema
+        border: (isHumor || isRespostaParabens)
+            ? Border.all(color: corDestaque.withOpacity(0.35), width: 1.5)
+            : isAniversario
                 ? Border.all(
-                    color: AppColors.magenta.withOpacity(0.3), width: 1.5)
-                : null,
+                    color: AppColors.laranja.withOpacity(0.4), width: 1.5)
+                : isDoSistema
+                    ? Border.all(
+                        color: AppColors.magenta.withOpacity(0.3), width: 1.5)
+                    : null,
         boxShadow: [
           BoxShadow(
             color: isAniversario
@@ -1561,6 +1577,30 @@ class _PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (isHumor)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.magenta.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('💬 Humor do dia',
+                        style: GoogleFonts.poppins(
+                            fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.magenta)),
+                  ),
+                if (isRespostaParabens)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _douradoResposta.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('✨ Resposta de aniversário',
+                        style: GoogleFonts.poppins(
+                            fontSize: 10.5, fontWeight: FontWeight.w700, color: _douradoResposta)),
+                  ),
                 // Pill de status para posts do próprio usuário que estão pendentes ou rejeitados
                 if (meuId != null && post.autorId == meuId && !post.isAprovado)
                   Container(
@@ -1583,7 +1623,9 @@ class _PostCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (meuId != null && post.autorId == meuId)
+                // Post de humor não pode ser excluído — é um registro de
+                // bem-estar, não um post social comum.
+                if (meuId != null && post.autorId == meuId && !isHumor)
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'excluir') onExcluir();
@@ -1628,7 +1670,7 @@ class _PostCard extends StatelessWidget {
             Padding(
               padding:
                   EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14, 16),
-              child: _buildConteudo(post.conteudo!, isAniversario),
+              child: _buildConteudo(post.conteudo!, isAniversario, isHumor, isRespostaParabens),
             ),
 
           if (post.conteudo == null || post.conteudo!.isEmpty)
@@ -1638,8 +1680,8 @@ class _PostCard extends StatelessWidget {
     );
   }
 
-  // Renderiza texto com @menções e *nomes* (aniversário) em destaque
-  Widget _buildConteudo(String texto, bool isAniversario) {
+  // Renderiza texto com @menções e *nomes* (aniversário/humor) em destaque
+  Widget _buildConteudo(String texto, bool isAniversario, bool isHumor, bool isRespostaParabens) {
     final fontSize = isAniversario ? 15.0 : 14.0;
     final baseStyle = GoogleFonts.poppins(
       fontSize: fontSize,
@@ -1648,8 +1690,10 @@ class _PostCard extends StatelessWidget {
       fontWeight: isAniversario ? FontWeight.w500 : FontWeight.normal,
     );
 
-    // Posts de aniversário: destaca *nome* em laranja
-    if (isAniversario) {
+    // Posts de aniversário, humor e resposta de aniversário destacam *nome*
+    // — laranja no aniversário, magenta no humor, dourado na resposta.
+    if (isAniversario || isHumor || isRespostaParabens) {
+      final corNome = isRespostaParabens ? _douradoResposta : (isHumor ? AppColors.magenta : AppColors.laranja);
       final regex = RegExp(r'\*([^*]+)\*');
       final matches = regex.allMatches(texto).toList();
       if (matches.isNotEmpty) {
@@ -1663,7 +1707,7 @@ class _PostCard extends StatelessWidget {
             text: m.group(1), // sem os asteriscos
             style: GoogleFonts.poppins(
               fontSize: fontSize,
-              color: AppColors.laranja,
+              color: corNome,
               fontWeight: FontWeight.w700,
               height: 1.5,
             ),
@@ -1671,7 +1715,20 @@ class _PostCard extends StatelessWidget {
           last = m.end;
         }
         if (last < texto.length) {
-          spans.add(TextSpan(text: texto.substring(last)));
+          final resto = texto.substring(last);
+          // Motivo do humor / texto da resposta (depois da quebra dupla de
+          // linha) em itálico, sem aspas literais.
+          if ((isHumor || isRespostaParabens) && resto.contains('\n\n')) {
+            final partes = resto.split('\n\n');
+            spans.add(TextSpan(text: partes.first));
+            spans.add(TextSpan(
+              text: '\n\n${partes.sublist(1).join('\n\n')}',
+              style: GoogleFonts.poppins(
+                  fontSize: fontSize, color: AppColors.cinzaTexto, fontStyle: FontStyle.italic, height: 1.5),
+            ));
+          } else {
+            spans.add(TextSpan(text: resto));
+          }
         }
         return RichText(text: TextSpan(style: baseStyle, children: spans));
       }

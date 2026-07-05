@@ -7,6 +7,8 @@
 ///   'comunicado'           — comunicado do sistema / Gente Pole
 ///   'aniversario'          — felicitação automática de aniversário de nascimento
 ///   'aniversario_empresa'  — felicitação automática de aniversário de empresa
+///   'humor'                — registro automático de humor do dia
+///   'resposta_parabens'    — resposta do aniversariante a um parabéns recebido
 class FeedPostModel {
   final int id;
   final int? autorId;
@@ -104,6 +106,8 @@ class FeedPostModel {
   bool get temImagem => imagemUrl != null && imagemUrl!.isNotEmpty;
   bool get isAniversario =>
       tipo == 'aniversario' || tipo == 'aniversario_empresa';
+  bool get isHumor => tipo == 'humor';
+  bool get isRespostaParabens => tipo == 'resposta_parabens';
   bool get isPendente => status == 'pendente';
   bool get isRejeitado => status == 'rejeitado';
   bool get isAprovado => status == 'aprovado';

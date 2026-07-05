@@ -77,6 +77,11 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
       'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
   void _adicionar(LojinhaProdutoModel p) {
+    // Usa o mesmo número de estoque mostrado nessa tela (mais atualizado do
+    // que o carregado na grade de produtos) — antes o "+" ignorava esse
+    // valor e só era corrigido depois, pelo debounce de sincronização.
+    final atual = widget.carrinho[p.id]?.quantidade ?? 0;
+    if (atual >= _disponivelPara(p)) return;
     widget.onAdicionar(p);
     setState(() {});
   }
@@ -536,6 +541,7 @@ class _CardItem extends StatelessWidget {
                     _BotaoQtd(
                       icon: Icons.add,
                       onTap: onAdicionar,
+                      enabled: item.quantidade < estoqueDisponivel,
                     ),
                   ],
                 ),
@@ -572,21 +578,23 @@ class _CardItem extends StatelessWidget {
 class _BotaoQtd extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final bool enabled;
 
-  const _BotaoQtd({required this.icon, required this.onTap});
+  const _BotaoQtd({required this.icon, required this.onTap, this.enabled = true});
 
   @override
   Widget build(BuildContext context) {
+    final cor = enabled ? AppColors.laranja : AppColors.cinzaTexto;
     return GestureDetector(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Container(
         width: 32,
         height: 32,
         decoration: BoxDecoration(
-          color: AppColors.laranja.withOpacity(0.1),
+          color: cor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, size: 18, color: AppColors.laranja),
+        child: Icon(icon, size: 18, color: cor),
       ),
     );
   }

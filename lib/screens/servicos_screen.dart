@@ -3,11 +3,13 @@ import 'package:gentepole/screens/feedback/feedback_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
+import 'package:gentepole/screens/cardapio/cardapio_screen.dart';
+import 'package:gentepole/screens/ponto/ponto_screen.dart';
+import 'package:gentepole/screens/reserva_salas/reserva_salas_screen.dart';
 import 'package:gentepole/screens/conexoes/conexoes_do_bem_screen.dart';
 import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
 import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'plantao_psicologico_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
@@ -27,9 +29,6 @@ class _ServicosScreenState extends State<ServicosScreen> {
   bool _ehIntegracao = false;
   bool _loadingPerfis = true;
   bool _nutricionistaAtivo = false;
-
-  static const _urlCardapio =
-      'https://view.genially.com/62701f6bd4fcef00116422e2';
 
   @override
   void initState() {
@@ -53,22 +52,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
     }
   }
 
-  Future<void> _abrirCardapio() async {
-    final uri = Uri.parse(_urlCardapio);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Não foi possível abrir o cardápio.'),
-            backgroundColor: AppColors.magenta,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    }
+  void _abrirCardapio() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const CardapioScreen()));
   }
 
   @override
@@ -273,6 +258,36 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             cor: const Color(0xFFF59E0B),
                             emBreve: false,
                             onTap: _abrirCardapio,
+                          ),
+                          const SizedBox(height: 14),
+
+                          // ── Ponto ─────────────────────────────────────────
+                          _botaoServico(
+                            context,
+                            icone: Icons.access_time_rounded,
+                            titulo: 'Calculadora de Ponto',
+                            subtitulo: 'Registre e acompanhe suas horas',
+                            cor: const Color(0xFF0EA5E9),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const PontoScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // ── Reserva de Salas ──────────────────────────────
+                          _botaoServico(
+                            context,
+                            icone: Icons.meeting_room_outlined,
+                            titulo: 'Reserva de Salas',
+                            subtitulo: 'Copa, salas de reunião e auditório',
+                            cor: const Color(0xFF0891B2),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ReservaSalasScreen()),
+                            ),
                           ),
 
                           const SizedBox(height: 28),

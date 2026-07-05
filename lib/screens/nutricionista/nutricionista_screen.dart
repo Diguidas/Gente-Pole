@@ -273,13 +273,18 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
         children: [
           Stack(
             children: [
+              // Proporção real do asset (1440x540) — evita qualquer corte,
+              // lateral ou vertical, em qualquer largura de tela.
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(28)),
-                child: Image.asset(
-                  'assets/nutricionista.png',
-                  width: double.infinity,
-                  fit: BoxFit.fitWidth,
+                child: AspectRatio(
+                  aspectRatio: 1440 / 540,
+                  child: Image.asset(
+                    'assets/nutricionista.png',
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
               Positioned(

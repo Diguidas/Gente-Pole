@@ -4,6 +4,7 @@ import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
 import 'lojinha_carrinho_screen.dart';
+import 'lojinha_criando_pedido_screen.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
 import 'dart:async';
 
@@ -295,17 +296,29 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     if (_carrinho.isEmpty || _enviando) return;
     setState(() => _enviando = true);
 
-    final result = await _api.finalizarPedidoLojinha(
-      itens: _carrinho.values.toList(),
+    final itens = _carrinho.values.toList();
+    final temItensRegulares = itens.any((i) => !i.produto.isExclusivo);
+
+    final result = await Navigator.push<ResultadoPedido>(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        pageBuilder: (_, __, ___) => LojinhaCriandoPedidoScreen(
+          futuro: _api.finalizarPedidoLojinha(itens: itens),
+          // Só pedidos regulares passam pelo SAP e têm o valor calculado com
+          // atraso — exclusivos já têm valor fixo, não precisam de espera.
+          aguardarValor: temItensRegulares ? _aguardarValorPedido : null,
+        ),
+      ),
     );
 
     if (!mounted) return;
-    setState(() {
-      _enviando = false;
-      if (result.ok) _carrinho.clear();
-    });
+    setState(() => _enviando = false);
+    if (result == null) return;
 
     if (result.ok) {
+      _carrinho.clear();
       widget.onPedidoCriado();
       final primeiroPedido = result.pedidos
           .where((p) => p.ok && p.numeroPedido != null)
@@ -321,73 +334,25 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       } else if (mounted) {
         Navigator.pop(context);
       }
-    } else {
-      _mostrarErro(result.retorno);
     }
   }
 
-  void _mostrarErro(String msg) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(28),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.error_rounded,
-                color: Colors.red,
-                size: 36,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Erro no pedido',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              msg,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.cinzaTexto,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'OK',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// Espera o SAP terminar de calcular o valor do(s) pedido(s) criados hoje,
+  /// consultando de novo algumas vezes — usado dentro da própria tela de
+  /// "criando pedido", pra já voltar com o valor certo em vez de mostrar
+  /// zero e corrigir depois.
+  Future<void> _aguardarValorPedido() async {
+    final hoje = DateTime.now();
+    final criacaoHoje =
+        '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
+    for (var tentativa = 0; tentativa < 3; tentativa++) {
+      await Future.delayed(const Duration(seconds: 2));
+      final dados = await _api.buscarDadosFuncionarioLojinha();
+      final pendente = dados?.pedidos
+              .any((p) => p.criacao == criacaoHoje && p.valorTotal == 0) ??
+          false;
+      if (!pendente) return;
+    }
   }
 
   void _abrirCarrinho() {

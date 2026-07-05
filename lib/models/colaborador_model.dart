@@ -10,6 +10,9 @@ class ColaboradorModel {
   final int? supervisorId;
   final String? fotoUrl;
   final String? clienteSap;
+  /// Código de centro de custo de 10 dígitos (ex: "2001401016").
+  /// Estrutura: [4 filial][2 segmento][4 setor]
+  final String? codCentro;
 
   ColaboradorModel({
     required this.id,
@@ -22,6 +25,7 @@ class ColaboradorModel {
     this.dataAdmissao,
     this.supervisorId,
     this.fotoUrl, this.clienteSap,
+    this.codCentro,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -37,8 +41,17 @@ class ColaboradorModel {
       supervisorId: json['supervisor_id'],
       fotoUrl: json['foto_url'],
       clienteSap: json['cliente_sap'],
+      codCentro: json['cod_centro'],
     );
   }
+
+  /// Código da filial: primeiros 4 dígitos do cod_centro.
+  String? get codFilial =>
+      (codCentro != null && codCentro!.length == 10) ? codCentro!.substring(0, 4) : null;
+
+  /// Código do segmento: primeiros 6 dígitos do cod_centro.
+  String? get codSegmento =>
+      (codCentro != null && codCentro!.length == 10) ? codCentro!.substring(0, 6) : null;
 
   /// Retorna o primeiro nome do colaborador
   String get primeiroNome => nome.split(' ').first;
