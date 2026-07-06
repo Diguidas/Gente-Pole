@@ -106,32 +106,77 @@ CREATE TRIGGER trg_notificar_parabens
   FOR EACH ROW EXECUTE FUNCTION _trigger_notificar_parabens();
 
 -- ============================================================
--- 5. TRIGGER: nova pesquisa publicada → notifica todos
+-- 5. TRIGGER: pesquisa ENCAMINHADA (envio criado) → notifica o público-alvo
+--    Importante: dispara em `pesquisa_envios`, não em `pesquisas` — criar
+--    a pesquisa não deve notificar ninguém, só encaminhá-la deve.
 -- ============================================================
-CREATE OR REPLACE FUNCTION _trigger_notificar_pesquisa()
+CREATE OR REPLACE FUNCTION _trigger_notificar_envio_pesquisa()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   rec RECORD;
 BEGIN
-  FOR rec IN
-    SELECT fcm_token FROM colaboradores
-    WHERE fcm_token IS NOT NULL AND fcm_token <> ''
-  LOOP
-    PERFORM _enviar_notificacao(
-      rec.fcm_token,
-      '📋 Nova pesquisa disponível',
-      'Você tem uma nova pesquisa para responder. Acesse Serviços → Pesquisas.',
-      'pesquisas'
-    );
-  END LOOP;
+  IF NEW.tipo_destinatario = 'todos' THEN
+    FOR rec IN
+      SELECT fcm_token FROM colaboradores
+      WHERE fcm_token IS NOT NULL AND fcm_token <> ''
+    LOOP
+      PERFORM _enviar_notificacao(rec.fcm_token, '📋 Nova pesquisa disponível',
+        'Você tem uma nova pesquisa para responder. Acesse Serviços → Pesquisas.', 'pesquisas');
+    END LOOP;
+
+  ELSIF NEW.tipo_destinatario = 'setor' THEN
+    FOR rec IN
+      SELECT fcm_token FROM colaboradores
+      WHERE fcm_token IS NOT NULL AND fcm_token <> ''
+        AND setor = ANY (SELECT jsonb_array_elements_text(NEW.setores_alvo))
+    LOOP
+      PERFORM _enviar_notificacao(rec.fcm_token, '📋 Nova pesquisa disponível',
+        'Você tem uma nova pesquisa para responder. Acesse Serviços → Pesquisas.', 'pesquisas');
+    END LOOP;
+
+  ELSIF NEW.tipo_destinatario = 'agrupamentos' THEN
+    FOR rec IN
+      SELECT c.fcm_token FROM colaboradores c
+      JOIN agrupamento_membros am ON am.colaborador_id = c.id
+      WHERE c.fcm_token IS NOT NULL AND c.fcm_token <> ''
+        AND am.agrupamento_id = ANY (SELECT jsonb_array_elements_text(NEW.agrupamentos_alvo)::int)
+    LOOP
+      PERFORM _enviar_notificacao(rec.fcm_token, '📋 Nova pesquisa disponível',
+        'Você tem uma nova pesquisa para responder. Acesse Serviços → Pesquisas.', 'pesquisas');
+    END LOOP;
+  END IF;
+  -- tipo 'colaboradores': tratado no trigger de `pesquisa_envio_colaboradores`
+  -- abaixo, pois essa lista só existe numa segunda tabela, inserida depois.
+
   RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_notificar_pesquisa ON pesquisas;
-CREATE TRIGGER trg_notificar_pesquisa
-  AFTER INSERT ON pesquisas
-  FOR EACH ROW EXECUTE FUNCTION _trigger_notificar_pesquisa();
+DROP FUNCTION IF EXISTS _trigger_notificar_pesquisa();
+
+DROP TRIGGER IF EXISTS trg_notificar_envio_pesquisa ON pesquisa_envios;
+CREATE TRIGGER trg_notificar_envio_pesquisa
+  AFTER INSERT ON pesquisa_envios
+  FOR EACH ROW EXECUTE FUNCTION _trigger_notificar_envio_pesquisa();
+
+-- Encaminhamento a colaboradores específicos (tipo_destinatario = 'colaboradores')
+CREATE OR REPLACE FUNCTION _trigger_notificar_envio_colaborador()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  v_token TEXT;
+BEGIN
+  SELECT fcm_token INTO v_token FROM colaboradores WHERE id = NEW.colaborador_id;
+  PERFORM _enviar_notificacao(v_token, '📋 Nova pesquisa disponível',
+    'Você tem uma nova pesquisa para responder. Acesse Serviços → Pesquisas.', 'pesquisas');
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_notificar_envio_colaborador ON pesquisa_envio_colaboradores;
+CREATE TRIGGER trg_notificar_envio_colaborador
+  AFTER INSERT ON pesquisa_envio_colaboradores
+  FOR EACH ROW EXECUTE FUNCTION _trigger_notificar_envio_colaborador();
 
 -- ============================================================
 -- 6. Funções chamadas pelos crons (evita $$-aninhado no schedule)
