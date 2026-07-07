@@ -2471,6 +2471,31 @@ class ApiService {
     }
   }
  
+  /// Lista os setores distintos cadastrados, para o seletor de "Para: Por setor".
+  Future<List<String>> listarSetoresDistintos() async {
+    final res = await _client
+        .from('colaboradores')
+        .select('setor')
+        .not('setor', 'is', null);
+    return (res as List)
+        .map((e) => e['setor'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+  }
+
+  /// Busca colaboradores pelo nome, para o seletor de "Para: Individual".
+  Future<List<Map<String, dynamic>>> buscarColaboradoresParaDestinatario(
+      String query) async {
+    if (query.isEmpty) return [];
+    final res = await _client
+        .from('colaboradores')
+        .select('id, nome, setor')
+        .ilike('nome', '%$query%')
+        .limit(8);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   /// Busca colaboradores e setores para o autocomplete de @menção.
   ///
   /// Retorna uma lista de Maps com 'tipo' ('colaborador' | 'setor'),

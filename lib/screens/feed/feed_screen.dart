@@ -1744,8 +1744,8 @@ class _PostCard extends StatelessWidget {
       mencaoTexto = '@${post.destinatario.substring(7)}';
     }
     final regexStr = mencaoTexto != null
-        ? '${RegExp.escape(mencaoTexto)}|@\\S+'
-        : r'@\S+';
+        ? '${RegExp.escape(mencaoTexto)}|@\\[[^\\]]+\\]|@\\S+'
+        : r'@\[[^\]]+\]|@\S+';
     final regex = RegExp(regexStr);
     final matches = regex.allMatches(texto).toList();
     if (matches.isEmpty) return Text(texto, style: baseStyle);
@@ -1756,8 +1756,12 @@ class _PostCard extends StatelessWidget {
       if (m.start > last) {
         spans.add(TextSpan(text: texto.substring(last, m.start)));
       }
+      final bruto = m.group(0)!;
+      final exibido = bruto.startsWith('@[') && bruto.endsWith(']')
+          ? '@${bruto.substring(2, bruto.length - 1)}'
+          : bruto;
       spans.add(TextSpan(
-        text: m.group(0),
+        text: exibido,
         style: GoogleFonts.poppins(
           fontSize: fontSize,
           color: AppColors.magenta,
