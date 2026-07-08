@@ -4,6 +4,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const APP_CONTEXTO = "telegram";
+const PORTAL_VAGAS_URL = "https://vemserpolevalente.web.app";
+
+const STATUS_LABEL: Record<string, string> = {
+  INSCRITO: "Inscrito",
+  TRIAGEM: "Em triagem",
+  AVALIACAO_COMP: "Avaliação comportamental",
+  ENTREV_RH: "Entrevista com o RH",
+  ENTREV_GESTOR: "Entrevista com o gestor",
+  PROPOSTA: "Proposta enviada",
+  APROVADO: "Aprovado",
+  REPROVADO: "Não seguiu no processo",
+};
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -40,14 +52,22 @@ async function answerCallback(callbackQueryId: string) {
 // Todo o fluxo (perguntar tipo, pedir CPF, submenus, chamados) mora na árvore
 // polebot_nodes — a sessão só guarda em que ponto da árvore o chat está.
 
+type VerificacaoPendente = {
+  colaborador_id: number;
+  nome: string;
+  data_nascimento: string; // yyyy-mm-dd, vindo da tabela colaboradores
+};
+
 type Sessao = {
   chat_id: number;
   colaborador_id: number | null;
+  candidato_id: number | null;
   nome: string | null;
-  estado: string; // 'navegando' | 'aguardando_cpf' | 'aguardando_mensagem'
+  estado: string; // 'navegando' | 'aguardando_cpf' | 'aguardando_nascimento' | 'aguardando_mensagem'
   node_atual_id: number | null;
   caminho_ids: number[];
   gate_pendente_id: number | null;
+  verificacao_pendente: VerificacaoPendente | null;
   chamado_pendente: { categoria: string; caminho: string | null } | null;
 };
 
@@ -63,11 +83,13 @@ async function getSessao(chatId: number): Promise<Sessao> {
   const nova: Sessao = {
     chat_id: chatId,
     colaborador_id: null,
+    candidato_id: null,
     nome: null,
     estado: "navegando",
     node_atual_id: null,
     caminho_ids: [],
     gate_pendente_id: null,
+    verificacao_pendente: null,
     chamado_pendente: null,
   };
   await supabase.from("polebot_telegram_users").insert(nova);
@@ -86,6 +108,7 @@ async function resetarSessao(s: Sessao) {
   s.node_atual_id = null;
   s.caminho_ids = [];
   s.gate_pendente_id = null;
+  s.verificacao_pendente = null;
   s.chamado_pendente = null;
   await salvarSessao(s);
 }
@@ -122,11 +145,17 @@ async function enviarMenu(chatId: number, s: Sessao) {
 // ── Entrar num nó — decide o que fazer conforme o tipo ─────────────────────
 
 async function entrarNoNode(chatId: number, s: Sessao, node: any) {
-  if (node.tipo === "gate_cpf" && !s.colaborador_id) {
+  const destino = node.destino ?? "colaborador"; // 'colaborador' | 'candidato'
+  const jaIdentificado = destino === "candidato" ? !!s.candidato_id : !!s.colaborador_id;
+
+  if (node.tipo === "gate_cpf" && !jaIdentificado) {
     s.estado = "aguardando_cpf";
     s.gate_pendente_id = node.id;
     await salvarSessao(s);
-    await sendMessage(chatId, "Digite seu CPF (só números) pra confirmar que você é colaborador:");
+    const pergunta = destino === "candidato"
+      ? "Digite seu CPF (só números) pra eu buscar sua inscrição:"
+      : "Digite seu CPF (só números) pra confirmar que você é colaborador:";
+    await sendMessage(chatId, pergunta);
     return;
   }
 
@@ -161,9 +190,17 @@ async function entrarNoNode(chatId: number, s: Sessao, node: any) {
 
 async function tratarCpf(chatId: number, s: Sessao, textoRecebido: string) {
   const cpf = textoRecebido.replace(/\D/g, "");
+  const gateNode = s.gate_pendente_id ? await buscarNode(s.gate_pendente_id) : null;
+  const destino = gateNode?.destino ?? "colaborador";
+
+  if (destino === "candidato") {
+    await tratarCpfCandidato(chatId, s, cpf);
+    return;
+  }
+
   const { data: colaborador } = await supabase
     .from("colaboradores")
-    .select("id, nome")
+    .select("id, nome, data_nascimento")
     .eq("cpf", cpf)
     .maybeSingle();
 
@@ -172,17 +209,106 @@ async function tratarCpf(chatId: number, s: Sessao, textoRecebido: string) {
     return;
   }
 
-  s.colaborador_id = colaborador.id;
-  s.nome = colaborador.nome;
+  s.estado = "aguardando_nascimento";
+  s.verificacao_pendente = {
+    colaborador_id: colaborador.id,
+    nome: colaborador.nome,
+    data_nascimento: colaborador.data_nascimento,
+  };
+  await salvarSessao(s);
+  await sendMessage(chatId, "Pra confirmar sua identidade, digite sua data de nascimento (dd/mm/aaaa):");
+}
+
+async function tratarDataNascimento(chatId: number, s: Sessao, textoRecebido: string) {
+  const pendente = s.verificacao_pendente;
+  if (!pendente) {
+    s.estado = "navegando";
+    await salvarSessao(s);
+    await enviarMenu(chatId, s);
+    return;
+  }
+
+  const digitado = textoRecebido.replace(/\D/g, ""); // ddmmaaaa
+  const real = new Date(`${pendente.data_nascimento}T00:00:00Z`);
+  const realFmt =
+    String(real.getUTCDate()).padStart(2, "0") +
+    String(real.getUTCMonth() + 1).padStart(2, "0") +
+    String(real.getUTCFullYear());
+
+  if (digitado !== realFmt) {
+    await sendMessage(chatId, "Essa data não confere com o que temos aqui. Tenta de novo (dd/mm/aaaa):");
+    return;
+  }
+
+  s.colaborador_id = pendente.colaborador_id;
+  s.nome = pendente.nome;
   s.estado = "navegando";
+  s.verificacao_pendente = null;
   const gateId = s.gate_pendente_id;
   s.gate_pendente_id = null;
   await salvarSessao(s);
-  await sendMessage(chatId, `Oi, ${colaborador.nome.split(" ")[0]}! 👋`);
+  await sendMessage(chatId, `Identidade confirmada, ${pendente.nome.split(" ")[0]}! 👋`);
 
   const gate = gateId ? await buscarNode(gateId) : null;
   if (gate) await entrarNoNode(chatId, s, gate);
   else await enviarMenu(chatId, s);
+}
+
+async function tratarCpfCandidato(chatId: number, s: Sessao, cpf: string) {
+  const { data: candidato } = await supabase
+    .from("candidatos")
+    .select("id, nome")
+    .eq("cpf", cpf)
+    .maybeSingle();
+
+  if (!candidato) {
+    await sendMessage(
+      chatId,
+      `Não encontrei nenhuma inscrição com esse CPF.\nConfira nossas vagas abertas aqui: ${PORTAL_VAGAS_URL}`,
+    );
+    s.estado = "navegando";
+    s.gate_pendente_id = null;
+    await salvarSessao(s);
+    await enviarMenu(chatId, s);
+    return;
+  }
+
+  s.candidato_id = candidato.id;
+  s.nome = candidato.nome;
+  s.estado = "navegando";
+  const gateId = s.gate_pendente_id;
+  s.gate_pendente_id = null;
+  await salvarSessao(s);
+
+  await mostrarCandidaturas(chatId, candidato.id, candidato.nome);
+
+  const gate = gateId ? await buscarNode(gateId) : null;
+  if (gate) await entrarNoNode(chatId, s, gate);
+  else await enviarMenu(chatId, s);
+}
+
+async function mostrarCandidaturas(chatId: number, candidatoId: number, nome: string) {
+  const primeiroNome = nome.split(" ")[0];
+  const { data: candidaturas } = await supabase
+    .from("candidaturas")
+    .select("status, vagas(titulo)")
+    .eq("candidato_id", candidatoId);
+
+  if (!candidaturas || candidaturas.length === 0) {
+    await sendMessage(
+      chatId,
+      `Oi, ${primeiroNome}! Não encontrei nenhuma candidatura sua no momento.\nConfira nossas vagas abertas aqui: ${PORTAL_VAGAS_URL}`,
+    );
+    return;
+  }
+
+  const linhas = candidaturas.map((c: any) => {
+    const titulo = c.vagas?.titulo ?? "Vaga";
+    const status = STATUS_LABEL[c.status] ?? c.status;
+    return `• ${titulo} — ${status}`;
+  });
+
+  await sendMessage(chatId, `Oi, ${primeiroNome}! Aqui estão suas candidaturas:\n\n${linhas.join("\n")}`);
 }
 
 async function tratarVoltar(chatId: number, s: Sessao) {
@@ -246,6 +372,8 @@ serve(async (req) => {
         await enviarMenu(chatId, s);
       } else if (s.estado === "aguardando_cpf") {
         await tratarCpf(chatId, s, texto);
+      } else if (s.estado === "aguardando_nascimento") {
+        await tratarDataNascimento(chatId, s, texto);
       } else if (s.estado === "aguardando_mensagem") {
         await tratarMensagemChamado(chatId, s, texto);
       } else {

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/feed/feed_screen.dart';
 import 'package:gentepole/services/api_service.dart';
-import 'package:polebot_widget/polebot_widget.dart';
+// Polebot desativado temporariamente.
+// import 'package:polebot_widget/polebot_widget.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/app_theme.dart';
 import '../core/app_navigator.dart';
@@ -104,15 +105,16 @@ class _MainLayoutState extends State<MainLayout> {
           );
         }),
       ),
-      floatingActionButton: PolebotLauncherButton(
-        service: PolebotService(Supabase.instance.client),
-        theme: const PolebotTheme(corPrimaria: AppColors.magenta),
-        appContexto: 'colaborador',
-        origemApp: 'gente_pole',
-        solicitanteTipo: 'colaborador',
-        colaboradorId: colaboradorId,
-        onNavegar: _onPolebotNavegar,
-      ),
+      // Polebot desativado temporariamente.
+      // floatingActionButton: PolebotLauncherButton(
+      //   service: PolebotService(Supabase.instance.client),
+      //   theme: const PolebotTheme(corPrimaria: AppColors.magenta),
+      //   appContexto: 'colaborador',
+      //   origemApp: 'gente_pole',
+      //   solicitanteTipo: 'colaborador',
+      //   colaboradorId: colaboradorId,
+      //   onNavegar: _onPolebotNavegar,
+      // ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onTabTap,
