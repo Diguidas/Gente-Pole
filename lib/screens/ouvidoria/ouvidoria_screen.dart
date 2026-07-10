@@ -11,16 +11,6 @@ class OuvidoriaScreen extends StatefulWidget {
   State<OuvidoriaScreen> createState() => _OuvidoriaScreenState();
 }
 
-const _categoriasOuvidoria = [
-  'Assédio moral ou sexual',
-  'Discriminação',
-  'Segurança do trabalho',
-  'Conduta de gestor/líder',
-  'Elogio',
-  'Sugestão de melhoria',
-  'Outro',
-];
-
 class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
   final _api = ApiService();
   final _formKey = GlobalKey<FormState>();
@@ -29,9 +19,7 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
   final _telefoneCtrl = TextEditingController();
   final _sugestaoCtrl = TextEditingController();
 
-  String? _tipoSelecionado;
   bool _salvando = false;
-  bool _erroTipo = false;
 
   static const Color _cor = Color(0xFF64748B);
 
@@ -45,13 +33,10 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
 
   Future<void> _enviar() async {
     final formValido = _formKey.currentState!.validate();
-    final tipoValido = _tipoSelecionado != null;
-    setState(() => _erroTipo = !tipoValido);
-    if (!formValido || !tipoValido) return;
+    if (!formValido) return;
 
     setState(() => _salvando = true);
     final ok = await _api.salvarOuvidoria(
-      tipo: _tipoSelecionado!,
       ocorrido: _ocorridoCtrl.text.trim(),
       telefone: _telefoneCtrl.text.trim(),
       sugestao: _sugestaoCtrl.text.trim(),
@@ -59,7 +44,6 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
     if (!mounted) return;
     setState(() => _salvando = false);
     if (ok) {
-      setState(() => _tipoSelecionado = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -189,56 +173,6 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
                               ),
                             ),
                             const SizedBox(height: 24),
-
-                            // Categoria do assunto
-                            _label('Sobre o que você quer falar?'),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: _categoriasOuvidoria.map((cat) {
-                                final sel = _tipoSelecionado == cat;
-                                return GestureDetector(
-                                  onTap: () => setState(() {
-                                    _tipoSelecionado = cat;
-                                    _erroTipo = false;
-                                  }),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 150),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 14, vertical: 9),
-                                    decoration: BoxDecoration(
-                                      color: sel
-                                          ? _cor.withOpacity(0.12)
-                                          : Colors.white,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: sel
-                                            ? _cor
-                                            : Colors.grey.shade300,
-                                        width: sel ? 1.5 : 1,
-                                      ),
-                                    ),
-                                    child: Text(cat,
-                                        style: GoogleFonts.poppins(
-                                            fontSize: 12.5,
-                                            fontWeight: sel
-                                                ? FontWeight.w700
-                                                : FontWeight.w400,
-                                            color: sel
-                                                ? _cor
-                                                : Colors.black87)),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                            if (_erroTipo) ...[
-                              const SizedBox(height: 6),
-                              Text('Selecione uma categoria.',
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 12, color: Colors.red.shade700)),
-                            ],
-                            const SizedBox(height: 20),
 
                             // O que ocorreu
                             _label('O que ocorreu?'),

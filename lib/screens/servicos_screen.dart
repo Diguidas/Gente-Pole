@@ -4,7 +4,6 @@ import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:gentepole/screens/cardapio/cardapio_screen.dart';
-import 'package:gentepole/screens/ponto/ponto_screen.dart';
 import 'package:gentepole/screens/reserva_salas/reserva_salas_screen.dart';
 import 'package:gentepole/screens/conexoes/conexoes_do_bem_screen.dart';
 import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
@@ -258,21 +257,6 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             cor: const Color(0xFFF59E0B),
                             emBreve: false,
                             onTap: _abrirCardapio,
-                          ),
-                          const SizedBox(height: 14),
-
-                          // ── Ponto ─────────────────────────────────────────
-                          _botaoServico(
-                            context,
-                            icone: Icons.access_time_rounded,
-                            titulo: 'Calculadora de Ponto',
-                            subtitulo: 'Registre e acompanhe suas horas',
-                            cor: const Color(0xFF0EA5E9),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const PontoScreen()),
-                            ),
                           ),
                           const SizedBox(height: 14),
 

@@ -1879,164 +1879,6 @@ class ApiService {
     return {...dia, 'itens': List<Map<String, dynamic>>.from(itens)};
   }
 
-// ─── Calculadora de Ponto (Colaborador) ─────────────────────────────────────
-
-  static DateTime horarioBrasilia() => _brasilia();
-
-  Future<Map<String, dynamic>> buscarConfigPonto(String colaboradorId) async {
-    final res = await _client
-        .from('ponto_configuracao')
-        .select()
-        .eq('colaborador_id', colaboradorId)
-        .maybeSingle();
-    return res ??
-        {
-          'colaborador_id': colaboradorId,
-          'entrada_padrao': '07:42:00',
-          'saida_padrao': '17:30:00',
-          'almoco_minutos': 60,
-        };
-  }
-
-  Future<bool> salvarConfigPonto({
-    required String colaboradorId,
-    required String entradaPadrao,
-    required String saidaPadrao,
-    required int almocoMinutos,
-  }) async {
-    try {
-      await _client.from('ponto_configuracao').upsert({
-        'colaborador_id': colaboradorId,
-        'entrada_padrao': entradaPadrao,
-        'saida_padrao': saidaPadrao,
-        'almoco_minutos': almocoMinutos,
-        'atualizado_em': DateTime.now().toIso8601String(),
-      }, onConflict: 'colaborador_id');
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> buscarRegistrosPontoMes({
-    required String colaboradorId,
-    required int ano,
-    required int mes,
-  }) async {
-    final inicio = DateTime(ano, mes, 1);
-    final fim = DateTime(ano, mes + 1, 0);
-    final res = await _client
-        .from('ponto_registros')
-        .select()
-        .eq('colaborador_id', colaboradorId)
-        .gte('data', _fmtDataCardapio(inicio))
-        .lte('data', _fmtDataCardapio(fim))
-        .order('data', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  Future<bool> salvarRegistroPonto({
-    required String colaboradorId,
-    required String data,
-    String? entrada,
-    String? saida,
-  }) async {
-    try {
-      final existente = await _client
-          .from('ponto_registros')
-          .select()
-          .eq('colaborador_id', colaboradorId)
-          .eq('data', data)
-          .maybeSingle();
-
-      await _client.from('ponto_registros').upsert({
-        'colaborador_id': colaboradorId,
-        'data': data,
-        'entrada': entrada ?? existente?['entrada'],
-        'saida': saida ?? existente?['saida'],
-        'atualizado_em': DateTime.now().toIso8601String(),
-      }, onConflict: 'colaborador_id,data');
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> excluirRegistroPonto(int id) async {
-    try {
-      await _client.from('ponto_registros').delete().eq('id', id);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Verifica se existe algum registro de ponto anterior à data informada
-  /// (usado pra decidir se vale a pena mostrar a seta "mês anterior").
-  Future<bool> existeRegistroPontoAnterior({
-    required String colaboradorId,
-    required DateTime antesDe,
-  }) async {
-    final res = await _client
-        .from('ponto_registros')
-        .select('id')
-        .eq('colaborador_id', colaboradorId)
-        .lt('data', _fmtDataCardapio(antesDe))
-        .limit(1);
-    return (res as List).isNotEmpty;
-  }
-
-  /// Horas extras/sobreaviso lançadas num mês — não entram no saldo da
-  /// jornada normal, são um total à parte (tipicamente pago em dinheiro).
-  Future<List<Map<String, dynamic>>> buscarHorasExtrasMes({
-    required String colaboradorId,
-    required int ano,
-    required int mes,
-  }) async {
-    final inicio = DateTime(ano, mes, 1);
-    final fim = DateTime(ano, mes + 1, 0);
-    final res = await _client
-        .from('ponto_horas_extras')
-        .select()
-        .eq('colaborador_id', colaboradorId)
-        .gte('data', _fmtDataCardapio(inicio))
-        .lte('data', _fmtDataCardapio(fim))
-        .order('data', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  Future<bool> registrarHoraExtra({
-    required String colaboradorId,
-    required String data,
-    required String horaInicio,
-    required String horaFim,
-    required int minutos,
-    String? observacao,
-  }) async {
-    try {
-      await _client.from('ponto_horas_extras').insert({
-        'colaborador_id': colaboradorId,
-        'data': data,
-        'hora_inicio': horaInicio,
-        'hora_fim': horaFim,
-        'minutos': minutos,
-        'observacao': observacao,
-      });
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> excluirHoraExtra(int id) async {
-    try {
-      await _client.from('ponto_horas_extras').delete().eq('id', id);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
 // ─── Reserva de Salas ────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> listarSalasReserva({bool apenasAtivas = false}) async {
@@ -2292,7 +2134,6 @@ class ApiService {
 // Cole após os métodos de conexões
 
   Future<bool> salvarOuvidoria({
-    required String tipo,
     required String ocorrido,
     required String telefone,
     required String sugestao,
@@ -2303,7 +2144,6 @@ class ApiService {
       await _client.from('ouvidoria').insert({
         'colaborador_id': meuId,
         'matricula': colaboradorAtual!.matricula,
-        'tipo': tipo,
         'ocorrido': ocorrido,
         'telefone_contato': telefone,
         'sugestao': sugestao.isEmpty ? null : sugestao,
