@@ -1376,14 +1376,17 @@ class _HumorCardState extends State<_HumorCard> {
             children: [
               const Text('💬', style: TextStyle(fontSize: 16)),
               const SizedBox(width: 6),
-              Text(
-                jaRegistrou
-                    ? 'Humor de hoje: ${labels[nivelAtual - 1]}'
-                    : 'Como você está hoje?',
-                style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: AppColors.dark),
+              Expanded(
+                child: Text(
+                  jaRegistrou
+                      ? 'Humor de hoje: ${labels[nivelAtual - 1]}'
+                      : 'Como você está hoje?',
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: AppColors.dark),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (_salvando) ...[
                 const SizedBox(width: 10),
@@ -1410,7 +1413,9 @@ class _HumorCardState extends State<_HumorCard> {
                       },
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
+                      horizontal: 6, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   backgroundColor: selecionado
                       ? AppColors.magenta.withOpacity(0.12)
                       : Colors.transparent,

@@ -148,7 +148,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                         children: [
                           // ── Alerta de bloqueio ───────────────────────
                           if (dados != null && dados.bloqueado)
-                            _alertaBloqueio(dados.bloqueio),
+                            _alertaBloqueio(),
 
                           // ── Botões principais ────────────────────────
                           _botaoMenu(
@@ -338,7 +338,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
         ),
       );
 
-  Widget _alertaBloqueio(String motivo) => Container(
+  Widget _alertaBloqueio() => Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -350,14 +350,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
           children: [
             Icon(Icons.block_rounded, color: Colors.red.shade600, size: 20),
             const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                motivo.isNotEmpty
-                    ? motivo
-                    : 'Sua conta está bloqueada. Entre em contato com o RH.',
-                style: GoogleFonts.poppins(
-                    fontSize: 12, color: Colors.red.shade700),
-              ),
+            Text(
+              'Bloqueado',
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red.shade700),
             ),
           ],
         ),
