@@ -411,12 +411,15 @@ class ApiService {
 
   /// Cria requisição de vaga. Envia com status_requisicao = AGUARDANDO_APROVACAO_RH
   /// Retorna os templates ativos cadastrados pelo RH.
-  Future<List<Map<String, dynamic>>> listarTemplatesGestor() async {
-    final res = await _client
+  Future<List<Map<String, dynamic>>> listarTemplatesGestor({String? setor}) async {
+    var q = _client
         .from('ats_templates')
         .select('id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao')
-        .eq('ativo', true)
-        .order('titulo');
+        .eq('ativo', true);
+    if (setor != null && setor.isNotEmpty) {
+      q = q.eq('departamento', setor);
+    }
+    final res = await q.order('titulo');
     return List<Map<String, dynamic>>.from(res as List);
   }
 
@@ -962,16 +965,14 @@ class ApiService {
   /// Dados do funcionário no SAP: limites + histórico de pedidos
   /// (mesclado com compras de produtos exclusivos, que não passam pelo SAP)
   Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
-    final clienteSap = colaboradorAtual?.clienteSap;
-    if (clienteSap == null) return null;
+    final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
+    if (cpf == null || cpf.isEmpty) return null;
 
     try {
-      // Remove zeros à esquerda para o parâmetro da URL
-      final codCliente = clienteSap.replaceAll(RegExp(r'^0+'), '');
       final res = await _client.functions.invoke(
         'lojinha-funcionario',
         method: HttpMethod.get,
-        queryParameters: {'codcliente': codCliente},
+        queryParameters: {'cpf': cpf},
       );
       final map = res.data as Map<String, dynamic>;
       if (map['ok'] != true) return null;

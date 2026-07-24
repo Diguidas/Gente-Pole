@@ -66,7 +66,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   Future<void> _carregarTemplates() async {
     try {
-      final lista = await _api.listarTemplatesGestor();
+      final lista = await _api.listarTemplatesGestor(setor: _api.colaboradorAtual?.setor);
       if (mounted) setState(() { _templates = lista; _carregandoTemplates = false; });
     } catch (_) {
       if (mounted) setState(() => _carregandoTemplates = false);
