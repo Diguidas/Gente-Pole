@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/colaborador_model.dart';
 import '../models/aniversariante_model.dart';
+import '../core/error_reporter.dart';
 
 /// Serviço central de API.
 /// TODA comunicação com o banco passa por aqui.
@@ -213,8 +214,8 @@ class ApiService {
         'mensagem': mensagem.trim(),
       });
       return true;
-    } catch (e) {
-      debugPrint('ERRO enviarParabens: $e');
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Enviar parabéns');
       return false;
     }
   }
@@ -247,8 +248,8 @@ class ApiService {
         'status': 'aprovado',
       });
       return true;
-    } catch (e) {
-      debugPrint('ERRO responderParabens: $e');
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Responder parabéns');
       return false;
     }
   }
@@ -1113,8 +1114,8 @@ class ApiService {
       };
       debugPrint('buscarEstoqueVisivel map=$map');
       return map;
-    } catch (e) {
-      debugPrint('buscarEstoqueVisivel erro: $e');
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Buscar estoque da lojinha');
       return {};
     }
   }
@@ -1237,8 +1238,8 @@ class ApiService {
       }
 
       return (ok: ok, retorno: retorno, pedidos: pedidos);
-    } catch (e) {
-      debugPrint('finalizarPedidoLojinha falhou: $e');
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Finalizar pedido na lojinha');
       return (
         ok: false,
         retorno: 'Não foi possível concluir o pedido. Verifique sua conexão e tente novamente.',
@@ -1929,7 +1930,7 @@ class ApiService {
         'p_observacao': observacao,
       });
       return null;
-    } catch (e) {
+    } catch (e, st) {
       final msg = e.toString();
       if (msg.contains('CONFLITO_HORARIO')) {
         return 'Essa sala já está reservada nesse horário. Escolha outro horário.';
@@ -1940,6 +1941,7 @@ class ApiService {
       if (msg.contains('SALA_INVALIDA')) {
         return 'Essa sala não está mais disponível.';
       }
+      ErrorReporter.report(e, st, contexto: 'Reservar sala');
       return 'Não foi possível reservar. Tente novamente.';
     }
   }
