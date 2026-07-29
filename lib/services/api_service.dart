@@ -118,15 +118,19 @@ class ApiService {
     required String matricula,
     required String senha,
     required String dataNascimento,
+    required String? empresa,
   }) async {
     try {
       await _client.from('usuarios_auth').insert({
         'matricula': matricula,
         'senha_hash': _hash(senha),
         'data_nascimento_verificacao': dataNascimento,
+        'empresa': empresa,
       });
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('criarConta ERRO matricula=$matricula: $e');
+      ErrorReporter.report(e, st, contexto: 'Criar conta (primeiro acesso)');
       return false;
     }
   }
@@ -1368,6 +1372,7 @@ class ApiService {
         supervisorId: colaboradorAtual!.supervisorId,
         clienteSap: colaboradorAtual!.clienteSap,
         codCentro: colaboradorAtual!.codCentro,
+        empresa: colaboradorAtual!.empresa,
         fotoUrl: urlFinal,
       );
 

@@ -127,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen>
         matricula: _colaboradorEncontrado!.matricula,
         senha: senha,
         dataNascimento: dataFormatada,
+        empresa: _colaboradorEncontrado!.empresa,
       );
 
       setState(() => _carregando = false);

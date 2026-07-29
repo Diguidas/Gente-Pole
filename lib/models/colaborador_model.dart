@@ -13,6 +13,7 @@ class ColaboradorModel {
   /// Código de centro de custo de 10 dígitos (ex: "2001401016").
   /// Estrutura: [4 filial][2 segmento][4 setor]
   final String? codCentro;
+  final String? empresa;
 
   ColaboradorModel({
     required this.id,
@@ -26,6 +27,7 @@ class ColaboradorModel {
     this.supervisorId,
     this.fotoUrl, this.clienteSap,
     this.codCentro,
+    this.empresa,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -42,6 +44,7 @@ class ColaboradorModel {
       fotoUrl: json['foto_url'],
       clienteSap: json['cliente_sap'],
       codCentro: json['cod_centro'],
+      empresa: json['empresa'],
     );
   }
 
