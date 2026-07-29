@@ -32,11 +32,13 @@ void configurarCapturaGlobalDeErros() {
 /// framework tenta calcular o próximo elemento focável (`focus_traversal`)
 /// antes do primeiro layout terminar, e dispara `hasSize`. Não é bug da
 /// aplicação — só evita mostrar ruído de framework como se fosse erro real.
+///
+/// Em build de produção (minificado) os nomes de símbolo na stack trace são
+/// ofuscados, então não dá pra confiar em achar 'focus_traversal' nela — por
+/// isso o filtro é só pela mensagem, que não é afetada pela minificação.
 bool _ehRuidoBenignoDeFoco(FlutterErrorDetails details) {
   final mensagem = details.exception.toString();
-  final stack = details.stack?.toString() ?? '';
-  return mensagem.contains('RenderBox was not laid out') &&
-      stack.contains('focus_traversal');
+  return mensagem.contains('RenderBox was not laid out');
 }
 
 /// Centraliza a exibição de erros de chamadas ao Supabase (e outros) na tela,

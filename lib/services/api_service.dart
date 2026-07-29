@@ -1833,52 +1833,17 @@ class ApiService {
 // ADICIONAR NO api_service.dart — cole cada bloco na seção correspondente
 // ════════════════════════════════════════════════════════════════════════════
 
-// ─── Cardápio do Refeitório ────────────────────────────────────────────────
+// ─── Cardápio do Refeitório (imagem única) ─────────────────────────────────
 
-  static const cardapioCategorias = [
-    'proteina',
-    'acompanhamento',
-    'salada',
-    'molho',
-    'sobremesa',
-    'outro',
-  ];
-
-  String _fmtDataCardapio(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  /// Lista os dias com cardápio cadastrado num intervalo (sem os itens).
-  Future<List<Map<String, dynamic>>> listarDiasCardapio({
-    required DateTime inicio,
-    required DateTime fim,
-  }) async {
+  /// Busca a imagem única do cardápio (ex: foto do quadro semanal). Retorna
+  /// null se ainda não houver imagem cadastrada.
+  Future<String?> buscarCardapioImagem() async {
     final res = await _client
-        .from('cardapio_dias')
-        .select('id, data, observacao')
-        .gte('data', _fmtDataCardapio(inicio))
-        .lte('data', _fmtDataCardapio(fim))
-        .order('data', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  /// Busca o cardápio completo de um dia, com os itens agrupados por
-  /// categoria. Retorna null se o dia não tiver cardápio cadastrado.
-  Future<Map<String, dynamic>?> buscarCardapioDia(String data) async {
-    final dia = await _client
-        .from('cardapio_dias')
-        .select('id, data, observacao')
-        .eq('data', data)
+        .from('cardapio_config')
+        .select('imagem_url')
+        .eq('id', 1)
         .maybeSingle();
-    if (dia == null) return null;
-
-    final itens = await _client
-        .from('cardapio_itens')
-        .select('id, categoria, texto, ordem')
-        .eq('cardapio_dia_id', dia['id'])
-        .order('categoria')
-        .order('ordem', ascending: true);
-
-    return {...dia, 'itens': List<Map<String, dynamic>>.from(itens)};
+    return res?['imagem_url'] as String?;
   }
 
 // ─── Reserva de Salas ────────────────────────────────────────────────────────
