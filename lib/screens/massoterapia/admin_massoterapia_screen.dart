@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/services.dart';
 import '../../core/app_theme.dart';
+import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 import '../login_screen.dart';
 
@@ -120,11 +121,17 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
   }
 
   // ── Abre o modal de assinatura ───────────────────────────────────────────────
-  Future<void> _abrirAssinatura(Map<String, dynamic> ag) async {
+  /// [substituto] preenchido só no fluxo de substituição: quem assina de fato
+  /// não é o colaborador do agendamento original.
+  Future<void> _abrirAssinatura(
+    Map<String, dynamic> ag, {
+    ColaboradorModel? substituto,
+  }) async {
     final assinaturaBytes = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _AssinaturaModal(nomeColaborador: ag['nome'] as String),
+        builder: (_) => _AssinaturaModal(
+            nomeColaborador: substituto?.nome ?? ag['nome'] as String),
       ),
     );
 
@@ -139,13 +146,20 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
       );
       await ApiService().atualizarPresencaMassoterapia(
         id: ag['id'] as int,
-        status: 'VEIO',
+        status: substituto != null ? 'ALTERADO' : 'VEIO',
         assinaturaUrl: url,
+        substitutoColaboradorId: substituto?.id,
+        substitutoNome: substituto?.nome,
+        substitutoMatricula: substituto?.matricula,
+        substitutoSetor: substituto?.setor,
+        substitutoCargo: substituto?.cargo,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Presença confirmada e assinatura salva! ✅'),
+          SnackBar(
+            content: Text(substituto != null
+                ? 'Substituição registrada e assinatura salva! ✅'
+                : 'Presença confirmada e assinatura salva! ✅'),
             backgroundColor: AppColors.sucesso,
           ),
         );
@@ -166,6 +180,79 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
     }
   }
 
+  // ── Fluxo de substituição: pede a matrícula de quem foi de fato ──────────────
+  Future<void> _abrirSubstituicao(Map<String, dynamic> ag) async {
+    final matriculaCtrl = TextEditingController();
+    final matricula = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Substituição'),
+        content: TextField(
+          controller: matriculaCtrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Matrícula de quem foi',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.magenta),
+            onPressed: () => Navigator.pop(context, matriculaCtrl.text.trim()),
+            child: const Text('Buscar'),
+          ),
+        ],
+      ),
+    );
+    if (matricula == null || matricula.isEmpty || !mounted) return;
+
+    final colaborador =
+        await ApiService().buscarColaboradorPorMatricula(matricula);
+    if (!mounted) return;
+    if (colaborador == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Colaborador não encontrado para essa matrícula.'),
+          backgroundColor: AppColors.erro,
+        ),
+      );
+      return;
+    }
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Confirmar substituição'),
+        content: Text(
+          '${colaborador.nome}\n${colaborador.setor ?? '—'}\n\n'
+          'Vai assinar no lugar de ${ag['nome']}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.sucesso),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmar e assinar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    await _abrirAssinatura(ag, substituto: colaborador);
+  }
+
   // ── Contadores do dia ────────────────────────────────────────────────────────
   int get _totalDia => _agendamentos.length;
   int get _vieram =>
@@ -174,6 +261,8 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
       _agendamentos.where((a) => a['status'] == 'NAO_VEIO').length;
   int get _pendentes =>
       _agendamentos.where((a) => a['status'] == 'AGENDADO').length;
+  int get _alterados =>
+      _agendamentos.where((a) => a['status'] == 'ALTERADO').length;
 
   @override
   Widget build(BuildContext context) {
@@ -242,27 +331,35 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
           if (!_loading)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(children: [
-                _ResumoChip(
-                    label: 'Total',
-                    valor: _totalDia,
-                    cor: AppColors.cinzaTexto),
-                const SizedBox(width: 8),
-                _ResumoChip(
-                    label: 'Vieram',
-                    valor: _vieram,
-                    cor: AppColors.sucesso),
-                const SizedBox(width: 8),
-                _ResumoChip(
-                    label: 'Faltaram',
-                    valor: _naoVieram,
-                    cor: AppColors.erro),
-                const SizedBox(width: 8),
-                _ResumoChip(
-                    label: 'Pendentes',
-                    valor: _pendentes,
-                    cor: AppColors.laranja),
-              ]),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  _ResumoChip(
+                      label: 'Total',
+                      valor: _totalDia,
+                      cor: AppColors.cinzaTexto),
+                  const SizedBox(width: 8),
+                  _ResumoChip(
+                      label: 'Vieram',
+                      valor: _vieram,
+                      cor: AppColors.sucesso),
+                  const SizedBox(width: 8),
+                  _ResumoChip(
+                      label: 'Faltaram',
+                      valor: _naoVieram,
+                      cor: AppColors.erro),
+                  const SizedBox(width: 8),
+                  _ResumoChip(
+                      label: 'Alterados',
+                      valor: _alterados,
+                      cor: AppColors.magenta),
+                  const SizedBox(width: 8),
+                  _ResumoChip(
+                      label: 'Pendentes',
+                      valor: _pendentes,
+                      cor: AppColors.laranja),
+                ]),
+              ),
             ),
 
           // ── Lista de agendamentos ──────────────────────────────────────────
@@ -280,6 +377,8 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
                           agendamento: _agendamentos[i],
                           onVeio: () => _abrirAssinatura(_agendamentos[i]),
                           onNaoVeio: () => _marcarNaoVeio(_agendamentos[i]),
+                          onSubstituicao: () =>
+                              _abrirSubstituicao(_agendamentos[i]),
                         ),
                       ),
           ),
@@ -364,7 +463,8 @@ class _ResumoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return SizedBox(
+      width: 76,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
@@ -398,11 +498,13 @@ class _AgendamentoCard extends StatelessWidget {
   final Map<String, dynamic> agendamento;
   final VoidCallback onVeio;
   final VoidCallback onNaoVeio;
+  final VoidCallback onSubstituicao;
 
   const _AgendamentoCard({
     required this.agendamento,
     required this.onVeio,
     required this.onNaoVeio,
+    required this.onSubstituicao,
   });
 
   String get _horario =>
@@ -413,14 +515,20 @@ class _AgendamentoCard extends StatelessWidget {
   Color get _statusColor => switch (_status) {
         'VEIO' => AppColors.sucesso,
         'NAO_VEIO' => AppColors.erro,
+        'ALTERADO' => AppColors.magenta,
         _ => AppColors.laranja,
       };
 
   String get _statusLabel => switch (_status) {
         'VEIO' => 'Presente ✅',
         'NAO_VEIO' => 'Faltou ❌',
+        'ALTERADO' => 'Alterado 🔄',
         _ => 'Pendente',
       };
+
+  String? get _substitutoNome => agendamento['substituto_nome'] as String?;
+  String? get _substitutoMatricula =>
+      agendamento['substituto_matricula'] as String?;
 
   bool get _pendente => _status == 'AGENDADO';
 
@@ -518,8 +626,38 @@ class _AgendamentoCard extends StatelessWidget {
               ),
             ]),
 
-            // ── Assinatura (se já veio) ────────────────────────────────────
-            if (_status == 'VEIO' &&
+            // ── Substituto (quando alterado) ────────────────────────────────
+            if (_status == 'ALTERADO' && _substitutoNome != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.magenta.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.magenta.withOpacity(0.25)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.sync_alt_rounded,
+                      size: 14, color: AppColors.magenta),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Quem foi: $_substitutoNome'
+                      '${_substitutoMatricula != null ? ' (mat. $_substitutoMatricula)' : ''}',
+                      style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.magenta,
+                          fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+
+            // ── Assinatura (se já veio ou foi alterado) ─────────────────────
+            if ((_status == 'VEIO' || _status == 'ALTERADO') &&
                 agendamento['assinatura_url'] != null) ...[
               const SizedBox(height: 10),
               Row(children: [
@@ -563,7 +701,7 @@ class _AgendamentoCard extends StatelessWidget {
                       onPressed: onVeio,
                       icon: const Icon(Icons.draw_outlined,
                           size: 16, color: Colors.white),
-                      label: const Text('Veio — assinar',
+                      label: const Text('Atendido — assinar',
                           style: TextStyle(
                               fontSize: 13,
                               color: Colors.white,
@@ -577,6 +715,26 @@ class _AgendamentoCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onSubstituicao,
+                  icon: const Icon(Icons.sync_alt_rounded,
+                      size: 16, color: AppColors.magenta),
+                  label: const Text('Substituição (foi outra pessoa)',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.magenta,
+                          fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.magenta),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
               ),
             ],
           ],

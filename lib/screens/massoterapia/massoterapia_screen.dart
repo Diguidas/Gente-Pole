@@ -200,9 +200,41 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     }
   }
 
+  static const _minutosLimiteCancelamento = 15;
+
+  /// Combina data + horário do agendamento num DateTime (horário de Brasília).
+  DateTime? _dataHoraAgendamento(MassoterapiaAgendamentoModel a) {
+    final partesData = a.data.split('-');
+    if (partesData.length != 3) return null;
+    final partesHora = a.horario.split(':');
+    if (partesHora.length < 2) return null;
+    return DateTime(
+      int.parse(partesData[0]),
+      int.parse(partesData[1]),
+      int.parse(partesData[2]),
+      int.parse(partesHora[0]),
+      int.parse(partesHora[1]),
+    );
+  }
+
+  bool _podeCancelar(MassoterapiaAgendamentoModel a) {
+    final dataHora = _dataHoraAgendamento(a);
+    if (dataHora == null) return true;
+    final limite =
+        dataHora.subtract(const Duration(minutes: _minutosLimiteCancelamento));
+    return _brasilia().isBefore(limite);
+  }
+
   Future<void> _cancelar() async {
     final agend = _meuAgendamento;
     if (agend == null) return;
+
+    if (!_podeCancelar(agend)) {
+      _mostrarErro(
+          'Cancelamento não permitido: só é possível cancelar até '
+          '$_minutosLimiteCancelamento minutos antes do horário.');
+      return;
+    }
 
     final confirmar = await showDialog<bool>(
       context: context,
@@ -560,8 +592,8 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
               ],
             ),
           ),
-          // Só mostra cancelar se ainda estiver AGENDADO
-          if (a.status == 'AGENDADO')
+          // Só mostra cancelar se ainda estiver AGENDADO e dentro do prazo
+          if (a.status == 'AGENDADO' && _podeCancelar(a))
             TextButton(
               onPressed: _salvando ? null : _cancelar,
               style: TextButton.styleFrom(
@@ -576,6 +608,13 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                   decorationColor: Colors.white,
                 ),
               ),
+            )
+          else if (a.status == 'AGENDADO')
+            Tooltip(
+              message:
+                  'Não é mais possível cancelar (menos de $_minutosLimiteCancelamento min para o horário).',
+              child: Icon(Icons.lock_clock_rounded,
+                  color: Colors.white.withOpacity(0.7), size: 18),
             ),
         ],
       ),
@@ -981,7 +1020,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                             ),
                           ),
                         ],
-                        if (souEu && a.status == 'AGENDADO') ...[
+                        if (souEu &&
+                            a.status == 'AGENDADO' &&
+                            _podeCancelar(a)) ...[
                           const Spacer(),
                           GestureDetector(
                             onTap: _salvando ? null : _cancelar,
@@ -1033,7 +1074,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                               border: Border.all(color: Colors.green.shade200),
                             ),
                             child: Text(
-                              '✓ veio',
+                              '✓ atendido',
                               style: GoogleFonts.poppins(
                                 fontSize: 10,
                                 color: Colors.green.shade700,

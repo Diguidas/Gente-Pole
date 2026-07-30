@@ -14,6 +14,7 @@ class ColaboradorModel {
   /// Estrutura: [4 filial][2 segmento][4 setor]
   final String? codCentro;
   final String? empresa;
+  final bool ehGestor;
 
   ColaboradorModel({
     required this.id,
@@ -28,6 +29,7 @@ class ColaboradorModel {
     this.fotoUrl, this.clienteSap,
     this.codCentro,
     this.empresa,
+    this.ehGestor = false,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -45,6 +47,7 @@ class ColaboradorModel {
       clienteSap: json['cliente_sap'],
       codCentro: json['cod_centro'],
       empresa: json['empresa'],
+      ehGestor: json['eh_gestor'] as bool? ?? false,
     );
   }
 

@@ -744,9 +744,12 @@ class ApiService {
     final fimStr =
         '${fim.year}-${fim.month.toString().padLeft(2, '0')}-${fim.day.toString().padLeft(2, '0')}';
 
+    // Hint explícito !colaborador_id necessário: desde que
+    // substituto_colaborador_id também referencia colaboradores(id), há duas
+    // FKs entre as tabelas e o embed ficaria ambíguo sem o hint.
     final data = await _client
         .from('massoterapia_agendamentos')
-        .select('*, colaboradores(nome, matricula, setor)')
+        .select('*, colaboradores!colaborador_id(nome, matricula, setor)')
         .neq('status', 'CANCELADO')
         .gte('data', hojeStr)
         .lte('data', fimStr)
@@ -784,6 +787,16 @@ class ApiService {
     final colaborador = colaboradorAtual;
     if (colaborador == null) return false;
     try {
+      // A constraint única (colaborador_id, data) não distingue status: uma
+      // linha CANCELADO deixada para trás bloquearia o insert abaixo com um
+      // erro de chave duplicada. Limpa qualquer resquício antes de tentar.
+      await _client
+          .from('massoterapia_agendamentos')
+          .delete()
+          .eq('colaborador_id', colaborador.id)
+          .eq('data', data)
+          .eq('status', 'CANCELADO');
+
       await _client.from('massoterapia_agendamentos').insert({
         'colaborador_id': colaborador.id,
         'data': data,
@@ -796,15 +809,15 @@ class ApiService {
     }
   }
 
-  /// Cancela um agendamento. Apaga a linha em vez de só marcar como
-  /// CANCELADO — se só marcássemos o status, a linha continuaria ocupando o
-  /// dia na constraint única (colaborador_id, data), impedindo um novo
-  /// agendamento no mesmo dia em outro horário.
+  /// Soft delete: marca como CANCELADO em vez de apagar, para manter
+  /// histórico (relatórios de quem cancelou). O reagendamento no mesmo dia
+  /// continua funcionando porque `agendarMassoterapia` limpa esse resquício
+  /// antes do insert.
   Future<bool> cancelarMassoterapia(int agendamentoId) async {
     try {
       await _client
           .from('massoterapia_agendamentos')
-          .delete()
+          .update({'status': 'CANCELADO'})
           .eq('id', agendamentoId)
           .eq('colaborador_id', colaboradorAtual!.id); // segurança: só o dono
       return true;
@@ -813,32 +826,11 @@ class ApiService {
     }
   }
 
-  /// Retorna true se o colaborador logado está no agrupamento "Gestores".
+  /// Retorna true se o colaborador logado tem o perfil "gestor" — o mesmo
+  /// perfil marcado pelo admin no sistema web (colaboradores.eh_gestor,
+  /// mantido em sincronia com usuarios_admin.roles).
   Future<bool> verificarSeEhGestor() async {
-    final colaborador = colaboradorAtual;
-    if (colaborador == null) return false;
-    try {
-      // 1. Busca o id do agrupamento "Gestores"
-      final ag = await _client
-          .from('agrupamentos')
-          .select('id')
-          .eq('nome', 'Gestores')
-          .maybeSingle();
-      if (ag == null) return false;
-
-      final agrupamentoId = ag['id'] as int;
-
-      // 2. Verifica se o colaborador está nesse agrupamento
-      final membro = await _client
-          .from('agrupamento_membros')
-          .select('id')
-          .eq('agrupamento_id', agrupamentoId)
-          .eq('colaborador_id', colaborador.id)
-          .maybeSingle();
-      return membro != null;
-    } catch (_) {
-      return false;
-    }
+    return colaboradorAtual?.ehGestor ?? false;
   }
 
   /// Busca todos os colaboradores do mesmo setor do usuário logado.
@@ -1267,24 +1259,52 @@ class ApiService {
   }
 
   /// Atualiza status de presença e, opcionalmente, salva a URL da assinatura.
+  /// Quando [status] é 'ALTERADO', os dados do colaborador que efetivamente
+  /// compareceu (substituto) são gravados para manter o histórico do
+  /// agendamento original.
   Future<bool> atualizarPresencaMassoterapia({
     required int id,
-    required String status, // 'VEIO' | 'NAO_VEIO'
+    required String status, // 'VEIO' | 'NAO_VEIO' | 'ALTERADO'
     String? assinaturaUrl,
+    int? substitutoColaboradorId,
+    String? substitutoNome,
+    String? substitutoMatricula,
+    String? substitutoSetor,
+    String? substitutoCargo,
   }) async {
-    assert(status == 'VEIO' || status == 'NAO_VEIO');
+    assert(status == 'VEIO' || status == 'NAO_VEIO' || status == 'ALTERADO');
     try {
       await _client
           .from('massoterapia_agendamentos')
           .update({
             'status': status,
             if (assinaturaUrl != null) 'assinatura_url': assinaturaUrl,
+            if (substitutoColaboradorId != null)
+              'substituto_colaborador_id': substitutoColaboradorId,
+            if (substitutoNome != null) 'substituto_nome': substitutoNome,
+            if (substitutoMatricula != null)
+              'substituto_matricula': substitutoMatricula,
+            if (substitutoSetor != null) 'substituto_setor': substitutoSetor,
+            if (substitutoCargo != null) 'substituto_cargo': substitutoCargo,
           })
           .eq('id', id);
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Busca um colaborador pela matrícula (usado no fluxo de substituição da
+  /// massoterapia: quem assina não é sempre quem estava agendado).
+  Future<ColaboradorModel?> buscarColaboradorPorMatricula(
+      String matricula) async {
+    final data = await _client
+        .from('colaboradores')
+        .select()
+        .eq('matricula', matricula)
+        .maybeSingle();
+    if (data == null) return null;
+    return ColaboradorModel.fromJson(data);
   }
 
   /// Faz upload da assinatura PNG no Storage e retorna a URL pública.
@@ -2152,7 +2172,7 @@ class ApiService {
     // Traz posts aprovados visíveis + os próprios posts (qualquer status)
     final data = await _client
         .from('feed_posts')
-        .select('*, autor:colaboradores(nome, foto_url, cargo)')
+        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
         .or('status.eq.aprovado,autor_id.eq.${colab.id}')
         .order('criado_em', ascending: false)
         .range(pagina * 20, pagina * 20 + 39);
