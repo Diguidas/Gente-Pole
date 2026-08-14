@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:gentepole/models/comunicado_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/models/lojinha_model.dart';
+import 'package:gentepole/models/fisioterapia_model.dart';
 import 'package:gentepole/models/massoterapia_model.dart';
 import 'package:gentepole/models/vaga_model.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
@@ -2095,6 +2096,117 @@ class ApiService {
     return _client.storage
         .from('assinaturas-massoterapia')
         .getPublicUrl(path);
+  }
+
+// ─── Fisioterapia ────────────────────────────────────────────────────────────
+// Tela do prestador (fisioterapeuta) e do colaborador (somente leitura).
+// Mesmas tabelas/buckets já criados e usados pelo app Admin.
+
+  // -- Prestador -------------------------------------------------------------
+
+  Future<List<FisioterapiaCaso>> listarMeusCasosFisioterapia(
+      int fisioterapeutaId) async {
+    final res = await _client
+        .from('fisioterapia_casos')
+        .select('*, colaboradores(nome, matricula, setor)')
+        .eq('fisioterapeuta_id', fisioterapeutaId)
+        .eq('status', 'ativo')
+        .order('criado_em', ascending: false);
+    return (res as List)
+        .map((e) => FisioterapiaCaso.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<FisioterapiaSessao>> listarSessoesPorCasos(
+      List<int> casoIds) async {
+    if (casoIds.isEmpty) return [];
+    final res = await _client
+        .from('fisioterapia_sessoes')
+        .select()
+        .inFilter('caso_id', casoIds)
+        .order('data', ascending: false)
+        .order('horario');
+    return (res as List)
+        .map((e) => FisioterapiaSessao.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<bool> atualizarSessaoFisioterapia(
+      int id, Map<String, dynamic> dados) async {
+    try {
+      await _client.from('fisioterapia_sessoes').update(dados).eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<FisioterapiaExercicio>> listarExerciciosFisioterapia(
+      int casoId) async {
+    final res = await _client
+        .from('fisioterapia_exercicios')
+        .select()
+        .eq('caso_id', casoId)
+        .order('criado_em', ascending: false);
+    return (res as List)
+        .map((e) => FisioterapiaExercicio.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<bool> criarExercicioFisioterapia({
+    required int casoId,
+    required String descricao,
+    String? frequencia,
+  }) async {
+    try {
+      await _client.from('fisioterapia_exercicios').insert({
+        'caso_id': casoId,
+        'descricao': descricao,
+        'frequencia': frequencia,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> excluirExercicioFisioterapia(int id) async {
+    try {
+      await _client.from('fisioterapia_exercicios').delete().eq('id', id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // -- Colaborador (somente leitura) ------------------------------------------
+
+  /// Caso mais recente do colaborador logado, em qualquer status.
+  Future<FisioterapiaCaso?> buscarMeuCasoFisioterapia() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return null;
+    final res = await _client
+        .from('fisioterapia_casos')
+        .select()
+        .eq('colaborador_id', meuId)
+        .order('criado_em', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (res == null) return null;
+    return FisioterapiaCaso.fromJson(res);
+  }
+
+  Future<List<FisioterapiaSessao>> listarSessoesDoCasoFisioterapia(
+      int casoId) async {
+    final res = await _client
+        .from('fisioterapia_sessoes')
+        .select()
+        .eq('caso_id', casoId)
+        .order('data', ascending: false)
+        .order('horario');
+    return (res as List)
+        .map((e) => FisioterapiaSessao.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
 // ─── Conexões do Bem ─────────────────────────────────────────────────────────

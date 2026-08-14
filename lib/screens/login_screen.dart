@@ -9,6 +9,7 @@ import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import 'main_layout.dart';
+import 'fisioterapia/admin_fisioterapia_screen.dart';
 import 'massoterapia/admin_massoterapia_screen.dart';
 import 'nutricionista/admin_nutricionista_screen.dart';
 
@@ -196,7 +197,12 @@ class _LoginScreenState extends State<LoginScreen>
         final tipo = fornecedor['tipo'] as String?;
         final Widget telaFornecedor = tipo == 'nutricionista'
             ? const AdminNutricionistaScreen()
-            : const AdminMassoterapiaScreen();
+            : tipo == 'fisioterapeuta'
+                ? AdminFisioterapiaScreen(
+                    fisioterapeutaId: fornecedor['id'] as int,
+                    nome: fornecedor['nome'] as String? ?? '',
+                  )
+                : const AdminMassoterapiaScreen();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => telaFornecedor),

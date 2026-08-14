@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
+import 'package:gentepole/screens/fisioterapia/fisioterapia_screen.dart';
 import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:gentepole/screens/cardapio/cardapio_screen.dart';
@@ -73,6 +74,13 @@ final List<AtalhoDef> atalhosDisponiveis = [
     icon: Icons.local_dining_outlined,
     cor: const Color(0xFF10B981),
     builder: (_) => const NutricionistaScreen(),
+  ),
+  AtalhoDef(
+    id: 'fisioterapia',
+    label: 'Fisioterapia',
+    icon: Icons.accessibility_new_rounded,
+    cor: AppColorsAtalho.magenta,
+    builder: (_) => const FisioterapiaScreen(),
   ),
   AtalhoDef(
     id: 'plantao_psicologico',
