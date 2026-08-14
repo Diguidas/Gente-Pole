@@ -148,6 +148,36 @@ class ApiService {
     return data['senha_hash'] == _hash(senha);
   }
 
+  /// Reseta a senha de quem já tem conta, mediante confirmação da data de
+  /// nascimento (mesma verificação usada no primeiro acesso).
+  /// Retorna false se a data não bater ou se a conta não existir.
+  Future<bool> resetarSenhaEsquecida({
+    required String matricula,
+    required String dataNascimento,
+    required String novaSenha,
+  }) async {
+    try {
+      final colaborador = await _client
+          .from('colaboradores')
+          .select('data_nascimento')
+          .eq('matricula', matricula)
+          .maybeSingle();
+      if (colaborador == null) return false;
+      if (colaborador['data_nascimento'] != dataNascimento) return false;
+
+      final auth = await _client
+          .from('usuarios_auth')
+          .update({'senha_hash': _hash(novaSenha)})
+          .eq('matricula', matricula)
+          .select('id');
+      return auth.isNotEmpty;
+    } catch (e, st) {
+      debugPrint('resetarSenhaEsquecida ERRO matricula=$matricula: $e');
+      ErrorReporter.report(e, st, contexto: 'Resetar senha esquecida');
+      return false;
+    }
+  }
+
   /// Salva (ou atualiza) o FCM token do colaborador logado no banco.
   Future<void> salvarFcmToken(String token) async {
     final id = colaboradorAtual?.id;

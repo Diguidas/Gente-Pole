@@ -71,6 +71,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
     if (limiteQtd != null && periodoDias != null && colabId.isNotEmpty) {
       comprasRecentes = await _api.buscarComprasRecentesColab(colabId, periodoDias);
     }
+    if (!mounted) return;
     setState(() {
       _limiteQtdGlobal = limiteQtd;
       _periodoDiasGlobal = periodoDias;

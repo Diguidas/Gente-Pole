@@ -42,6 +42,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
   }
 
   void _carregarCandidatos() {
+    if (!mounted) return;
     setState(() {
       _futureCandidatos = _api.listarCandidatosGestor(widget.vaga.id);
     });

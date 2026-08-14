@@ -29,6 +29,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   Future<void> _carregar() async {
     setState(() => _carregando = true);
     _dados = await _api.buscarDadosFuncionarioLojinha();
+    if (!mounted) return;
     setState(() => _carregando = false);
     await _retentarSeValorZerado();
   }

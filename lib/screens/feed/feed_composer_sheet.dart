@@ -199,6 +199,7 @@ class _FeedComposerSheetState extends State<FeedComposerSheet> {
     );
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
+    if (!mounted) return;
     setState(() {
       _imagemBytes = bytes;
       _imagemNome = picked.name;

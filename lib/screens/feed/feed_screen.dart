@@ -945,6 +945,7 @@ class _InlineComposerState extends State<_InlineComposer> {
     );
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
+    if (!mounted) return;
     setState(() {
       _imagemBytes = bytes;
       _imagemNome = picked.name;

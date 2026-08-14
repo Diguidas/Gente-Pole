@@ -54,10 +54,12 @@ class _EuCrioOportunidadesScreenState
     try {
       await _api.confirmarIndicacao(
           candidaturaId: candidaturaId, confirmar: confirmar);
-      setState(() {
-        _indicacoesPendentes
-            .removeWhere((i) => i['id'] == candidaturaId);
-      });
+      if (mounted) {
+        setState(() {
+          _indicacoesPendentes
+              .removeWhere((i) => i['id'] == candidaturaId);
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(confirmar

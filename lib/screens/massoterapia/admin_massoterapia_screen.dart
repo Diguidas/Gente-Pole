@@ -45,11 +45,11 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
     try {
       final lista =
           await ApiService().buscarAgendamentosData(_dataFormatada);
-      setState(() => _agendamentos = lista);
+      if (mounted) setState(() => _agendamentos = lista);
     } catch (e) {
       debugPrint('Erro ao carregar agendamentos: $e');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 

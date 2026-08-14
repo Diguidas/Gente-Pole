@@ -99,6 +99,7 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
         _api.buscarDiasDisponiveisNutricionista(),
         _api.buscarAgendamentosNutricionista(),
       ]);
+      if (!mounted) return;
       setState(() {
         _diasDisponiveis = resultados[0] as List<String>;
         _agendamentos =
@@ -109,6 +110,7 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _erro = 'Erro ao carregar agenda. Tente novamente.';
         _loading = false;

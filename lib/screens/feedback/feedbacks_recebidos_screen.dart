@@ -22,6 +22,7 @@ class _FeedbacksRecebidosScreenState
   }
 
   void _recarregar() {
+    if (!mounted) return;
     setState(() {
       _futureFeedbacks = _api.buscarFeedbacksRecebidos();
     });

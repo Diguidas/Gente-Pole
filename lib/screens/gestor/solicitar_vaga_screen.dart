@@ -169,8 +169,8 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     );
 
     final ok = await _api.solicitarVaga(vaga);
-    setState(() => _enviando = false);
     if (!mounted) return;
+    setState(() => _enviando = false);
 
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -559,7 +559,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 withData: true,
               );
               if (result != null && result.files.isNotEmpty) {
-                setState(() => _docAprovacao = result.files.first);
+                if (mounted) setState(() => _docAprovacao = result.files.first);
               }
             },
             child: Container(

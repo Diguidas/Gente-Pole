@@ -55,6 +55,7 @@ class _LojinhaPedidoDetalheScreenState
   Future<void> _carregar() async {
     setState(() { _carregando = true; _erro = null; });
     final result = await _api.buscarItensPedido(widget.ordem);
+    if (!mounted) return;
     setState(() {
       _detalhe = result;
       _erro = result == null ? 'Não foi possível carregar o pedido.' : null;

@@ -54,6 +54,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         _api.buscarAgendamentosMassoterapia(),
         _api.buscarConfigSetorMassoterapia(_api.colaboradorAtual?.setor ?? ''),
       ]);
+      if (!mounted) return;
       setState(() {
         _diasDisponiveis = resultados[0] as List<String>;
         _agendamentos = resultados[1] as List<MassoterapiaAgendamentoModel>;
@@ -65,6 +66,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _erro = 'Erro ao carregar agenda. Tente novamente.';
         _loading = false;

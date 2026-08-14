@@ -45,7 +45,7 @@ class _AdminNutricionistaScreenState
           .where((a) => a.data == _dataFormatada)
           .toList()
         ..sort((a, b) => a.horario.compareTo(b.horario));
-      setState(() => _agendamentos = doDia);
+      if (mounted) setState(() => _agendamentos = doDia);
     } catch (e) {
       debugPrint('Erro ao carregar agendamentos: $e');
     } finally {

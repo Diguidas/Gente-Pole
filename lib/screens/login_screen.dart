@@ -45,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool _carregando = false;
   bool _senhaVisivel = false;
   bool _ehFornecedor = false;
+  bool _modoResetSenha = false;
   ColaboradorModel? _colaboradorEncontrado;
 
   late final AnimationController _animController;
@@ -78,6 +79,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       final resultado = await _api.verificarCpf(cpf);
 
+      if (!mounted) return;
       setState(() => _carregando = false);
 
       switch (resultado.status) {
@@ -130,6 +132,7 @@ class _LoginScreenState extends State<LoginScreen>
         empresa: _colaboradorEncontrado!.empresa,
       );
 
+      if (!mounted) return;
       setState(() => _carregando = false);
 
       if (!ok) {
@@ -138,6 +141,40 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       _irParaHome();
+      return;
+    }
+
+    if (_etapa == 2 && _modoResetSenha) {
+      final data = _dataController.text.trim();
+      final novaSenha = _senhaController.text;
+
+      if (data.length != 10) {
+        _mostrarErro('Informe a data de nascimento completa.');
+        return;
+      }
+      if (novaSenha.length < 6) {
+        _mostrarErro('A nova senha deve ter pelo menos 6 caracteres.');
+        return;
+      }
+
+      final parts = data.split('/');
+      final dataFormatada = '${parts[2]}-${parts[1]}-${parts[0]}';
+
+      setState(() => _carregando = true);
+      final ok = await _api.resetarSenhaEsquecida(
+        matricula: _colaboradorEncontrado!.matricula,
+        dataNascimento: dataFormatada,
+        novaSenha: novaSenha,
+      );
+      if (!mounted) return;
+      setState(() => _carregando = false);
+
+      if (!ok) {
+        _mostrarErro('Data de nascimento não confere.');
+        return;
+      }
+
+      _mostrarSucessoReset();
       return;
     }
 
@@ -150,12 +187,12 @@ class _LoginScreenState extends State<LoginScreen>
           cpf: cpf,
           senha: _senhaController.text,
         );
+        if (!mounted) return;
         setState(() => _carregando = false);
         if (fornecedor == null) {
           _mostrarErro('Senha incorreta.');
           return;
         }
-        if (!mounted) return;
         final tipo = fornecedor['tipo'] as String?;
         final Widget telaFornecedor = tipo == 'nutricionista'
             ? const AdminNutricionistaScreen()
@@ -172,6 +209,7 @@ class _LoginScreenState extends State<LoginScreen>
         senha: _senhaController.text,
       );
 
+      if (!mounted) return;
       setState(() => _carregando = false);
 
       if (!ok) {
@@ -206,11 +244,39 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() {
         _etapa = 0;
         _ehFornecedor = false;
+        _modoResetSenha = false;
         _colaboradorEncontrado = null;
         _cpfController.clear();
         _senhaController.clear();
         _dataController.clear();
       });
+    });
+  }
+
+  void _ativarResetSenha() {
+    setState(() {
+      _modoResetSenha = true;
+      _senhaController.clear();
+      _dataController.clear();
+    });
+  }
+
+  void _mostrarSucessoReset() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Senha redefinida! Faça login com a nova senha.',
+            style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: AppColors.sucesso,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_kBorderRadius),
+        ),
+      ),
+    );
+    setState(() {
+      _modoResetSenha = false;
+      _senhaController.clear();
+      _dataController.clear();
     });
   }
 
@@ -356,9 +422,13 @@ class _LoginScreenState extends State<LoginScreen>
                                     children: [
                                       const SizedBox(height: 14),
                                       _campoSenha(
-                                        label: _etapa == 1 ? 'Criar senha' : 'Sua senha',
+                                        label: _modoResetSenha
+                                            ? 'Nova senha'
+                                            : _etapa == 1
+                                                ? 'Criar senha'
+                                                : 'Sua senha',
                                       ),
-                                      if (_etapa == 1) ...[
+                                      if (_etapa == 1 || _modoResetSenha) ...[
                                         const SizedBox(height: 14),
                                         _campo(
                                           controller: _dataController,
@@ -369,6 +439,29 @@ class _LoginScreenState extends State<LoginScreen>
                                           hintText: 'Para confirmar sua identidade',
                                         ),
                                       ],
+                                      if (_etapa == 2 &&
+                                          !_ehFornecedor &&
+                                          !_modoResetSenha)
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: TextButton(
+                                            onPressed: _ativarResetSenha,
+                                            style: TextButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            child: Text(
+                                              'Esqueci minha senha',
+                                              style: GoogleFonts.poppins(
+                                                color: _kLaranjaPrimario,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   )
                                 : const SizedBox.shrink(),
@@ -397,11 +490,13 @@ class _LoginScreenState extends State<LoginScreen>
                                           color: Colors.white, strokeWidth: 2.5),
                                     )
                                   : Text(
-                                      _etapa == 0
-                                          ? 'Continuar'
-                                          : _etapa == 1
-                                              ? 'Criar conta'
-                                              : 'Entrar',
+                                      _modoResetSenha
+                                          ? 'Redefinir senha'
+                                          : _etapa == 0
+                                              ? 'Continuar'
+                                              : _etapa == 1
+                                                  ? 'Criar conta'
+                                                  : 'Entrar',
                                       style: GoogleFonts.poppins(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 16,
@@ -411,7 +506,24 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                           ),
 
-                          if (_etapa > 0)
+                          if (_modoResetSenha)
+                            Center(
+                              child: TextButton(
+                                onPressed: () => setState(() {
+                                  _modoResetSenha = false;
+                                  _senhaController.clear();
+                                  _dataController.clear();
+                                }),
+                                child: Text(
+                                  'Cancelar',
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(0xFF7A5230),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (_etapa > 0)
                             Center(
                               child: TextButton(
                                 onPressed: _resetar,
