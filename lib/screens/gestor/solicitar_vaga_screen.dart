@@ -122,10 +122,6 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
     final motivo = _motivoCtrl.text.trim();
     String descricao = t['descricao'] as String? ?? '';
-    if (_ehSubstituicao && _colaboradorSubstituido != null) {
-      descricao = '[SUBSTITUIÇÃO DE: ${_colaboradorSubstituido!.nome}]'
-          '${descricao.isNotEmpty ? '\n\n$descricao' : ''}';
-    }
     if (motivo.isNotEmpty) {
       descricao += '${descricao.isNotEmpty ? '\n\n' : ''}Motivo: $motivo';
     }
@@ -166,6 +162,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       centroCusto: _centroCustoCtrl.text.trim().isEmpty ? null : _centroCustoCtrl.text.trim(),
       liderancaDiretaMatricula: _liderancaMatriculaCtrl.text.trim().isEmpty ? null : _liderancaMatriculaCtrl.text.trim(),
       filial: _filialSelecionada,
+      colaboradorSubstituidoId: _ehSubstituicao ? _colaboradorSubstituido?.id : null,
     );
 
     final ok = await _api.solicitarVaga(vaga);

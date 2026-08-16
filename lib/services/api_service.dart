@@ -1572,45 +1572,123 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Lista pesquisas disponíveis filtradas por destinatário,
-  /// com campo ja_respondeu para bloquear resposta dupla.
+  /// Lista pesquisas disponíveis para o colaborador (via `pesquisa_envios`),
+  /// já com o campo `ja_respondeu` para bloquear resposta duplicada.
+  ///
+  /// Antes esse método só olhava `pesquisas.ativa`, que reflete se a
+  /// pesquisa (o "molde") está ativa — não se o ENVIO (a campanha, com sua
+  /// própria janela de datas) ainda está aberto. Uma pesquisa podia
+  /// continuar `ativa = true` mesmo com todo envio já fora do prazo, e
+  /// aparecia disponível pra sempre. Agora replica a mesma lógica de
+  /// `pesquisa_envios` + `data_inicio`/`data_fim` que o gentepole_admin usa.
   Future<List<Map<String, dynamic>>> buscarPesquisasDisponiveis() async {
-    final colaboradorId = colaboradorAtual?.id;
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
 
-    final res = await _client
-        .from('pesquisas')
-        .select()
-        .eq('ativa', true)
-        .order('criado_em', ascending: false);
+    final hoje = DateTime.now().toIso8601String().substring(0, 10);
 
-    final filtradas = await _filtrarDestinatarios(
-      (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
-    );
+    final envios = await _client
+        .from('pesquisa_envios')
+        .select('id, pesquisa_id, tipo_destinatario, setores_alvo, '
+            'agrupamentos_alvo, data_inicio, data_fim, pesquisas(*)')
+        .or('data_inicio.is.null,data_inicio.lte.$hoje')
+        .or('data_fim.is.null,data_fim.gte.$hoje');
 
-    if (colaboradorId == null) return filtradas;
+    List<dynamic> parseLista(dynamic raw) {
+      if (raw == null) return [];
+      if (raw is List) return raw;
+      if (raw is String) {
+        try {
+          final decoded = jsonDecode(raw);
+          return decoded is List ? decoded : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [];
+    }
 
-    // Busca todas as pesquisas já respondidas pelo colaborador de uma vez.
+    final meusAgrupamentos = <int>{};
+    final membros = await _client
+        .from('agrupamento_membros')
+        .select('agrupamento_id')
+        .eq('colaborador_id', colab.id);
+    meusAgrupamentos
+        .addAll((membros as List).map((e) => e['agrupamento_id'] as int));
+
+    final enviosColaborador = await _client
+        .from('pesquisa_envio_colaboradores')
+        .select('envio_id, colaborador_alvo_id')
+        .eq('colaborador_id', colab.id);
+    final meusEnvios = <int, int?>{
+      for (final e in enviosColaborador as List)
+        e['envio_id'] as int: e['colaborador_alvo_id'] as int?,
+    };
+
+    // Chave por envio (não por pesquisa) — o mesmo colaborador pode estar
+    // em vários envios da MESMA pesquisa (ex: um gestor avaliando várias
+    // pessoas); agrupar por pesquisa_id faria só a primeira ocorrência
+    // aparecer.
+    final pesquisasVisiveis = <int, Map<String, dynamic>>{};
+    for (final envio in envios as List) {
+      final tipo = envio['tipo_destinatario'] as String? ?? 'todos';
+      bool visivel;
+      switch (tipo) {
+        case 'todos':
+          visivel = true;
+          break;
+        case 'setor':
+          visivel = parseLista(envio['setores_alvo']).contains(colab.setor);
+          break;
+        case 'colaboradores':
+          visivel = meusEnvios.containsKey(envio['id'] as int);
+          break;
+        case 'agrupamentos':
+          visivel = parseLista(envio['agrupamentos_alvo']).any((g) =>
+              meusAgrupamentos
+                  .contains(g is int ? g : int.tryParse(g.toString()) ?? -1));
+          break;
+        default:
+          visivel = true;
+      }
+      if (!visivel) continue;
+      final pesquisa = envio['pesquisas'] as Map?;
+      if (pesquisa == null) continue;
+      final envioId = envio['id'] as int;
+      pesquisasVisiveis[envioId] = {
+        ...Map<String, dynamic>.from(pesquisa),
+        '_envio_id': envioId,
+        'colaborador_alvo_id': meusEnvios[envioId] ?? colab.id,
+      };
+    }
+
+    if (pesquisasVisiveis.isEmpty) return [];
+
+    final pesquisaIds =
+        pesquisasVisiveis.values.map((p) => p['id'] as int).toSet().toList();
     // Usa `pesquisa_participacoes` (não `pesquisa_respostas`) porque em
     // pesquisas anônimas o colaborador_id da resposta é gravado como null de
-    // propósito — só a tabela de participação sabe quem já respondeu.
-    final ids = filtradas.map((p) => p['id'] as int).toList();
-    if (ids.isEmpty) return filtradas;
-
+    // propósito — só a tabela de participação sabe quem já respondeu. Inclui
+    // colaborador_alvo_id pra não confundir "já respondi sobre a Maria" com
+    // "já respondi sobre o João" quando é a mesma pesquisa.
     final respondidas = await _client
         .from('pesquisa_participacoes')
-        .select('pesquisa_id')
-        .eq('colaborador_id', colaboradorId)
-        .inFilter('pesquisa_id', ids);
+        .select('pesquisa_id, colaborador_alvo_id')
+        .eq('colaborador_id', colab.id)
+        .inFilter('pesquisa_id', pesquisaIds);
+    final respondidasSet = (respondidas as List)
+        .map((e) => '${e['pesquisa_id']}_${e['colaborador_alvo_id']}')
+        .toSet();
 
-    final respondidosSet =
-        (respondidas as List).map((e) => e['pesquisa_id'] as int).toSet();
-
-    return filtradas.map((p) {
+    return pesquisasVisiveis.values.map((p) {
       return {
         ...p,
-        'ja_respondeu': respondidosSet.contains(p['id'] as int),
+        'ja_respondeu': respondidasSet
+            .contains('${p['id']}_${p['colaborador_alvo_id']}'),
       };
-    }).toList();
+    }).toList()
+      ..sort((a, b) => (b['criado_em'] as String? ?? '')
+          .compareTo(a['criado_em'] as String? ?? ''));
   }
 
   /// Busca as perguntas de uma pesquisa, em ordem.
@@ -1694,6 +1772,26 @@ class ApiService {
     return null;
   }
 
+  /// Resolve o "alvo" de uma resposta — normalmente é o próprio
+  /// colaborador; só difere quando o envio foi endereçado a alguém
+  /// avaliando outra pessoa (ex: gestor respondendo sobre um colaborador no
+  /// Período de Experiência). Sem vínculo em `pesquisa_envio_colaboradores`,
+  /// o alvo é sempre o próprio respondente.
+  Future<int> _resolverAlvoIdPesquisa(int? envioId, int colaboradorId) async {
+    if (envioId != null) {
+      final vinculo = await _client
+          .from('pesquisa_envio_colaboradores')
+          .select('colaborador_alvo_id')
+          .eq('envio_id', envioId)
+          .eq('colaborador_id', colaboradorId)
+          .maybeSingle();
+      if (vinculo != null && vinculo['colaborador_alvo_id'] != null) {
+        return vinculo['colaborador_alvo_id'] as int;
+      }
+    }
+    return colaboradorId;
+  }
+
   /// Envia todas as respostas de uma pesquisa.
   /// [respostas] é um Map de pergunta_id → valor (String, int ou bool).
   Future<bool> responderPesquisa({
@@ -1704,12 +1802,16 @@ class ApiService {
     final meuId = colaboradorAtual?.id;
     try {
       final envioId = await _resolverEnvioIdPesquisa(pesquisaId);
+      final alvoId = meuId == null
+          ? null
+          : await _resolverAlvoIdPesquisa(envioId, meuId);
       // 1. Insere cabeçalho
       final cabecalho = await _client
           .from('pesquisa_respostas')
           .insert({
             'pesquisa_id': pesquisaId,
             'colaborador_id': anonima ? null : meuId,
+            'colaborador_alvo_id': alvoId,
             'envio_id': envioId,
           })
           .select('id')
@@ -1724,7 +1826,17 @@ class ApiService {
         };
         if (e.value is String) mapa['valor_texto'] = e.value;
         if (e.value is int) mapa['valor_numero'] = e.value;
+        if (e.value is num) mapa['valor_numero'] = e.value;
         if (e.value is bool) mapa['valor_booleano'] = e.value;
+        // checkbox de múltipla escolha real (List<String>) — grava como
+        // texto separado por vírgula, igual ao app admin.
+        if (e.value is Iterable) {
+          mapa['valor_texto'] = (e.value as Iterable).join(', ');
+        }
+        // escala_matriz (Map<String,String> linha → coluna escolhida) —
+        // não tem coluna própria, então grava como JSON no valor_texto,
+        // igual ao app admin (ver responderPesquisaColab de lá).
+        if (e.value is Map) mapa['valor_texto'] = jsonEncode(e.value);
         return mapa;
       }).toList();
 
@@ -1737,8 +1849,9 @@ class ApiService {
         await _client.from('pesquisa_participacoes').upsert({
           'pesquisa_id': pesquisaId,
           'colaborador_id': meuId,
+          'colaborador_alvo_id': alvoId,
           'respondido_em': DateTime.now().toIso8601String(),
-        }, onConflict: 'pesquisa_id,colaborador_id');
+        }, onConflict: 'pesquisa_id,colaborador_id,colaborador_alvo_id');
       }
 
       return true;
@@ -2617,4 +2730,913 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  // ─── Performance: Feedback (Avaliação) ──────────────────────────────────
+  // Portado do app admin (gentepole_admin/lib/core/services/api_service.dart)
+  // Tabelas: avaliacao_feedbacks, feedback_solicitacoes, elogios,
+  // feedback_itens_empresa. Mesmo schema Supabase do admin.
+
+  /// Marca todos os feedbacks recebidos pelo colaborador como visualizados —
+  /// chamado ao abrir a tela onde ele os vê.
+  Future<void> marcarFeedbacksRecebidosComoVistos(int colaboradorId) async {
+    await _client
+        .from('avaliacao_feedbacks')
+        .update({'visualizado_em': DateTime.now().toIso8601String()})
+        .eq('colaborador_id', colaboradorId)
+        .filter('visualizado_em', 'is', null);
+  }
+
+  /// Feedbacks de avaliação recebidos pelo colaborador (distinto da tabela
+  /// `feedbacks` genérica já usada em [enviarFeedback]/[buscarFeedbacksRecebidos]).
+  Future<List<Map<String, dynamic>>> listarFeedbacksAvaliacao(
+      int colaboradorId) async {
+    final data = await _client
+        .from('avaliacao_feedbacks')
+        .select('*, autor:autor_id(nome)')
+        .eq('colaborador_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Solicitações de feedback que o colaborador enviou pra outras pessoas.
+  Future<List<Map<String, dynamic>>> listarSolicitacoesFeedbackEnviadas(
+      int colaboradorId) async {
+    final data = await _client
+        .from('feedback_solicitacoes')
+        .select()
+        .eq('solicitante_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  Future<void> criarSolicitacaoFeedback({
+    required int solicitanteId,
+    required int destinatarioId,
+    String? mensagem,
+  }) async {
+    await _client.from('feedback_solicitacoes').insert({
+      'solicitante_id': solicitanteId,
+      'destinatario_id': destinatarioId,
+      'mensagem': mensagem,
+    });
+  }
+
+  // ─── Elogios entre colaboradores ────────────────────────────────────────
+  // Distinto do feedback/avaliação: elogio é livre, sem notas nem itens da
+  // empresa — só um texto de reconhecimento entre colegas.
+
+  Future<void> criarElogio({
+    required int autorId,
+    required int colaboradorId,
+    required String texto,
+    required bool anonimo,
+  }) async {
+    await _client.from('elogios').insert({
+      'autor_id': autorId,
+      'colaborador_id': colaboradorId,
+      'texto': texto.trim(),
+      'anonimo': anonimo,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> listarElogiosRecebidos(
+      int colaboradorId) async {
+    final data = await _client
+        .from('elogios')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Gestor do mesmo setor — usado pra "Pedir feedback ao meu gestor".
+  ///
+  /// APROXIMAÇÃO: o app admin resolve isso via `usuarios_admin.roles`
+  /// contendo 'gestor' (tabela que não existe neste projeto). Aqui usamos o
+  /// mesmo sinal já usado por [verificarSeEhGestor] — `colaboradores.eh_gestor`
+  /// — que é o equivalente mais simples disponível neste schema.
+  Future<ColaboradorModel?> buscarGestorDoSetor(String setor) async {
+    final data = await _client
+        .from('colaboradores')
+        .select()
+        .eq('setor', setor)
+        .eq('eh_gestor', true)
+        .limit(1)
+        .maybeSingle();
+    if (data == null) return null;
+    return ColaboradorModel.fromJson(data);
+  }
+
+  /// Os itens fixos (por slot) de avaliação por estrelas, configurados pelo RH.
+  Future<List<Map<String, dynamic>>> listarItensEmpresaFeedback() async {
+    final data = await _client
+        .from('feedback_itens_empresa')
+        .select()
+        .order('slot');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  // ─── Ouvidoria (com assunto/tipo/anexo) ─────────────────────────────────
+  // Distinto de [salvarOuvidoria] (que já existe acima, no formato antigo
+  // ocorrido/telefone/sugestao). Este método mirra o formato usado pelo app
+  // admin, com assunto, tipo e anexo opcional no Storage.
+
+  /// Envia uma manifestação de ouvidoria em nome do colaborador logado.
+  /// Quando [anonimo] é true, colaborador_id/matrícula ainda são gravados
+  /// (pra evitar abuso) — quem exibe "Anônimo" em vez do nome é a tela de
+  /// leitura (admin).
+  Future<bool> enviarOuvidoriaColab({
+    required String assunto,
+    required String tipo, // 'reclamacao' | 'sugestao' | 'denuncia'
+    required String texto,
+    required bool anonimo,
+    Uint8List? anexoBytes,
+    String? anexoNomeArquivo,
+  }) async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) return false;
+    try {
+      String? anexoUrl;
+      if (anexoBytes != null && anexoNomeArquivo != null) {
+        final path =
+            '${DateTime.now().millisecondsSinceEpoch}_$anexoNomeArquivo';
+        await _client.storage
+            .from('ouvidoria-anexos')
+            .uploadBinary(path, anexoBytes);
+        anexoUrl = _client.storage.from('ouvidoria-anexos').getPublicUrl(path);
+      }
+      await _client.from('ouvidoria').insert({
+        'colaborador_id': colaborador.id,
+        'matricula': colaborador.matricula,
+        'assunto': assunto.trim(),
+        'tipo': tipo,
+        'ocorrido': texto.trim(),
+        'anonimo': anonimo,
+        if (anexoUrl != null) 'anexo_url': anexoUrl,
+        if (anexoUrl != null) 'anexo_nome': anexoNomeArquivo,
+        'criado_em': DateTime.now().toIso8601String(),
+      });
+      return true;
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Enviar ouvidoria');
+      return false;
+    }
+  }
+
+  // ─── Pesquisas — recusa ─────────────────────────────────────────────────
+
+  /// Registra que o colaborador recusou responder a pesquisa (com motivo
+  /// opcional), sem preencher as respostas. Mantém a mesma marcação de
+  /// participação usada por [responderPesquisa], pra pesquisa virar
+  /// "já respondida" e não ficar pendente pra sempre.
+  Future<bool> recusarPesquisaColab({
+    required int pesquisaId,
+    required int colaboradorId,
+    String? motivo,
+  }) async {
+    try {
+      final envioId = await _resolverEnvioIdPesquisa(pesquisaId);
+      final alvoId = await _resolverAlvoIdPesquisa(envioId, colaboradorId);
+      await _client.from('pesquisa_respostas').insert({
+        'pesquisa_id': pesquisaId,
+        'colaborador_id': colaboradorId,
+        'colaborador_alvo_id': alvoId,
+        'envio_id': envioId,
+        'recusou': true,
+        if (motivo != null && motivo.trim().isNotEmpty)
+          'motivo_recusa': motivo.trim(),
+      });
+
+      await _client.from('pesquisa_participacoes').upsert({
+        'pesquisa_id': pesquisaId,
+        'colaborador_id': colaboradorId,
+        'colaborador_alvo_id': alvoId,
+        'respondido_em': DateTime.now().toIso8601String(),
+      }, onConflict: 'pesquisa_id,colaborador_id,colaborador_alvo_id');
+
+      return true;
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Recusar pesquisa');
+      return false;
+    }
+  }
+
+  // ─── Performance: Ciclos de avaliação + PDI + 9box ──────────────────────
+  // Portado do app admin (gentepole_admin/lib/core/services/api_service.dart).
+  // Mesmo schema Supabase do admin. Tabelas: avaliacao_ciclos, avaliacoes,
+  // avaliacao_perguntas, avaliacao_respostas, avaliacao_equipe_avaliadores,
+  // pdi_planos, pdi_acoes, pdi_termos_compromisso.
+
+  /// Ciclo de avaliação aberto que vale pro setor informado — o ciclo geral
+  /// (setor nulo, aberto pelo RH) e/ou o ciclo que o gestor abriu para o
+  /// setor. Prioriza o ciclo específico do setor quando os dois existem.
+  Future<Map<String, dynamic>?> buscarCicloAbertoParaSetor(String setor) async {
+    final data = await _client
+        .from('avaliacao_ciclos')
+        .select()
+        .eq('status', 'aberto')
+        .or('setor.eq.$setor,setor.is.null')
+        .order('setor', ascending: false, nullsFirst: false)
+        .order('criado_em', ascending: false);
+    final lista = List<Map<String, dynamic>>.from(data as List);
+    if (lista.isEmpty) return null;
+    return lista.firstWhere((c) => c['setor'] == setor,
+        orElse: () => lista.first);
+  }
+
+  /// Busca a avaliação do colaborador nesse ciclo (criando se ainda não
+  /// existir) — usado tanto pela autoavaliação quanto pela avaliação do
+  /// gestor.
+  Future<Map<String, dynamic>?> buscarOuCriarAvaliacao({
+    required int cicloId,
+    required int colaboradorId,
+  }) async {
+    await _client.from('avaliacoes').upsert(
+      {'ciclo_id': cicloId, 'colaborador_id': colaboradorId},
+      onConflict: 'ciclo_id,colaborador_id',
+      ignoreDuplicates: true,
+    );
+    return await _client
+        .from('avaliacoes')
+        .select(
+            '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)')
+        .eq('ciclo_id', cicloId)
+        .eq('colaborador_id', colaboradorId)
+        .maybeSingle();
+  }
+
+  /// Perguntas ativas cadastradas para a função (cargo) informada.
+  Future<List<Map<String, dynamic>>> listarPerguntasFuncao(
+      String funcao) async {
+    final data = await _client
+        .from('avaliacao_perguntas')
+        .select()
+        .eq('funcao', funcao)
+        .eq('ativo', true)
+        .order('ordem');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  Future<List<Map<String, dynamic>>> listarRespostasAvaliacao(
+      int avaliacaoId) async {
+    final data = await _client
+        .from('avaliacao_respostas')
+        .select()
+        .eq('avaliacao_id', avaliacaoId);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Salva as respostas (nota 1-3 + comentário) de uma origem
+  /// ('colaborador', 'gestor' ou 'equipe') para uma avaliação. Recalcula a
+  /// média por dimensão (desempenho/potencial): pra 'colaborador'/'gestor'
+  /// grava direto nas colunas do 9box; pra 'equipe' primeiro salva a
+  /// resposta desse avaliador e depois recalcula a média de todos os
+  /// avaliadores da equipe que já responderam.
+  Future<void> salvarRespostasAvaliacao({
+    required int avaliacaoId,
+    required String origem, // 'colaborador' | 'gestor' | 'equipe'
+    required List<Map<String, dynamic>>
+        respostas, // {perguntaId, dimensao, nota, comentario}
+    required int avaliadorId,
+    int? gestorId,
+  }) async {
+    if (respostas.isNotEmpty) {
+      final linhas = respostas
+          .map((r) => {
+                'avaliacao_id': avaliacaoId,
+                'pergunta_id': r['perguntaId'],
+                'origem': origem,
+                'avaliador_id': avaliadorId,
+                'nota': r['nota'],
+                'comentario': r['comentario'],
+              })
+          .toList();
+      await _client.from('avaliacao_respostas').upsert(linhas,
+          onConflict: 'avaliacao_id,pergunta_id,origem,avaliador_id');
+    }
+
+    int media(Iterable<int> notas) {
+      if (notas.isEmpty) return 2;
+      return (notas.reduce((a, b) => a + b) / notas.length).round().clamp(1, 3);
+    }
+
+    if (origem == 'colaborador') {
+      final desempenho = media(respostas
+          .where((r) => r['dimensao'] == 'desempenho')
+          .map((r) => r['nota'] as int));
+      final potencial = media(respostas
+          .where((r) => r['dimensao'] == 'potencial')
+          .map((r) => r['nota'] as int));
+      await _client.from('avaliacoes').update({
+        'autoavaliacao_desempenho': desempenho,
+        'autoavaliacao_potencial': potencial,
+        'autoavaliacao_em': DateTime.now().toIso8601String(),
+        'status': 'pendente_gestor',
+      }).eq('id', avaliacaoId);
+    } else if (origem == 'gestor') {
+      final desempenho = media(respostas
+          .where((r) => r['dimensao'] == 'desempenho')
+          .map((r) => r['nota'] as int));
+      final potencial = media(respostas
+          .where((r) => r['dimensao'] == 'potencial')
+          .map((r) => r['nota'] as int));
+      await _client.from('avaliacoes').update({
+        'gestor_id': gestorId ?? avaliadorId,
+        'gestor_desempenho': desempenho,
+        'gestor_potencial': potencial,
+        'gestor_em': DateTime.now().toIso8601String(),
+        'status': 'concluida',
+      }).eq('id', avaliacaoId);
+    } else {
+      // 'equipe' — recalcula a média com as respostas de TODOS os colegas
+      // que já avaliaram essa pessoa nesse ciclo, não só a desse avaliador.
+      final comPergunta = await _client
+          .from('avaliacao_respostas')
+          .select(
+              '*, avaliacao_perguntas!avaliacao_respostas_pergunta_id_fkey(dimensao)')
+          .eq('avaliacao_id', avaliacaoId);
+      final equipeComPergunta = List<Map<String, dynamic>>.from(
+              comPergunta as List)
+          .where((r) => r['origem'] == 'equipe');
+      final desempenhoEquipe = media(equipeComPergunta
+          .where((r) => (r['avaliacao_perguntas']?['dimensao']) == 'desempenho')
+          .map((r) => r['nota'] as int));
+      final potencialEquipe = media(equipeComPergunta
+          .where((r) => (r['avaliacao_perguntas']?['dimensao']) == 'potencial')
+          .map((r) => r['nota'] as int));
+      await _client.from('avaliacoes').update({
+        'equipe_desempenho': desempenhoEquipe,
+        'equipe_potencial': potencialEquipe,
+        'equipe_em': DateTime.now().toIso8601String(),
+      }).eq('id', avaliacaoId);
+      await _client
+          .from('avaliacao_equipe_avaliadores')
+          .update({'respondido': true})
+          .eq('avaliacao_id', avaliacaoId)
+          .eq('avaliador_id', avaliadorId);
+    }
+  }
+
+  /// Avaliações de colegas pendentes pra um avaliador da equipe responder —
+  /// usado na tela "Avaliar Colegas" (ciclos 360, convite automático feito
+  /// pelo app admin em [gerarAvaliadoresEquipeAutomatico] quando o gestor
+  /// abre a avaliação da equipe).
+  Future<List<Map<String, dynamic>>> listarAvaliacoesEquipeParaAvaliar(
+      int avaliadorId) async {
+    final data = await _client
+        .from('avaliacao_equipe_avaliadores')
+        .select(
+            '*, avaliacoes(*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url))')
+        .eq('avaliador_id', avaliadorId)
+        .eq('respondido', false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Avaliações da equipe (mesmo setor) de um gestor, num ciclo — cria as
+  /// que ainda não existem, para a lista já vir completa. Reusa
+  /// [buscarMinhaEquipe] pra obter os colaboradores do setor do gestor.
+  Future<List<Map<String, dynamic>>> listarAvaliacoesEquipeGestor({
+    required int cicloId,
+  }) async {
+    final equipe = await buscarMinhaEquipe();
+    final resultado = <Map<String, dynamic>>[];
+    for (final colab in equipe) {
+      final avaliacao = await buscarOuCriarAvaliacao(
+        cicloId: cicloId,
+        colaboradorId: colab.id,
+      );
+      if (avaliacao != null) resultado.add(avaliacao);
+    }
+    return resultado;
+  }
+
+  // ─── Performance: PDI (Plano de Desenvolvimento Individual) ─────────────
+
+  Future<List<Map<String, dynamic>>> listarPdiPlanos(
+      int colaboradorId) async {
+    final data = await _client
+        .from('pdi_planos')
+        .select('*, pdi_acoes(*), pdi_termos_compromisso(*)')
+        .eq('colaborador_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  Future<int> criarPdiPlano({
+    required int colaboradorId,
+    required String objetivo,
+    required String tipo, // 'tecnico' | 'comportamental'
+    int? cicloId,
+    int? criadoPor,
+  }) async {
+    final res = await _client
+        .from('pdi_planos')
+        .insert({
+          'colaborador_id': colaboradorId,
+          'objetivo': objetivo,
+          'tipo': tipo,
+          'ciclo_id': cicloId,
+          'criado_por': criadoPor,
+        })
+        .select('id')
+        .single();
+    return res['id'] as int;
+  }
+
+  Future<void> atualizarStatusPdiPlano(int planoId, String status) async {
+    await _client
+        .from('pdi_planos')
+        .update({'status': status}).eq('id', planoId);
+  }
+
+  Future<void> adicionarAcaoPdi({
+    required int planoId,
+    required String descricao,
+    DateTime? prazo,
+    String? link,
+    String? modalidade, // 'blearning' | 'benchmarking' | 'elearning'
+    int ordem = 0,
+  }) async {
+    await _client.from('pdi_acoes').insert({
+      'plano_id': planoId,
+      'descricao': descricao,
+      'prazo': prazo?.toIso8601String().substring(0, 10),
+      'link': link,
+      'modalidade': modalidade,
+      'ordem': ordem,
+    });
+  }
+
+  Future<void> atualizarStatusAcaoPdi(int acaoId, String status) async {
+    await _client.from('pdi_acoes').update({'status': status}).eq('id', acaoId);
+  }
+
+  Future<void> excluirAcaoPdi(int acaoId) async {
+    await _client.from('pdi_acoes').delete().eq('id', acaoId);
+  }
+
+  /// Upload do arquivo que o colaborador anexa como evidência de uma ação
+  /// do PDI.
+  Future<String> uploadAnexoAcaoPdi({
+    required int acaoId,
+    required Uint8List bytes,
+    required String nomeArquivo,
+  }) async {
+    final path =
+        'acao_$acaoId/${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
+    await _client.storage.from('pdi-anexos').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+    final url = _client.storage.from('pdi-anexos').getPublicUrl(path);
+    await _client.from('pdi_acoes').update({
+      'anexo_url': url,
+      'anexo_nome': nomeArquivo,
+    }).eq('id', acaoId);
+    return url;
+  }
+
+  /// Resumo do ciclo ativo do setor do colaborador logado: se há ciclo
+  /// aberto, se ele já enviou a autoavaliação, e quantos colegas ele tem
+  /// pendentes pra avaliar ("Avaliar Colegas"). Usado pra badges/telas de
+  /// estado vazio sem precisar duplicar as consultas em cada tela.
+  Future<Map<String, dynamic>> buscarResumoPerformance() async {
+    final col = colaboradorAtual;
+    if (col == null || col.setor == null || col.setor!.isEmpty) {
+      return {
+        'ciclo': null,
+        'autoavaliacaoPendente': false,
+        'colegasPendentes': 0,
+      };
+    }
+    final ciclo = await buscarCicloAbertoParaSetor(col.setor!);
+    if (ciclo == null) {
+      return {
+        'ciclo': null,
+        'autoavaliacaoPendente': false,
+        'colegasPendentes': 0,
+      };
+    }
+    final avaliacao = await buscarOuCriarAvaliacao(
+      cicloId: ciclo['id'] as int,
+      colaboradorId: col.id,
+    );
+    final colegasPendentes = await listarAvaliacoesEquipeParaAvaliar(col.id);
+    return {
+      'ciclo': ciclo,
+      'autoavaliacaoPendente': (ciclo['tipo_avaliacao'] != 'gestor') &&
+          (avaliacao?['autoavaliacao_em'] == null),
+      'colegasPendentes': colegasPendentes.length,
+    };
+  }
+
+  // ─── Feedback do Gestor (avaliação estruturada por estrelas) ───────────
+  // Portado do app admin (gentepole_admin/lib/core/services/api_service.dart)
+  // Tabelas: avaliacao_feedbacks, feedback_modelos, feedback_solicitacoes.
+  // Mesmo schema Supabase do admin; ids aqui são int (ColaboradorModel.id).
+
+  /// Cria um feedback estruturado (com notas por estrela) que o gestor dá a
+  /// um colaborador da equipe. Retorna o id do feedback criado, usado para
+  /// vincular a uma solicitação atendida.
+  Future<int> criarFeedbackAvaliacao({
+    required int colaboradorId,
+    required int autorId,
+    required String texto,
+    bool anonimo = false,
+    bool? presencial,
+    String? anotacoesInternas,
+    int? modeloId,
+    int? item1Nota,
+    int? item2Nota,
+  }) async {
+    final res = await _client
+        .from('avaliacao_feedbacks')
+        .insert({
+          'colaborador_id': colaboradorId,
+          'autor_id': autorId,
+          'texto': texto,
+          'anonimo': anonimo,
+          'presencial': presencial,
+          'anotacoes_internas': anotacoesInternas,
+          'modelo_id': modeloId,
+          'item1_nota': item1Nota,
+          'item2_nota': item2Nota,
+        })
+        .select('id')
+        .single();
+    return res['id'] as int;
+  }
+
+  /// Modelos de texto pré-prontos pra facilitar a escrita do feedback.
+  Future<List<Map<String, dynamic>>> listarModelosFeedback(
+      {bool apenasAtivos = false}) async {
+    var query = _client.from('feedback_modelos').select();
+    if (apenasAtivos) query = query.eq('ativo', true);
+    final data = await query.order('ordem');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Solicitações de feedback recebidas pelo colaborador (pendentes ou
+  /// todas, conforme [apenasPendentes]) — usado na tela "Feedback" do
+  /// módulo Gestor pra mostrar os pedidos da equipe.
+  Future<List<Map<String, dynamic>>> listarSolicitacoesFeedbackRecebidas(
+    int colaboradorId, {
+    bool apenasPendentes = false,
+  }) async {
+    var query = _client
+        .from('feedback_solicitacoes')
+        .select()
+        .eq('destinatario_id', colaboradorId);
+    if (apenasPendentes) query = query.eq('status', 'pendente');
+    final data = await query.order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Feedbacks de avaliação dados por um autor (gestor) à equipe.
+  Future<List<Map<String, dynamic>>> listarFeedbacksDadosPor(
+      int autorId) async {
+    final data = await _client
+        .from('avaliacao_feedbacks')
+        .select()
+        .eq('autor_id', autorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  Future<void> recusarSolicitacaoFeedback(int id) async {
+    await _client.from('feedback_solicitacoes').update({
+      'status': 'recusada',
+      'respondido_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  Future<void> marcarSolicitacaoFeedbackAtendida(
+      int id, int feedbackId) async {
+    await _client.from('feedback_solicitacoes').update({
+      'status': 'atendida',
+      'feedback_id': feedbackId,
+      'respondido_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  // ─── Feed: banners RH, aniversário de empresa e pesquisas pendentes ─────────
+  // (espelha os métodos equivalentes do gentepole_admin/api_service.dart)
+
+  /// Banners gerenciados pelo RH para o carrossel do topo da Home/Feed.
+  Future<List<Map<String, dynamic>>> listarBannersHome() async {
+    final res = await _client
+        .from('home_banners')
+        .select()
+        .eq('ativo', true)
+        .order('ordem')
+        .order('criado_em');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Colaboradores que completam anos de empresa no mês (view
+  /// `v_aniversarios_empresa_mes`), com `eh_hoje`, `dia_admissao` e
+  /// `anos_completos`. Não existe ainda modelo dedicado no app — os
+  /// dados são consumidos como Map diretamente pelo card do Feed.
+  Future<List<Map<String, dynamic>>> buscarAniversariosEmpresaMesColab() async {
+    final res = await _client
+        .from('v_aniversarios_empresa_mes')
+        .select()
+        .order('eh_hoje', ascending: false)
+        .order('dia_admissao', ascending: true);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  // ─── Central de notificações (sino) ───────────────────────────────────────────
+  // Espelha o sino do gentepole_admin: cada categoria de alerta é calculada
+  // "ao vivo" a partir das próprias tabelas de negócio (pesquisas pendentes,
+  // mensagens diretas, parabéns sem resposta, feedback, fim de experiência) e
+  // depois filtrada pela tabela `notificacoes_dispensadas`, que guarda só a
+  // marca "o colaborador já clicou nesse alerta" por `colaborador_id + chave`.
+
+  /// Chaves de alertas já dispensados pelo colaborador logado.
+  Future<Set<String>> listarNotificacoesDispensadas() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return {};
+    final res = await _client
+        .from('notificacoes_dispensadas')
+        .select('chave')
+        .eq('colaborador_id', meuId);
+    return (res as List).map((e) => (e as Map)['chave'] as String).toSet();
+  }
+
+  /// Marca um alerta como dispensado (some do sino mesmo que a tarefa em si
+  /// ainda não tenha sido concluída).
+  Future<void> dispensarNotificacao(String chave) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return;
+    await _client.from('notificacoes_dispensadas').upsert(
+      {'colaborador_id': meuId, 'chave': chave},
+      onConflict: 'colaborador_id,chave',
+    );
+  }
+
+  /// Colaboradores perto do fim do período de experiência (90 dias após a
+  /// admissão, a partir de 10 dias antes do limite) — porta fiel de
+  /// `listarColaboradoresFimExperiencia` do gentepole_admin, adaptando ids
+  /// `int` (este app) em vez de `String` (web). Só cobre o auto-check do
+  /// colaborador logado (`colaboradorId`); a variante por `setor` (gestor
+  /// olhando a equipe toda) é aceita mas não é usada pelo sino hoje.
+  Future<List<Map<String, dynamic>>> listarColaboradoresFimExperiencia({
+    int? colaboradorId,
+    String? setor,
+  }) async {
+    var query =
+        _client.from('colaboradores').select('id, nome, setor, data_admissao');
+    if (colaboradorId != null) {
+      query = query.eq('id', colaboradorId);
+    } else if (setor != null) {
+      query = query.eq('setor', setor);
+    } else {
+      return [];
+    }
+    final data = await query;
+    final hoje = DateTime.now();
+    final resultado = <Map<String, dynamic>>[];
+    for (final c in List<Map<String, dynamic>>.from(data as List)) {
+      final admissaoStr = c['data_admissao'] as String?;
+      if (admissaoStr == null) continue;
+      final admissao = DateTime.tryParse(admissaoStr);
+      if (admissao == null) continue;
+      final diasDesdeAdmissao = hoje.difference(admissao).inDays;
+      final diasRestantes = 90 - diasDesdeAdmissao;
+      if (diasRestantes >= 0 && diasRestantes <= 10) {
+        resultado.add({...c, 'dias_restantes': diasRestantes});
+      }
+    }
+    if (resultado.isEmpty) return resultado;
+
+    final respondenteId = colaboradorAtual?.id;
+    final pesquisa = await _client
+        .from('pesquisas')
+        .select('id')
+        .eq('tipo', 'periodo_experiencia')
+        .eq('ativa', true)
+        .order('criado_em', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (pesquisa != null && respondenteId != null) {
+      final pesquisaId = pesquisa['id'] as int;
+      final alvoIds = resultado.map((c) => c['id']).toList();
+      final respondidas = await _client
+          .from('pesquisa_participacoes')
+          .select('colaborador_alvo_id')
+          .eq('pesquisa_id', pesquisaId)
+          .eq('colaborador_id', respondenteId)
+          .inFilter('colaborador_alvo_id', alvoIds);
+      final jaRespondidos = List<Map<String, dynamic>>.from(respondidas)
+          .map((r) => r['colaborador_alvo_id'])
+          .toSet();
+      resultado.removeWhere((c) => jaRespondidos.contains(c['id']));
+    }
+
+    resultado.sort(
+        (a, b) => (a['dias_restantes'] as int).compareTo(b['dias_restantes'] as int));
+    return resultado;
+  }
+
+  /// Mensagens diretas (`feed_posts` com `destinatario` = `@colaborador:<id>`
+  /// ou `@colaborador:<id>|...`) recebidas pelo colaborador logado, de
+  /// outra pessoa (exclui o que ele mesmo postou).
+  Future<List<Map<String, dynamic>>> listarMensagensDiretasRecebidas(
+      {int limite = 20}) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final res = await _client
+        .from('feed_posts')
+        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
+        .or('destinatario.eq.@colaborador:$meuId,destinatario.like.@colaborador:$meuId|%')
+        .order('criado_em', ascending: false)
+        .limit(limite);
+    return List<Map<String, dynamic>>.from(res as List)
+        .where((p) => p['autor_id'] != meuId)
+        .toList();
+  }
+
+  /// Parabéns recebidos pelo colaborador logado que ainda não tiveram
+  /// resposta (`respondido_em IS NULL`).
+  Future<List<Map<String, dynamic>>> listarParabensSemResposta() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final res = await _client
+        .from('parabens')
+        .select('*, remetente:remetente_id(nome)')
+        .eq('destinatario_id', meuId)
+        .filter('respondido_em', 'is', null)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Feedbacks recebidos pelo colaborador logado ainda não lidos — mesma
+  /// fonte de `contarFeedbacksNaoLidos`, mas retornando as linhas (não só a
+  /// contagem) pra alimentar o sino.
+  Future<List<Map<String, dynamic>>> listarFeedbacksNaoLidos() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final res = await _client
+        .from('feedbacks')
+        .select()
+        .eq('destinatario_id', meuId)
+        .eq('lido', false)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Monta a lista unificada do sino de notificações: combina pesquisas
+  /// pendentes, mensagens diretas não vistas, parabéns sem resposta,
+  /// feedback recebido não lido, solicitação de feedback pendente e aviso de
+  /// fim de experiência — filtra o que já foi dispensado e ordena por mais
+  /// recente.
+  Future<List<NotificacaoItem>> listarNotificacoesSino() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+
+    final dispensadas = await listarNotificacoesDispensadas();
+    final itens = <NotificacaoItem>[];
+
+    try {
+      final pesquisas = await buscarPesquisasDisponiveis();
+      for (final p in pesquisas) {
+        if (p['ja_respondeu'] == true) continue;
+        final envioId = p['_envio_id'] ?? p['id'];
+        final chave = 'pesquisa:$envioId';
+        if (dispensadas.contains(chave)) continue;
+        final criadoEm =
+            DateTime.tryParse(p['criado_em'] as String? ?? '') ?? DateTime.now();
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'pesquisa',
+          titulo: 'Pesquisa pendente',
+          subtitulo: (p['titulo'] as String?) ?? 'Você tem uma pesquisa para responder',
+          criadoEm: criadoEm,
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar pesquisas pendentes no sino: $e');
+    }
+
+    try {
+      final mensagens = await listarMensagensDiretasRecebidas();
+      for (final m in mensagens) {
+        final chave = 'post:${m['id']}';
+        if (dispensadas.contains(chave)) continue;
+        final autor = m['autor'] as Map?;
+        final autorNome = autor?['nome'] as String? ?? 'Alguém';
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'mensagem',
+          titulo: 'Mensagem de $autorNome',
+          subtitulo: (m['titulo'] as String?) ??
+              (m['conteudo'] as String?) ??
+              'Você recebeu uma nova mensagem',
+          criadoEm: DateTime.tryParse(m['criado_em'] as String? ?? '') ?? DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar mensagens diretas no sino: $e');
+    }
+
+    try {
+      final parabens = await listarParabensSemResposta();
+      for (final p in parabens) {
+        final chave = 'parabens:${p['id']}';
+        if (dispensadas.contains(chave)) continue;
+        final remetente = p['remetente'] as Map?;
+        final remetenteNome = remetente?['nome'] as String? ?? 'Alguém';
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'parabens',
+          titulo: 'Parabéns de $remetenteNome',
+          subtitulo: (p['mensagem'] as String?) ?? 'Você recebeu um parabéns',
+          criadoEm: DateTime.tryParse(p['criado_em'] as String? ?? '') ?? DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar parabéns no sino: $e');
+    }
+
+    try {
+      final feedbacks = await listarFeedbacksNaoLidos();
+      for (final f in feedbacks) {
+        final chave = 'fb_recebido:${f['id']}';
+        if (dispensadas.contains(chave)) continue;
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'feedback',
+          titulo: 'Novo feedback recebido',
+          subtitulo: (f['mensagem'] as String?) ?? 'Você recebeu um feedback',
+          criadoEm: DateTime.tryParse(f['criado_em'] as String? ?? '') ?? DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar feedbacks no sino: $e');
+    }
+
+    try {
+      final solicitacoes = await listarSolicitacoesFeedbackRecebidas(
+        meuId,
+        apenasPendentes: true,
+      );
+      for (final s in solicitacoes) {
+        final chave = 'fb_sol:${s['id']}';
+        if (dispensadas.contains(chave)) continue;
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'feedback',
+          titulo: 'Solicitação de feedback',
+          subtitulo: (s['mensagem'] as String?) ?? 'Alguém pediu um feedback seu',
+          criadoEm: DateTime.tryParse(s['criado_em'] as String? ?? '') ?? DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar solicitações de feedback no sino: $e');
+    }
+
+    try {
+      final experiencia = await listarColaboradoresFimExperiencia(colaboradorId: meuId);
+      for (final c in experiencia) {
+        final chave = 'experiencia:${c['id']}';
+        if (dispensadas.contains(chave)) continue;
+        final diasRestantes = c['dias_restantes'] as int;
+        itens.add(NotificacaoItem(
+          chave: chave,
+          tipo: 'experiencia',
+          titulo: 'Fim do período de experiência',
+          subtitulo: diasRestantes <= 0
+              ? 'Seu período de experiência está terminando'
+              : 'Faltam $diasRestantes dia(s) para o fim do seu período de experiência',
+          criadoEm: DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar aviso de experiência no sino: $e');
+    }
+
+    itens.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
+    return itens;
+  }
 }
+
+/// Um item do sino de notificações — junta categorias bem diferentes
+/// (pesquisa, mensagem, parabéns, feedback, experiência) num formato só,
+/// suficiente pra desenhar o card e decidir a navegação ao tocar.
+class NotificacaoItem {
+  final String chave;
+  final String tipo; // 'pesquisa' | 'mensagem' | 'parabens' | 'feedback' | 'experiencia'
+  final String titulo;
+  final String subtitulo;
+  final DateTime criadoEm;
+
+  NotificacaoItem({
+    required this.chave,
+    required this.tipo,
+    required this.titulo,
+    required this.subtitulo,
+    required this.criadoEm,
+  });
+}
+

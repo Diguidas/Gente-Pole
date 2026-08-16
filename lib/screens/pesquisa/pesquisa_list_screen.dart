@@ -152,6 +152,7 @@ class _PesquisaListScreenState extends State<PesquisaListScreen> {
     final jaRespondeu = p['ja_respondeu'] as bool? ?? false;
     final dataFim = p['data_fim'] as String?;
     final anonima = p['anonima'] as bool? ?? false;
+    final pedirOptIn = p['pedir_opt_in'] as bool? ?? false;
 
     return GestureDetector(
       onTap: jaRespondeu
@@ -164,6 +165,7 @@ class _PesquisaListScreenState extends State<PesquisaListScreen> {
                     pesquisaId: p['id'] as int,
                     titulo: titulo,
                     anonima: anonima,
+                    pedirOptIn: pedirOptIn,
                   ),
                 ),
               );

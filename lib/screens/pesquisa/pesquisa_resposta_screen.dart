@@ -6,12 +6,14 @@ class PesquisaRespostaScreen extends StatefulWidget {
   final int pesquisaId;
   final String titulo;
   final bool anonima;
+  final bool pedirOptIn;
 
   const PesquisaRespostaScreen({
     super.key,
     required this.pesquisaId,
     required this.titulo,
     required this.anonima,
+    this.pedirOptIn = false,
   });
 
   @override
@@ -25,13 +27,24 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   bool _loading = true;
   bool _enviando = false;
 
-  // Guarda as respostas: pergunta_id → valor (String | int | bool)
+  // Guarda as respostas: pergunta_id → valor (String | int | bool | Set<String> | Map<String,String>)
   final Map<int, dynamic> _respostas = {};
+
+  // ── Gate de opt-in ────────────────────────────────────────────────
+  bool? _optInRespondeu;
+  bool _enviandoRecusa = false;
+  final _motivoRecusaCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _carregarPerguntas();
+  }
+
+  @override
+  void dispose() {
+    _motivoRecusaCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _carregarPerguntas() async {
@@ -44,13 +57,71 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
     }
   }
 
-  Future<void> _enviar() async {
-    // Valida obrigatórias
+  Future<void> _recusar() async {
+    final colaboradorId = _api.colaboradorAtual?.id;
+    if (colaboradorId == null) return;
+    setState(() => _enviandoRecusa = true);
+    final ok = await _api.recusarPesquisaColab(
+      pesquisaId: widget.pesquisaId,
+      colaboradorId: colaboradorId,
+      motivo: _motivoRecusaCtrl.text,
+    );
+    if (!mounted) return;
+    setState(() => _enviandoRecusa = false);
+    if (ok) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Tudo bem, obrigado pelo retorno!',
+            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+          ),
+          backgroundColor: AppColors.magenta,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Não foi possível registrar. Tente novamente.',
+            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  bool _validarObrigatorias() {
     for (final p in _perguntas) {
       final obrigatoria = p['obrigatoria'] as bool? ?? true;
+      if (!obrigatoria) continue;
       final id = p['id'] as int;
-      if (obrigatoria && !_respostas.containsKey(id)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      final tipo = p['tipo'] as String? ?? 'texto_livre';
+      final valor = _respostas[id];
+
+      if (tipo == 'escala_matriz') {
+        final linhas = (p['escala_linhas'] as List?)?.cast<String>() ?? [];
+        final mapa = (valor as Map?) ?? {};
+        if (mapa.length < linhas.length) return false;
+        continue;
+      }
+
+      if (valor == null ||
+          (valor is String && valor.trim().isEmpty) ||
+          (valor is Iterable && valor.isEmpty)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _enviar() async {
+    // Valida obrigatórias
+    if (!_validarObrigatorias()) {
+      ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Responda todas as perguntas obrigatórias.',
@@ -60,8 +131,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        return;
-      }
+      return;
     }
 
     setState(() => _enviando = true);
@@ -176,6 +246,8 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
                               color: AppColors.magenta,
                             ),
                           )
+                        : (widget.pedirOptIn && _optInRespondeu != true)
+                        ? _buildOptInGate()
                         : Column(
                             children: [
                               Expanded(
@@ -234,6 +306,119 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
     );
   }
 
+  // ── Gate de opt-in (aceitar/recusar responder) ────────────────────
+  Widget _buildOptInGate() {
+    if (_optInRespondeu == false) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Tudo bem! Pode nos contar o motivo?',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.labelSecao,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _motivoRecusaCtrl,
+              maxLines: 3,
+              style: AppTextStyles.corpoNormal,
+              decoration: InputDecoration(
+                hintText: 'Por que você não quer responder agora?',
+                hintStyle: AppTextStyles.corpoCinza,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 54,
+              child: ElevatedButton(
+                onPressed: _enviandoRecusa ? null : _recusar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.magenta,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: _enviandoRecusa
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text('Enviar e encerrar',
+                        style: AppTextStyles.botaoPrimario),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Quer responder essa pesquisa?',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.labelSecao,
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _optInRespondeu = true),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: Colors.green),
+                  ),
+                  child: Text(
+                    'Sim',
+                    style: AppTextStyles.corpoNormal.copyWith(
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() => _optInRespondeu = false),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                  child: Text(
+                    'Não',
+                    style: AppTextStyles.corpoNormal.copyWith(
+                      color: Colors.red[700],
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _cardPergunta(Map<String, dynamic> p, int index) {
     final id = p['id'] as int;
     final texto = p['texto'] as String? ?? '';
@@ -242,6 +427,8 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
     final opcoes = (p['opcoes'] as List?)?.cast<String>() ?? [];
     final escalaMin = p['escala_min'] as int? ?? 1;
     final escalaMax = p['escala_max'] as int? ?? 5;
+    final escalaLinhas = (p['escala_linhas'] as List?)?.cast<String>() ?? [];
+    final escalaColunas = (p['escala_colunas'] as List?)?.cast<String>() ?? [];
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -295,8 +482,17 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
 
           // Resposta conforme o tipo
           if (tipo == 'texto' || tipo == 'texto_livre') _respostaTexto(id),
-          if (tipo == 'multipla_escolha' || tipo == 'checkbox') _respostaMultipla(id, opcoes),
+          if (tipo == 'multipla_escolha') _respostaMultipla(id, opcoes),
+          if (tipo == 'checkbox') _respostaCheckbox(id, opcoes),
           if (tipo == 'escala') _respostaEscala(id, escalaMin, escalaMax),
+          if (tipo == 'escala_matriz')
+            _respostaEscalaMatriz(
+              id,
+              escalaMin,
+              escalaMax,
+              escalaLinhas,
+              escalaColunas,
+            ),
           if (tipo == 'sim_nao') _respostaSimNao(id),
         ],
       ),
@@ -362,6 +558,118 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  // ── Checkbox (múltipla escolha real) ──────────────────────────────
+  Widget _respostaCheckbox(int id, List<String> opcoes) {
+    final selecionadas = (_respostas[id] as Set<String>?) ?? <String>{};
+    _respostas[id] ??= selecionadas;
+    return Column(
+      children: opcoes.map((op) {
+        final selecionado = selecionadas.contains(op);
+        return GestureDetector(
+          onTap: () => setState(() {
+            if (selecionado) {
+              selecionadas.remove(op);
+            } else {
+              selecionadas.add(op);
+            }
+            _respostas[id] = selecionadas;
+          }),
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: selecionado
+                  ? AppColors.magenta.withOpacity(0.08)
+                  : const Color(0xFFF8F9FC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selecionado ? AppColors.magenta : Colors.grey[300]!,
+                width: selecionado ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: selecionado,
+                  activeColor: AppColors.magenta,
+                  onChanged: (v) => setState(() {
+                    if (v == true) {
+                      selecionadas.add(op);
+                    } else {
+                      selecionadas.remove(op);
+                    }
+                    _respostas[id] = selecionadas;
+                  }),
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(op, style: AppTextStyles.corpoNormal),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ── Escala matriz (linhas × colunas) ──────────────────────────────
+  Widget _respostaEscalaMatriz(
+    int id,
+    int min,
+    int max,
+    List<String> linhas,
+    List<String> colunas,
+  ) {
+    final niveis = List.generate(max - min + 1, (i) => min + i);
+    final valores = (_respostas[id] as Map<String, String>?) ?? <String, String>{};
+    _respostas[id] ??= valores;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columnSpacing: 18,
+        headingRowHeight: 44,
+        columns: [
+          const DataColumn(label: SizedBox.shrink()),
+          ...List.generate(niveis.length, (i) {
+            final legenda = i < colunas.length ? colunas[i] : '';
+            return DataColumn(
+              label: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${niveis[i]}', style: AppTextStyles.corpoMenor),
+                  if (legenda.isNotEmpty)
+                    Text(
+                      legenda,
+                      style: AppTextStyles.corpoMinimo
+                          .copyWith(color: AppColors.cinzaTexto),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ],
+        rows: linhas.map((linha) {
+          return DataRow(cells: [
+            DataCell(Text(
+              linha,
+              style: AppTextStyles.corpoNormal
+                  .copyWith(fontWeight: FontWeight.w500),
+            )),
+            ...niveis.map((n) => DataCell(Radio<String>(
+                  value: '$n',
+                  groupValue: valores[linha],
+                  activeColor: AppColors.magenta,
+                  onChanged: (v) => setState(() => valores[linha] = v!),
+                ))),
+          ]);
+        }).toList(),
+      ),
     );
   }
 

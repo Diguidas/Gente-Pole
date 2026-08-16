@@ -9,7 +9,12 @@ import 'package:gentepole/screens/conexoes/conexoes_do_bem_screen.dart';
 import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
 import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
+import 'package:gentepole/screens/pdi/pdi_screen.dart';
+import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
+import 'package:gentepole/screens/avaliacao/avaliar_colegas_screen.dart';
+import 'package:gentepole/screens/fisioterapia/fisioterapia_screen.dart';
 import 'plantao_psicologico_screen.dart';
+import 'feedback/elogiar_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
@@ -27,7 +32,6 @@ class _ServicosScreenState extends State<ServicosScreen> {
   bool _ehGestor = false;
   bool _ehIntegracao = false;
   bool _loadingPerfis = true;
-  bool _nutricionistaAtivo = false;
 
   @override
   void initState() {
@@ -39,13 +43,11 @@ class _ServicosScreenState extends State<ServicosScreen> {
     final resultados = await Future.wait([
       _api.verificarSeEhGestor(),
       _api.verificarSeEhIntegracao(),
-      _api.buscarDiasDisponiveisNutricionista(),
     ]);
     if (mounted) {
       setState(() {
         _ehGestor = resultados[0] as bool;
         _ehIntegracao = resultados[1] as bool;
-        _nutricionistaAtivo = (resultados[2] as List).isNotEmpty;
         _loadingPerfis = false;
       });
     }
@@ -248,6 +250,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           ),
                           const SizedBox(height: 14),
 
+                          _botaoServico(
+                            context,
+                            icone: Icons.favorite_rounded,
+                            titulo: 'Elogiar',
+                            subtitulo: 'Reconheça e seja reconhecido por colegas',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ElogiarScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
                           // ── Cardápio ──────────────────────────────────────
                           _botaoServico(
                             context,
@@ -303,29 +321,31 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             context,
                             icone: Icons.local_dining_outlined,
                             titulo: 'Nutricionista',
-                            subtitulo: _nutricionistaAtivo
-                                ? 'Agende uma consulta nutricional'
-                                : 'Sem datas disponíveis no momento',
+                            subtitulo: 'Agende uma consulta nutricional',
                             cor: const Color(0xFF10B981),
-                            emBreve: !_nutricionistaAtivo,
-                            onTap: _nutricionistaAtivo
-                                ? () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const NutricionistaScreen(),
-                                    ),
-                                  )
-                                : () => ScaffoldMessenger.of(context)
-                                      .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Sem datas disponíveis no momento.',
-                                          ),
-                                          backgroundColor: Color(0xFF10B981),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      ),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const NutricionistaScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.accessibility_new_rounded,
+                            titulo: 'Fisioterapia',
+                            subtitulo: 'Acompanhe suas sessões e exercícios',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const FisioterapiaScreen(),
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 14),
 
@@ -400,8 +420,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           _botaoServico(
                             context,
                             icone: Icons.record_voice_over_outlined,
-                            titulo: 'Ouvidoria',
-                            subtitulo: 'Relate ocorrências e dê sugestões',
+                            titulo: 'Fale com a Gente',
+                            subtitulo: 'Relate ocorrências, sugestões ou denúncias',
                             cor: const Color(0xFF64748B),
                             emBreve: false,
                             onTap: () => Navigator.push(
@@ -409,6 +429,56 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               MaterialPageRoute(
                                 builder: (_) => const OuvidoriaScreen(),
                               ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // ── Meu Desenvolvimento ───────────────────────────
+                          _sectionLabel(
+                            'Meu Desenvolvimento',
+                            const Color(0xFF6366F1),
+                          ),
+                          const SizedBox(height: 10),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.flag_outlined,
+                            titulo: 'Meu PDI',
+                            subtitulo: 'Acompanhe seu plano de desenvolvimento',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const PdiScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.assessment_outlined,
+                            titulo: 'Minha Avaliação',
+                            subtitulo: 'Responda sua autoavaliação de desempenho',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AvaliacaoScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.groups_outlined,
+                            titulo: 'Avaliar Colegas',
+                            subtitulo: 'Avaliações de ciclo 360 pendentes',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AvaliarColegasScreen()),
                             ),
                           ),
 

@@ -4,8 +4,11 @@ import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/core/app_theme.dart';
+import 'package:gentepole/core/nivel_tempo_casa.dart';
+import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/screens/login_screen.dart';
+import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -36,6 +39,17 @@ class _FeedScreenState extends State<FeedScreen> {
   // Exame periódico
   Map<String, dynamic>? _exameAgendado;
 
+  // Banners RH (carrossel do topo)
+  List<Map<String, dynamic>> _banners = [];
+
+  // Aniversariantes / aniversário de empresa do mês (containers próprios,
+  // separados do feed — ver _carregarFeed/isAniversario)
+  List<AniversarianteModel> _aniversariantes = [];
+  List<Map<String, dynamic>> _aniversariosEmpresa = [];
+
+  // Pesquisas ainda não respondidas pelo colaborador
+  List<Map<String, dynamic>> _pesquisasPendentes = [];
+
   RealtimeChannel? _statusChannel;
 
   @override
@@ -44,6 +58,9 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarFeed();
     _carregarHumor();
     _carregarExame();
+    _carregarBanners();
+    _carregarAniversarios();
+    _carregarPesquisasPendentes();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
   }
@@ -105,6 +122,45 @@ class _FeedScreenState extends State<FeedScreen> {
       setState(() => _exameAgendado = e);
     } catch (_) {}
   }
+
+  Future<void> _carregarBanners() async {
+    try {
+      final b = await _api.listarBannersHome();
+      if (!mounted) return;
+      setState(() => _banners = b);
+    } catch (_) {}
+  }
+
+  Future<void> _carregarAniversarios() async {
+    try {
+      final results = await Future.wait([
+        _api.buscarAniversariantesMes(),
+        _api.buscarAniversariosEmpresaMesColab(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _aniversariantes = results[0] as List<AniversarianteModel>;
+        _aniversariosEmpresa = results[1] as List<Map<String, dynamic>>;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _carregarPesquisasPendentes() async {
+    try {
+      final p = await _api.buscarPesquisasDisponiveis();
+      if (!mounted) return;
+      setState(() {
+        _pesquisasPendentes =
+            p.where((e) => e['ja_respondeu'] != true).toList();
+      });
+    } catch (_) {}
+  }
+
+  List<AniversarianteModel> get _aniversariantesHoje =>
+      _aniversariantes.where((a) => a.ehHoje).toList();
+
+  List<Map<String, dynamic>> get _aniversariosEmpresaHoje =>
+      _aniversariosEmpresa.where((a) => a['eh_hoje'] == true).toList();
 
   Future<void> _registrarHumor(int nivel) async {
     const emojis = ['😞', '😕', '😐', '🙂', '😄'];
@@ -356,6 +412,9 @@ class _FeedScreenState extends State<FeedScreen> {
                               await _carregarFeed(reiniciar: true);
                               await _carregarHumor();
                               await _carregarExame();
+                              await _carregarBanners();
+                              await _carregarAniversarios();
+                              await _carregarPesquisasPendentes();
                             },
                             child: Builder(builder: (ctx) {
                               final meuId = _api.colaboradorAtual?.id;
@@ -367,46 +426,34 @@ class _FeedScreenState extends State<FeedScreen> {
                                           p.autorId == meuId &&
                                           !p.isAprovado)
                                       .toList();
-                              // Feed principal: aprovados + qualquer post de outros
+                              // Feed principal: aprovados + qualquer post de outros —
+                              // exceto posts de aniversário (vida/empresa), que agora
+                              // têm containers próprios no topo e não devem mais
+                              // poluir o feed (mesma regra do _filtrarAprovados do
+                              // gentepole_admin).
                               final feedPrincipal = _posts
                                   .where((p) =>
-                                      p.isAprovado ||
-                                      (meuId != null && p.autorId != meuId))
+                                      !p.isAniversario &&
+                                      (p.isAprovado ||
+                                          (meuId != null && p.autorId != meuId)))
                                   .toList();
 
                               final temPendentes = meusPendentes.isNotEmpty;
-                              final extraItems = (_exameAgendado != null ? 1 : 0) +
-                                  (temPendentes ? 1 : 0);
+                              final fixos = _buildItensFixos(
+                                meusPendentes: meusPendentes,
+                                temPendentes: temPendentes,
+                              );
 
                               return ListView.builder(
                                 controller: _scrollCtrl,
                                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-                                itemCount: feedPrincipal.length +
-                                    2 + // humor + composer
-                                    extraItems +
+                                itemCount: fixos.length +
+                                    (feedPrincipal.isEmpty ? 1 : feedPrincipal.length) +
                                     (_carregandoMais ? 1 : 0),
                                 itemBuilder: (_, i) {
-                                  // Item 0: humor card
-                                  if (i == 0) return _buildHumorCard();
-                                  // Item 1: exame card (se houver)
-                                  if (i == 1 && _exameAgendado != null) {
-                                    return _buildExameCard(_exameAgendado!);
-                                  }
-                                  final exameOff = _exameAgendado != null ? 1 : 0;
-                                  // Composer
-                                  if (i == 1 + exameOff) {
-                                    return _InlineComposer(
-                                      api: _api,
-                                      onPublicado: () =>
-                                          _carregarFeed(reiniciar: true),
-                                    );
-                                  }
-                                  // Seção de pendentes/rejeitados
-                                  if (temPendentes && i == 2 + exameOff) {
-                                    return _buildPendentesSection(meusPendentes);
-                                  }
-                                  final pendOff = temPendentes ? 1 : 0;
-                                  final postIdx = i - 2 - exameOff - pendOff;
+                                  if (i < fixos.length) return fixos[i];
+                                  final postIdx = i - fixos.length;
+                                  if (feedPrincipal.isEmpty) return _vazioWidget();
                                   if (postIdx == feedPrincipal.length) {
                                     return const Padding(
                                       padding: EdgeInsets.all(24),
@@ -416,7 +463,6 @@ class _FeedScreenState extends State<FeedScreen> {
                                       ),
                                     );
                                   }
-                                  if (feedPrincipal.isEmpty) return _vazioWidget();
                                   return _PostCard(
                                     post: feedPrincipal[postIdx],
                                     meuId: meuId,
@@ -624,6 +670,157 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Itens fixos do topo do feed ──────────────────────────────────────────────
+  // Ordem (espelha gentepole_admin/dashboard_screen.dart): banner RH →
+  // aniversariantes de hoje → aniversário de empresa hoje → humor →
+  // pesquisas pendentes → exame → composer → pendentes/rejeitados.
+
+  List<Widget> _buildItensFixos({
+    required List<FeedPostModel> meusPendentes,
+    required bool temPendentes,
+  }) {
+    return [
+      if (_banners.isNotEmpty) _buildBannerHome(),
+      if (_aniversariantesHoje.isNotEmpty) _buildAniversariantesCard(),
+      if (_aniversariosEmpresaHoje.isNotEmpty) _buildAniversarioEmpresaCard(),
+      _buildHumorCard(),
+      if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
+      if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
+      _InlineComposer(
+        api: _api,
+        onPublicado: () => _carregarFeed(reiniciar: true),
+      ),
+      if (temPendentes) _buildPendentesSection(meusPendentes),
+    ];
+  }
+
+  // ── Banner RH (carrossel) ─────────────────────────────────────────────────────
+
+  Widget _buildBannerHome() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      // Proporção da imagem cadastrada no RH (1128x191) — evita cortar ou
+      // distorcer o banner independente da largura da tela.
+      child: AspectRatio(
+        aspectRatio: 1128 / 191,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: _banners.length == 1
+              ? Image.network(_banners.first['url'] as String,
+                  fit: BoxFit.cover, width: double.infinity)
+              : _BannerCarrossel(banners: _banners),
+        ),
+      ),
+    );
+  }
+
+  // ── Aniversariantes / aniversário de empresa de hoje ─────────────────────────
+
+  Widget _buildAniversariantesCard() {
+    final hoje = _aniversariantesHoje;
+    return _CardAniversarioMes(
+      titulo: '🎂 Aniversariantes de hoje',
+      itens: hoje
+          .map((a) => _LinhaAniversario(
+                nome: a.colaborador.nome,
+                setor: a.colaborador.setor,
+                fotoUrl: a.colaborador.fotoUrl,
+                cor: AppColors.magenta,
+                mensagem: 'Feliz aniversário! 🎉',
+              ))
+          .toList(),
+    );
+  }
+
+  Widget _buildAniversarioEmpresaCard() {
+    final hoje = _aniversariosEmpresaHoje;
+    return _CardAniversarioMes(
+      titulo: '🏆 Aniversário de empresa hoje',
+      itens: hoje.map((a) {
+        final anos = (a['anos_completos'] as num?)?.toInt() ?? 0;
+        final nivel =
+            NivelTempoCasa.deCategoria(NivelTempoCasa.categoriaDeAnos(anos));
+        return _LinhaAniversario(
+          nome: a['nome'] as String? ?? '—',
+          setor: a['setor'] as String?,
+          fotoUrl: a['foto_url'] as String?,
+          cor: nivel?.cor ?? AppColors.laranja,
+          mensagem: '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa 🎉',
+          nivel: nivel,
+        );
+      }).toList(),
+    );
+  }
+
+  // ── Pesquisas pendentes (nudge) ───────────────────────────────────────────────
+
+  Widget _buildPesquisasPendentesCard() {
+    final qtd = _pesquisasPendentes.length;
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PesquisaListScreen()),
+        );
+        _carregarPesquisasPendentes();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.magenta.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.magenta.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.magenta.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.poll_outlined, color: AppColors.magenta),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    qtd == 1
+                        ? 'Você tem 1 pesquisa para responder'
+                        : 'Você tem $qtd pesquisas para responder',
+                    style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Sua opinião ajuda a Pole a melhorar',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.cinzaTexto),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.magenta),
+          ],
+        ),
       ),
     );
   }
@@ -1827,6 +2024,237 @@ class _PostCard extends StatelessWidget {
               color: Colors.white,
               fontWeight: FontWeight.w700,
               fontSize: 13)),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// _BannerCarrossel — carrossel de banners RH do topo do feed
+// (espelha _BannerCarrossel do gentepole_admin/dashboard_screen.dart)
+// ════════════════════════════════════════════════════════════════════════════════
+
+class _BannerCarrossel extends StatefulWidget {
+  final List<Map<String, dynamic>> banners;
+  const _BannerCarrossel({required this.banners});
+
+  @override
+  State<_BannerCarrossel> createState() => _BannerCarrosselState();
+}
+
+class _BannerCarrosselState extends State<_BannerCarrossel> {
+  final _controller = PageController();
+  int _pagina = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: widget.banners.length,
+          onPageChanged: (i) => setState(() => _pagina = i),
+          itemBuilder: (_, i) => Image.network(
+              widget.banners[i]['url'] as String,
+              fit: BoxFit.cover,
+              width: double.infinity),
+        ),
+        Positioned(
+          bottom: 10,
+          left: 0,
+          right: 0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.banners.length, (i) {
+              final ativo = i == _pagina;
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: ativo ? 8 : 6,
+                height: ativo ? 8 : 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(ativo ? 0.95 : 0.5),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// _CardAniversarioMes / _LinhaAniversario — containers de aniversariantes e
+// aniversário de empresa do dia (espelham os equivalentes do
+// gentepole_admin/dashboard_screen.dart)
+// ════════════════════════════════════════════════════════════════════════════════
+
+class _CardAniversarioMes extends StatefulWidget {
+  final String titulo;
+  final List<Widget> itens;
+
+  const _CardAniversarioMes({required this.titulo, required this.itens});
+
+  @override
+  State<_CardAniversarioMes> createState() => _CardAniversarioMesState();
+}
+
+class _CardAniversarioMesState extends State<_CardAniversarioMes> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(widget.titulo,
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.dark)),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 128,
+            child: Scrollbar(
+              controller: _controller,
+              thumbVisibility: true,
+              child: ListView.separated(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                itemCount: widget.itens.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, i) => widget.itens[i],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LinhaAniversario extends StatelessWidget {
+  final String nome;
+  final String? setor;
+  final String? fotoUrl;
+  final Color cor;
+  final String mensagem;
+  final NivelTempoCasa? nivel;
+
+  const _LinhaAniversario({
+    required this.nome,
+    required this.setor,
+    required this.fotoUrl,
+    required this.cor,
+    required this.mensagem,
+    this.nivel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iniciais = nome.trim().isNotEmpty
+        ? nome.trim().split(' ').take(2).map((p) => p[0]).join().toUpperCase()
+        : '?';
+
+    return Container(
+      width: 250,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cor.withOpacity(0.15)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: cor.withOpacity(0.15),
+            backgroundImage: (fotoUrl != null && fotoUrl!.isNotEmpty)
+                ? CachedNetworkImageProvider(fotoUrl!)
+                : null,
+            child: (fotoUrl == null || fotoUrl!.isEmpty)
+                ? Text(iniciais,
+                    style:
+                        GoogleFonts.poppins(fontWeight: FontWeight.w700, color: cor))
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(nome,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark)),
+                if (setor != null && setor!.isNotEmpty && setor != '—')
+                  Text(setor!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                          fontSize: 11, color: AppColors.cinzaTexto)),
+                const SizedBox(height: 4),
+                Text(mensagem,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                        fontSize: 11.5, fontWeight: FontWeight.w600, color: cor)),
+                if (nivel != null) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: nivel!.cor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: nivel!.cor.withOpacity(0.4)),
+                    ),
+                    child: Text('${nivel!.emoji} ${nivel!.label}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: nivel!.cor)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

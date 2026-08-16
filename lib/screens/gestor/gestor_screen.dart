@@ -4,6 +4,8 @@ import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import 'vagas_gestor_screen.dart';
 import 'minha_equipe_screen.dart';
+import 'avaliar_equipe_screen.dart';
+import 'feedback_gestor_screen.dart';
 
 class GestorScreen extends StatelessWidget {
   const GestorScreen({super.key});
@@ -149,6 +151,38 @@ class GestorScreen extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const MinhaEquipeScreen(),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Botão: Avaliar Equipe ─────────────────────
+                        _BotaoGestor(
+                          icone: Icons.leaderboard_outlined,
+                          titulo: 'Avaliar Equipe',
+                          subtitulo: 'Avaliação 9-box dos colaboradores do setor',
+                          cor: AppColors.laranja,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AvaliarEquipeScreen(),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Botão: Feedback ───────────────────────────
+                        _BotaoGestor(
+                          icone: Icons.rate_review_outlined,
+                          titulo: 'Feedback',
+                          subtitulo: 'Dê feedback à equipe e responda pedidos',
+                          cor: const Color(0xFFE91E8C),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const FeedbackGestorScreen(),
                             ),
                           ),
                         ),

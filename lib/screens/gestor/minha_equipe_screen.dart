@@ -14,11 +14,31 @@ class MinhaEquipeScreen extends StatefulWidget {
 class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   final _api = ApiService();
   late Future<List<ColaboradorModel>> _futureEquipe;
+  final _buscaCtrl = TextEditingController();
+  String _busca = '';
 
   @override
   void initState() {
     super.initState();
     _futureEquipe = _api.buscarMinhaEquipe();
+    _buscaCtrl.addListener(() => setState(() => _busca = _buscaCtrl.text));
+  }
+
+  @override
+  void dispose() {
+    _buscaCtrl.dispose();
+    super.dispose();
+  }
+
+  List<ColaboradorModel> _filtrar(List<ColaboradorModel> equipe) {
+    final q = _busca.trim().toLowerCase();
+    if (q.isEmpty) return equipe;
+    return equipe.where((c) {
+      final nome = c.nome.toLowerCase();
+      final cargo = (c.cargo ?? '').toLowerCase();
+      final matricula = c.matricula.toLowerCase();
+      return nome.contains(q) || cargo.contains(q) || matricula.contains(q);
+    }).toList();
   }
 
   @override
@@ -90,9 +110,10 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                           );
                         }
 
-                        final equipe = snap.data ?? [];
+                        final equipeCompleta = snap.data ?? [];
+                        final equipe = _filtrar(equipeCompleta);
 
-                        if (equipe.isEmpty) {
+                        if (equipeCompleta.isEmpty) {
                           return Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -131,6 +152,37 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                             padding:
                                 const EdgeInsets.fromLTRB(16, 20, 16, 32),
                             children: [
+                              TextField(
+                                controller: _buscaCtrl,
+                                style: GoogleFonts.poppins(fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'Buscar por nome, cargo ou matrícula...',
+                                  hintStyle: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      color: AppColors.cinzaTexto),
+                                  prefixIcon: const Icon(Icons.search_rounded,
+                                      size: 20),
+                                  suffixIcon: _busca.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          icon: const Icon(
+                                              Icons.close_rounded,
+                                              size: 18),
+                                          onPressed: () =>
+                                              _buscaCtrl.clear(),
+                                        ),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
                               Text(
                                 '${equipe.length} colaborador${equipe.length == 1 ? '' : 'es'}',
                                 style: GoogleFonts.poppins(
@@ -140,7 +192,19 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              ...equipe.map((c) => _cardColaborador(c)),
+                              if (equipe.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 24),
+                                  child: Center(
+                                    child: Text(
+                                      'Nenhum colaborador encontrado.',
+                                      style: GoogleFonts.poppins(
+                                          color: AppColors.cinzaTexto),
+                                    ),
+                                  ),
+                                )
+                              else
+                                ...equipe.map((c) => _cardColaborador(c)),
                             ],
                           ),
                         );

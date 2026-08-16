@@ -12,6 +12,7 @@ import 'pesquisa/pesquisa_list_screen.dart';
 import 'servicos_screen.dart';
 import 'atalhos/atalhos_sheet.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/notificacoes_sino.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -98,12 +99,21 @@ class _MainLayoutState extends State<MainLayout> {
     final colaboradorId = ApiService().colaboradorAtual?.id;
     return Scaffold(
       body: Stack(
-        children: List.generate(4, (index) {
-          return Offstage(
-            offstage: _selectedIndex != index,
-            child: _buildPage(index),
-          );
-        }),
+        children: [
+          ...List.generate(4, (index) {
+            return Offstage(
+              offstage: _selectedIndex != index,
+              child: _buildPage(index),
+            );
+          }),
+          // Flutua perto da barra inferior (não no topo) pra nunca ficar por
+          // cima dos ícones de cabeçalho de cada aba (atualizar, sair etc).
+          const Positioned(
+            right: 16,
+            bottom: 16,
+            child: NotificacoesSino(),
+          ),
+        ],
       ),
       // Polebot desativado temporariamente.
       // floatingActionButton: PolebotLauncherButton(

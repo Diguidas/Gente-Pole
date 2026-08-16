@@ -22,6 +22,7 @@ class VagaModel {
   final String? centroCusto;
   final String? liderancaDiretaMatricula;
   final String? filial;
+  final int? colaboradorSubstituidoId;
 
   VagaModel({
     required this.id,
@@ -47,6 +48,7 @@ class VagaModel {
     this.centroCusto,
     this.liderancaDiretaMatricula,
     this.filial,
+    this.colaboradorSubstituidoId,
   });
 
   factory VagaModel.fromJson(Map<String, dynamic> json) {
@@ -70,6 +72,10 @@ class VagaModel {
       horarioEntrada: json['horario_entrada'] as String?,
       horarioSaida: json['horario_saida'] as String?,
       docAprovacaoUrl: json['doc_aprovacao_url'] as String?,
+      centroCusto: json['centro_custo'] as String?,
+      liderancaDiretaMatricula: json['lideranca_direta_matricula'] as String?,
+      filial: json['filial'] as String?,
+      colaboradorSubstituidoId: json['colaborador_substituido_id'] as int?,
       createdAt: DateTime.parse(
         (json['created_at'] ?? json['criado_em']) as String,
       ),
@@ -99,6 +105,8 @@ class VagaModel {
       if (centroCusto != null) 'centro_custo': centroCusto,
       if (liderancaDiretaMatricula != null) 'lideranca_direta_matricula': liderancaDiretaMatricula,
       if (filial != null) 'filial': filial,
+      if (colaboradorSubstituidoId != null)
+        'colaborador_substituido_id': colaboradorSubstituidoId,
     };
   }
 }

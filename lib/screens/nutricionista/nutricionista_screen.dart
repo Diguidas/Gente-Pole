@@ -413,17 +413,13 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
             const SizedBox(height: 20),
           ],
 
+          if (_diasDisponiveis.isEmpty)
+            _buildSemDiasDisponiveis()
+          else ...[
           // Seleção de datas
           _buildSectionLabel('Escolha um dia'),
           const SizedBox(height: 12),
-          if (_diasDisponiveis.isEmpty)
-            Text(
-              'Nenhum dia disponível no momento.',
-              style: GoogleFonts.poppins(
-                  color: Colors.grey.shade500, fontSize: 13),
-            )
-          else
-            SizedBox(
+          SizedBox(
               height: 72,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
@@ -551,6 +547,31 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
           _buildSectionLabel('Agendamentos do dia'),
           const SizedBox(height: 12),
           _buildListaAgendados(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSemDiasDisponiveis() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.event_busy_rounded, color: Colors.grey.shade400, size: 36),
+          const SizedBox(height: 12),
+          Text(
+            'Nenhum dia disponível para nutricionista no momento.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+                color: Colors.grey.shade500, fontSize: 13),
+          ),
         ],
       ),
     );

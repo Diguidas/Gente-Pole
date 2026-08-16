@@ -1,8 +1,14 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+
+const _tiposOuvidoria = {
+  'reclamacao': 'Reclamação',
+  'sugestao': 'Sugestão',
+  'denuncia': 'Denúncia',
+};
 
 class OuvidoriaScreen extends StatefulWidget {
   const OuvidoriaScreen({super.key});
@@ -15,9 +21,12 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
   final _api = ApiService();
   final _formKey = GlobalKey<FormState>();
 
+  final _assuntoCtrl = TextEditingController();
   final _ocorridoCtrl = TextEditingController();
-  final _telefoneCtrl = TextEditingController();
-  final _sugestaoCtrl = TextEditingController();
+
+  String? _tipo;
+  bool _anonimo = false;
+  PlatformFile? _anexo;
 
   bool _salvando = false;
 
@@ -25,21 +34,45 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
 
   @override
   void dispose() {
+    _assuntoCtrl.dispose();
     _ocorridoCtrl.dispose();
-    _telefoneCtrl.dispose();
-    _sugestaoCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _escolherAnexo() async {
+    final resultado = await FilePicker.platform.pickFiles(withData: true);
+    if (!mounted) return;
+    if (resultado != null && resultado.files.isNotEmpty) {
+      setState(() => _anexo = resultado.files.first);
+    }
   }
 
   Future<void> _enviar() async {
     final formValido = _formKey.currentState!.validate();
     if (!formValido) return;
+    if (_tipo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Selecione o tipo de ouvidoria.',
+              style: GoogleFonts.poppins()),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => _salvando = true);
-    final ok = await _api.salvarOuvidoria(
-      ocorrido: _ocorridoCtrl.text.trim(),
-      telefone: _telefoneCtrl.text.trim(),
-      sugestao: _sugestaoCtrl.text.trim(),
+    final ok = await _api.enviarOuvidoriaColab(
+      assunto: _assuntoCtrl.text.trim(),
+      tipo: _tipo!,
+      texto: _ocorridoCtrl.text.trim(),
+      anonimo: _anonimo,
+      anexoBytes: _anexo?.bytes,
+      anexoNomeArquivo: _anexo?.name,
     );
     if (!mounted) return;
     setState(() => _salvando = false);
@@ -57,9 +90,13 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
           ),
         ),
       );
+      _assuntoCtrl.clear();
       _ocorridoCtrl.clear();
-      _telefoneCtrl.clear();
-      _sugestaoCtrl.clear();
+      setState(() {
+        _tipo = null;
+        _anonimo = false;
+        _anexo = null;
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -124,7 +161,7 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Ouvidoria', style: AppTextStyles.tituloGrande),
+                Text('Fale com a Gente', style: AppTextStyles.tituloGrande),
                 Text('Fale com a gente',
                     style: AppTextStyles.corpoBranco
                         .copyWith(color: AppColors.cinzaTexto)),
@@ -174,6 +211,48 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
                             ),
                             const SizedBox(height: 24),
 
+                            // Assunto
+                            _label('Assunto'),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _assuntoCtrl,
+                              textCapitalization: TextCapitalization.sentences,
+                              decoration: _inputDec(
+                                hint: 'Resuma em poucas palavras...',
+                                icone: Icons.short_text_rounded,
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'Informe o assunto';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Tipo de ouvidoria
+                            _label('Tipo de ouvidoria'),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              initialValue: _tipo,
+                              onChanged: (v) => setState(() => _tipo = v),
+                              decoration: _inputDec(
+                                hint: 'Selecione...',
+                                icone: Icons.category_outlined,
+                              ),
+                              items: _tiposOuvidoria.entries
+                                  .map((e) => DropdownMenuItem(
+                                        value: e.key,
+                                        child: Text(e.value,
+                                            style: GoogleFonts.poppins(
+                                                fontSize: 14)),
+                                      ))
+                                  .toList(),
+                              validator: (v) =>
+                                  v == null ? 'Selecione o tipo' : null,
+                            ),
+                            const SizedBox(height: 20),
+
                             // O que ocorreu
                             _label('O que ocorreu?'),
                             const SizedBox(height: 8),
@@ -195,40 +274,100 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
                             ),
                             const SizedBox(height: 20),
 
-                            // Telefone
-                            _label('Telefone para contato'),
+                            // Anexo (opcional)
+                            _label('Anexo (opcional)'),
                             const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _telefoneCtrl,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(11),
-                              ],
-                              decoration: _inputDec(
-                                hint: '(85) 99999-9999',
-                                icone: Icons.phone_outlined,
+                            InkWell(
+                              onTap: _escolherAnexo,
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                      color: Colors.grey.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.attach_file_rounded,
+                                      size: 20,
+                                      color: _anexo == null
+                                          ? Colors.grey.shade400
+                                          : _cor,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _anexo?.name ?? 'Anexar arquivo',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          color: _anexo == null
+                                              ? Colors.grey.shade400
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_anexo != null)
+                                      InkWell(
+                                        onTap: () =>
+                                            setState(() => _anexo = null),
+                                        child: Icon(Icons.close_rounded,
+                                            size: 18,
+                                            color: Colors.grey.shade400),
+                                      ),
+                                  ],
+                                ),
                               ),
-                              validator: (v) {
-                                if (v == null || v.trim().length < 10) {
-                                  return 'Informe um telefone válido';
-                                }
-                                return null;
-                              },
                             ),
                             const SizedBox(height: 20),
 
-                            // Sugestão (opcional)
-                            _label('Sugestão de melhoria (opcional)'),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _sugestaoCtrl,
-                              maxLines: 3,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: _inputDec(
-                                hint:
-                                    'Se tiver alguma sugestão sobre como podemos melhorar...',
-                                icone: Icons.lightbulb_outline_rounded,
+                            // Anônimo
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border:
+                                    Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Enviar como anônimo',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Seu nome não será exibido para quem visualizar essa mensagem.',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _anonimo,
+                                    onChanged: (v) =>
+                                        setState(() => _anonimo = v),
+                                    activeColor: _cor,
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 32),
