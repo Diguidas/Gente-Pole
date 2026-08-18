@@ -530,11 +530,30 @@ class ApiService {
         .toList();
   }
 
-  /// Gestor aprova candidato na entrevista (move para PROPOSTA)
+  /// Grava o parecer/observação do gestor sobre a candidatura, na mesma
+  /// tabela `candidatura_observacoes` usada pelo painel web (gentepole_admin),
+  /// mantendo as colunas compatíveis: candidatura_id, texto, etapa, criado_por, criado_em.
+  Future<void> salvarObservacaoCandidatura({
+    required int candidaturaId,
+    required String texto,
+    required String etapa,
+    required int criadoPor,
+  }) async {
+    await _client.from('candidatura_observacoes').insert({
+      'candidatura_id': candidaturaId,
+      'texto': texto,
+      'etapa': etapa,
+      'criado_por': criadoPor,
+      'criado_em': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
+  /// Gestor aprova candidato na entrevista (move para PROPOSTA).
+  /// Exige parecer (mesma regra do painel web: obrigatório antes de avançar de etapa).
   Future<bool> aprovarEntrevistaGestor({
     required int candidaturaId,
     required int gestorId,
-    String? observacao,
+    required String observacao,
   }) async {
     try {
       await _client
@@ -550,6 +569,13 @@ class ApiService {
         'movido_por_tipo': 'GESTOR',
         'observacao': observacao,
       });
+
+      await salvarObservacaoCandidatura(
+        candidaturaId: candidaturaId,
+        texto: observacao,
+        etapa: 'ENTREV_GESTOR',
+        criadoPor: gestorId,
+      );
       return true;
     } catch (_) {
       return false;
@@ -598,11 +624,12 @@ class ApiService {
     }
   }
 
-  /// Gestor aprova proposta salarial (move para APROVADO)
+  /// Gestor aprova proposta salarial (move para APROVADO).
+  /// Exige parecer (mesma regra do painel web: obrigatório antes de avançar de etapa).
   Future<bool> aprovarProposta({
     required int candidaturaId,
     required int gestorId,
-    String? observacao,
+    required String observacao,
   }) async {
     try {
       await _client
@@ -618,6 +645,13 @@ class ApiService {
         'movido_por_tipo': 'GESTOR',
         'observacao': observacao,
       });
+
+      await salvarObservacaoCandidatura(
+        candidaturaId: candidaturaId,
+        texto: observacao,
+        etapa: 'PROPOSTA',
+        criadoPor: gestorId,
+      );
       return true;
     } catch (_) {
       return false;

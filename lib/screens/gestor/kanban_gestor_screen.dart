@@ -486,9 +486,18 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
   // ── Ações ────────────────────────────────────────────────────────────────────
 
   Future<void> _aprovarEntrevista(CandidaturaGestorModel c) async {
+    final parecer = await _dialogParecer(
+      context,
+      titulo: 'Parecer da entrevista',
+      instrucao:
+          'Antes de avançar ${c.candidatoNome} para a Proposta, registre seu parecer '
+          'sobre a entrevista (pontos fortes, riscos, adequação à vaga).',
+    );
+    if (parecer == null || parecer.trim().isEmpty) return;
     final ok = await _api.aprovarEntrevistaGestor(
       candidaturaId: c.id,
       gestorId: _api.colaboradorAtual?.id ?? 0,
+      observacao: parecer.trim(),
     );
     if (ok) _carregarCandidatos();
     _snack(ok ? 'Candidato avançado para Proposta ✅' : 'Erro ao mover', ok);
@@ -507,9 +516,18 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
   }
 
   Future<void> _aprovarProposta(CandidaturaGestorModel c) async {
+    final parecer = await _dialogParecer(
+      context,
+      titulo: 'Parecer da proposta',
+      instrucao:
+          'Antes de confirmar a proposta de ${c.candidatoNome}, registre seu '
+          'parecer sobre a negociação (condições aceitas, observações relevantes).',
+    );
+    if (parecer == null || parecer.trim().isEmpty) return;
     final ok = await _api.aprovarProposta(
       candidaturaId: c.id,
       gestorId: _api.colaboradorAtual?.id ?? 0,
+      observacao: parecer.trim(),
     );
     if (ok) _carregarCandidatos();
     _snack(ok ? 'Proposta confirmada! 🎉' : 'Erro ao confirmar', ok);
@@ -680,6 +698,96 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                 Text('Confirmar', style: GoogleFonts.poppins(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Diálogo de parecer obrigatório antes de avançar a etapa da candidatura
+  /// (mesma exigência do painel web: parecer em texto antes de mudar de etapa).
+  /// Segue o mesmo padrão visual do [_dialogMotivo] já usado no app.
+  Future<String?> _dialogParecer(
+    BuildContext context, {
+    required String titulo,
+    required String instrucao,
+  }) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.amarelo.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.rate_review_outlined,
+                    color: AppColors.laranja, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(titulo,
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700, fontSize: 16)),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  instrucao,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, color: AppColors.cinzaTexto, height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: ctrl,
+                  minLines: 3,
+                  maxLines: 6,
+                  autofocus: true,
+                  onChanged: (_) => setSt(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Descreva o parecer...',
+                    hintStyle: GoogleFonts.poppins(fontSize: 13),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: AppColors.cinzaClaro,
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                  style: GoogleFonts.poppins(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancelar',
+                  style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
+            ),
+            ElevatedButton(
+              onPressed: ctrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, ctrl.text),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.laranja,
+                  disabledBackgroundColor: AppColors.cinzaClaro,
+                  elevation: 0),
+              child: Text('Confirmar',
+                  style: GoogleFonts.poppins(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
   }
