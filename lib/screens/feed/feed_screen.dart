@@ -13,6 +13,7 @@ import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _douradoResposta = Color(0xFFB8860B);
 
@@ -50,6 +51,9 @@ class _FeedScreenState extends State<FeedScreen> {
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
 
+  // Redes sociais da empresa (itens de acesso_rapido_links com tipo='rede_social')
+  List<Map<String, dynamic>> _redesSociais = [];
+
   RealtimeChannel? _statusChannel;
 
   @override
@@ -61,8 +65,23 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarBanners();
     _carregarAniversarios();
     _carregarPesquisasPendentes();
+    _carregarRedesSociais();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
+  }
+
+  Future<void> _carregarRedesSociais() async {
+    try {
+      final lista = await _api.listarAcessoRapidoLinks();
+      if (!mounted) return;
+      setState(() => _redesSociais = lista.where((l) => l['tipo'] == 'rede_social').toList());
+    } catch (_) {}
+  }
+
+  Future<void> _abrirLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -685,6 +704,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }) {
     return [
       if (_banners.isNotEmpty) _buildBannerHome(),
+      if (_redesSociais.isNotEmpty) _buildRedesSociaisCard(),
       if (_aniversariantesHoje.isNotEmpty) _buildAniversariantesCard(),
       if (_aniversariosEmpresaHoje.isNotEmpty) _buildAniversarioEmpresaCard(),
       _buildHumorCard(),
@@ -722,6 +742,54 @@ class _FeedScreenState extends State<FeedScreen> {
               ? Image.network(_banners.first['url'] as String,
                   fit: BoxFit.cover, width: double.infinity)
               : _BannerCarrossel(banners: _banners),
+        ),
+      ),
+    );
+  }
+
+  // ── Redes Sociais ─────────────────────────────────────────────────────────────
+
+  static const _iconesRedeSocial = {
+    'instagram': (Icons.camera_alt_outlined, Color(0xFFE1306C)),
+    'youtube': (Icons.play_circle_outline, Color(0xFFFF0000)),
+    'linkedin': (Icons.business_center_outlined, Color(0xFF0A66C2)),
+    'facebook': (Icons.thumb_up_outlined, Color(0xFF1877F2)),
+    'tiktok': (Icons.music_note_outlined, Color(0xFF000000)),
+  };
+
+  Widget _buildRedesSociaisCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Row(
+        children: _redesSociais.map((rede) {
+          final (icone, cor) = _iconesRedeSocial[rede['icone']] ?? (Icons.public_outlined, AppColors.cinzaTexto);
+          return _iconeRedeSocial(icone, rede['url'] as String, cor);
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _iconeRedeSocial(IconData icone, String url, Color cor) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: GestureDetector(
+        onTap: () => _abrirLink(url),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: cor.withOpacity(0.12), shape: BoxShape.circle),
+          child: Icon(icone, color: cor, size: 20),
         ),
       ),
     );

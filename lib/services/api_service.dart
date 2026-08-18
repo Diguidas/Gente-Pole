@@ -3333,6 +3333,24 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  Future<List<Map<String, dynamic>>> listarAcessoRapidoLinks() async {
+    final res = await _client
+        .from('acesso_rapido_links')
+        .select()
+        .eq('ativo', true)
+        .order('ordem')
+        .order('criado_em');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> listarDocumentosInstitucionais() async {
+    final res = await _client
+        .from('documentos_institucionais')
+        .select()
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   /// Colaboradores que completam anos de empresa no mês (view
   /// `v_aniversarios_empresa_mes`), com `eh_hoje`, `dia_admissao` e
   /// `anos_completos`. Não existe ainda modelo dedicado no app — os

@@ -19,6 +19,8 @@ import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
 import 'integracao/integracao_screen.dart';
+import 'documentos/documentos_institucionais_screen.dart';
+import 'acesso_rapido/acesso_rapido_screen.dart';
 
 class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
@@ -479,6 +481,43 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => const AvaliarColegasScreen()),
+                            ),
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // ── Institucional ─────────────────────────────────
+                          _sectionLabel('Institucional', AppColors.laranja),
+                          const SizedBox(height: 10),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.folder_outlined,
+                            titulo: 'Documentos Institucionais',
+                            subtitulo: 'Consulte documentos disponibilizados pela empresa',
+                            cor: AppColors.laranja,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const DocumentosInstitucionaisScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.bolt_outlined,
+                            titulo: 'Acesso Rápido',
+                            subtitulo: 'Links de serviços da empresa',
+                            cor: AppColors.laranja,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AcessoRapidoScreen(),
+                              ),
                             ),
                           ),
 
