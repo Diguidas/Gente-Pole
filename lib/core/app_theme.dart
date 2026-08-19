@@ -50,12 +50,6 @@ class AppColors {
     ],
   );
 
-/*   static const gradientePrincipal = LinearGradient(
-    colors: [laranja, magenta],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  ); */
-
   static const gradienteVertical = LinearGradient(
     colors: [laranja, magenta],
     begin: Alignment.topCenter,

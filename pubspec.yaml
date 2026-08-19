@@ -30,8 +30,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  polebot_widget:
-    path: ../polebot_widget
   http: ^1.2.0 # Para consumir a Edge Function
   supabase_flutter: ^2.5.0 # Para conectar ao seu banco
   google_fonts: ^8.1.0

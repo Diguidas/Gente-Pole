@@ -1936,15 +1936,36 @@ class _PostCard extends StatelessWidget {
               errorWidget: (_, __, ___) => const SizedBox.shrink(),
             ),
 
+          // ── Título (comunicados) ───────────────────────────────────────────
+          if (post.titulo != null && post.titulo!.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14,
+                  post.conteudo != null && post.conteudo!.isNotEmpty ? 2 : 16),
+              child: Text(
+                post.titulo!,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: AppColors.dark,
+                ),
+              ),
+            ),
+
           // ── Conteúdo ────────────────────────────────────────────────────────
           if (post.conteudo != null && post.conteudo!.isNotEmpty)
             Padding(
-              padding:
-                  EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14, 16),
+              padding: EdgeInsets.fromLTRB(
+                  14,
+                  (post.titulo != null && post.titulo!.isNotEmpty)
+                      ? 0
+                      : (post.temImagem ? 12 : 0),
+                  14,
+                  16),
               child: _buildConteudo(post.conteudo!, isAniversario, isHumor, isRespostaParabens),
             ),
 
-          if (post.conteudo == null || post.conteudo!.isEmpty)
+          if ((post.conteudo == null || post.conteudo!.isEmpty) &&
+              (post.titulo == null || post.titulo!.isEmpty))
             const SizedBox(height: 14),
         ],
       ),

@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:gentepole/screens/feed/feed_screen.dart';
-import 'package:gentepole/services/api_service.dart';
-// Polebot desativado temporariamente.
-// import 'package:polebot_widget/polebot_widget.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/app_theme.dart';
 import '../core/app_navigator.dart';
 import 'aniversariante_screen.dart';
 import 'perfil_screen.dart';
-import 'pesquisa/pesquisa_list_screen.dart';
 import 'servicos_screen.dart';
 import 'atalhos/atalhos_sheet.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -38,14 +33,6 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   void _onExternalTab() => _onTabTap(AppNavigator.tabIndex.value);
-
-  void _onPolebotNavegar(String destino) {
-    switch (destino) {
-      case 'pesquisas_pendentes':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const PesquisaListScreen()));
-        break;
-    }
-  }
 
   void _onTabTap(int index) {
     if (index == 4) {
@@ -96,7 +83,6 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
-    final colaboradorId = ApiService().colaboradorAtual?.id;
     return Scaffold(
       body: Stack(
         children: [
@@ -115,16 +101,6 @@ class _MainLayoutState extends State<MainLayout> {
           ),
         ],
       ),
-      // Polebot desativado temporariamente.
-      // floatingActionButton: PolebotLauncherButton(
-      //   service: PolebotService(Supabase.instance.client),
-      //   theme: const PolebotTheme(corPrimaria: AppColors.magenta),
-      //   appContexto: 'colaborador',
-      //   origemApp: 'gente_pole',
-      //   solicitanteTipo: 'colaborador',
-      //   colaboradorId: colaboradorId,
-      //   onNavegar: _onPolebotNavegar,
-      // ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onTabTap,

@@ -784,13 +784,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
-  polebot_widget:
-    dependency: "direct main"
-    description:
-      path: "../polebot_widget"
-      relative: true
-    source: path
-    version: "0.1.0"
   posix:
     dependency: transitive
     description:
