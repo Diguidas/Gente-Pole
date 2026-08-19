@@ -26,7 +26,7 @@ BEGIN
   SELECT fcm_token INTO v_token
     FROM colaboradores WHERE id = NEW.destinatario_id;
 
-  SELECT primeiro_nome INTO v_nome
+  SELECT SPLIT_PART(nome, ' ', 1) INTO v_nome
     FROM colaboradores WHERE id = NEW.remetente_id;
 
   PERFORM _enviar_notificacao(

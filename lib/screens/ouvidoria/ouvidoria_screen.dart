@@ -50,6 +50,20 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
   Future<void> _enviar() async {
     final formValido = _formKey.currentState!.validate();
     if (!formValido) return;
+    if (_ocorridoCtrl.text.trim().isEmpty && _anexo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Descreva o ocorrido ou anexe um arquivo.',
+              style: GoogleFonts.poppins()),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
     if (_tipo == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -265,12 +279,6 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
                                     'Descreva o ocorrido com o máximo de detalhes possível...',
                                 icone: Icons.description_outlined,
                               ),
-                              validator: (v) {
-                                if (v == null || v.trim().length < 10) {
-                                  return 'Descreva o ocorrido (mínimo 10 caracteres)';
-                                }
-                                return null;
-                              },
                             ),
                             const SizedBox(height: 20),
 
