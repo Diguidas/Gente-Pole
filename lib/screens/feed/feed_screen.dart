@@ -33,6 +33,13 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _temMais = true;
   int _pagina = 0;
 
+  // Prévia do feed: mostra só os primeiros posts + botão "Mostrar mais"
+  // antes dos cards de celebração (aniversariantes/aniversário de
+  // empresa/novos Polevalentes), pra não obrigar a rolar por eles pra
+  // chegar no feed de verdade.
+  static const _previaPostsCount = 5;
+  bool _mostrarTodosPosts = false;
+
   // Humor
   Map<String, dynamic>? _humorHoje;
 
@@ -47,6 +54,9 @@ class _FeedScreenState extends State<FeedScreen> {
   List<AniversarianteModel> _aniversariantes = [];
   List<Map<String, dynamic>> _aniversariosEmpresa = [];
 
+  // Colaboradores admitidos na semana corrente
+  List<Map<String, dynamic>> _novosColaboradoresSemana = [];
+
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
 
@@ -60,6 +70,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarExame();
     _carregarBanners();
     _carregarAniversarios();
+    _carregarNovosColaboradoresSemana();
     _carregarPesquisasPendentes();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
@@ -145,6 +156,14 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (_) {}
   }
 
+  Future<void> _carregarNovosColaboradoresSemana() async {
+    try {
+      final n = await _api.buscarNovosColaboradoresSemana();
+      if (!mounted) return;
+      setState(() => _novosColaboradoresSemana = n);
+    } catch (_) {}
+  }
+
   Future<void> _carregarPesquisasPendentes() async {
     try {
       final p = await _api.buscarPesquisasDisponiveis();
@@ -159,8 +178,9 @@ class _FeedScreenState extends State<FeedScreen> {
   List<AniversarianteModel> get _aniversariantesHoje =>
       _aniversariantes.where((a) => a.ehHoje).toList();
 
-  List<Map<String, dynamic>> get _aniversariosEmpresaHoje =>
-      _aniversariosEmpresa.where((a) => a['eh_hoje'] == true).toList();
+  List<Map<String, dynamic>> get _aniversariosEmpresaHoje => _aniversariosEmpresa
+      .where((a) => a['eh_hoje'] == true && (a['anos_completos'] as int? ?? 0) >= 1)
+      .toList();
 
   Future<void> _registrarHumor(int nivel) async {
     const emojis = ['😞', '😕', '😐', '🙂', '😄'];
@@ -444,30 +464,47 @@ class _FeedScreenState extends State<FeedScreen> {
                                 temPendentes: temPendentes,
                               );
 
+                              final postsPrevia = feedPrincipal
+                                  .take(_previaPostsCount)
+                                  .toList();
+                              final postsRestantes = feedPrincipal
+                                  .skip(_previaPostsCount)
+                                  .toList();
+                              final mostrarBotaoMais =
+                                  !_mostrarTodosPosts && postsRestantes.isNotEmpty;
+
+                              final itens = <Widget>[
+                                ...fixos,
+                                if (feedPrincipal.isEmpty) _vazioWidget(),
+                                ...postsPrevia.map((p) => _PostCard(
+                                      post: p,
+                                      meuId: meuId,
+                                      onExcluir: () => _confirmarExclusao(p),
+                                    )),
+                                if (mostrarBotaoMais)
+                                  _buildBotaoMostrarMaisPosts(
+                                      postsRestantes.length),
+                                ..._buildItensCelebracao(),
+                                if (_mostrarTodosPosts)
+                                  ...postsRestantes.map((p) => _PostCard(
+                                        post: p,
+                                        meuId: meuId,
+                                        onExcluir: () => _confirmarExclusao(p),
+                                      )),
+                              ];
+
                               return ListView.builder(
                                 controller: _scrollCtrl,
                                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-                                itemCount: fixos.length +
-                                    (feedPrincipal.isEmpty ? 1 : feedPrincipal.length) +
-                                    (_carregandoMais ? 1 : 0),
+                                itemCount: itens.length + (_carregandoMais ? 1 : 0),
                                 itemBuilder: (_, i) {
-                                  if (i < fixos.length) return fixos[i];
-                                  final postIdx = i - fixos.length;
-                                  if (feedPrincipal.isEmpty) return _vazioWidget();
-                                  if (postIdx == feedPrincipal.length) {
-                                    return const Padding(
-                                      padding: EdgeInsets.all(24),
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                            color: AppColors.magenta),
-                                      ),
-                                    );
-                                  }
-                                  return _PostCard(
-                                    post: feedPrincipal[postIdx],
-                                    meuId: meuId,
-                                    onExcluir: () =>
-                                        _confirmarExclusao(feedPrincipal[postIdx]),
+                                  if (i < itens.length) return itens[i];
+                                  return const Padding(
+                                    padding: EdgeInsets.all(24),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                          color: AppColors.magenta),
+                                    ),
                                   );
                                 },
                               );
@@ -675,9 +712,11 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   // ── Itens fixos do topo do feed ──────────────────────────────────────────────
-  // Ordem (espelha gentepole_admin/dashboard_screen.dart): banner RH →
-  // aniversariantes de hoje → aniversário de empresa hoje → humor →
-  // pesquisas pendentes → exame → composer → pendentes/rejeitados.
+  // Ordem: banner RH → humor → pesquisas pendentes → exame → composer →
+  // pendentes/rejeitados. Os cards de celebração (aniversariantes/
+  // aniversário de empresa/novos Polevalentes) NÃO entram aqui — eles vão
+  // depois da prévia do feed (ver _buildItensCelebracao), pra não obrigar a
+  // rolar por eles antes de chegar nos posts de verdade.
 
   List<Widget> _buildItensFixos({
     required List<FeedPostModel> meusPendentes,
@@ -685,8 +724,6 @@ class _FeedScreenState extends State<FeedScreen> {
   }) {
     return [
       if (_banners.isNotEmpty) _buildBannerHome(),
-      if (_aniversariantesHoje.isNotEmpty) _buildAniversariantesCard(),
-      if (_aniversariosEmpresaHoje.isNotEmpty) _buildAniversarioEmpresaCard(),
       _buildHumorCard(),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
@@ -696,6 +733,39 @@ class _FeedScreenState extends State<FeedScreen> {
       ),
       if (temPendentes) _buildPendentesSection(meusPendentes),
     ];
+  }
+
+  // ── Cards de celebração (aparecem só depois da prévia do feed) ───────────────
+
+  List<Widget> _buildItensCelebracao() {
+    return [
+      if (_aniversariantesHoje.isNotEmpty) _buildAniversariantesCard(),
+      if (_aniversariosEmpresaHoje.isNotEmpty) _buildAniversarioEmpresaCard(),
+      if (_novosColaboradoresSemana.isNotEmpty) _buildNovosPolevalentesCard(),
+    ];
+  }
+
+  Widget _buildBotaoMostrarMaisPosts(int restantes) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => setState(() => _mostrarTodosPosts = true),
+          icon: const Icon(Icons.expand_more_rounded, size: 18),
+          label: Text('Mostrar mais posts ($restantes)',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w600)),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.magenta,
+            side: const BorderSide(color: AppColors.magenta),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Banner RH (carrossel) ─────────────────────────────────────────────────────
@@ -760,6 +830,27 @@ class _FeedScreenState extends State<FeedScreen> {
           cor: nivel?.cor ?? AppColors.laranja,
           mensagem: '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa 🎉',
           nivel: nivel,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildNovosPolevalentesCard() {
+    return _CardAniversarioMes(
+      titulo: '🚀 Novos Polevalentes essa semana',
+      itens: _novosColaboradoresSemana.map((c) {
+        final dataAdmissao = DateTime.tryParse(c['data_admissao'] as String? ?? '');
+        final dataFormatada = dataAdmissao != null
+            ? '${dataAdmissao.day.toString().padLeft(2, '0')}/${dataAdmissao.month.toString().padLeft(2, '0')}'
+            : '';
+        return _LinhaAniversario(
+          nome: c['nome'] as String? ?? '—',
+          setor: c['setor'] as String?,
+          fotoUrl: c['foto_url'] as String?,
+          cor: AppColors.laranja,
+          mensagem: dataFormatada.isNotEmpty
+              ? 'Chegou dia $dataFormatada 🎉'
+              : 'Seja bem-vindo(a)! 🎉',
         );
       }).toList(),
     );

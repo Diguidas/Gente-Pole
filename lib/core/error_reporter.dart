@@ -62,8 +62,17 @@ class ErrorReporter {
     return 'Erro inesperado. Tente novamente.';
   }
 
+  static bool _exibindo = false;
+
   /// Mostra um SnackBar de erro com botão para copiar os detalhes técnicos.
   /// [contexto] é uma descrição curta de qual ação falhou (ex.: "Enviar parabéns").
+  ///
+  /// Sempre agenda a exibição para depois do frame atual (`addPostFrameCallback`)
+  /// e ignora chamadas reentrantes enquanto já há um snackbar sendo exibido —
+  /// sem isso, um erro que acontece durante o build tenta abrir o SnackBar
+  /// durante o build (proibido pelo Flutter), o que gera um novo erro, que
+  /// chama `report` de novo, entrando num loop infinito que trava a tela e
+  /// enche o console.
   static void report(
     Object error,
     StackTrace? stackTrace, {
@@ -71,40 +80,46 @@ class ErrorReporter {
   }) {
     debugPrint('[ErrorReporter] ${contexto ?? "erro"}: $error\n$stackTrace');
 
-    final messenger = scaffoldMessengerKey.currentState;
-    if (messenger == null) return;
+    if (_exibindo) return;
+    _exibindo = true;
 
-    final mensagemUsuario = _mensagemAmigavel(error);
-    final detalhesTecnicos = [
-      if (contexto != null) 'Ação: $contexto',
-      'Erro: $error',
-      if (stackTrace != null) 'Stack:\n$stackTrace',
-    ].join('\n');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _exibindo = false;
+      final messenger = scaffoldMessengerKey.currentState;
+      if (messenger == null) return;
 
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        backgroundColor: Colors.red.shade700,
-        duration: const Duration(seconds: 8),
-        content: Text(
-          contexto != null ? '$contexto: $mensagemUsuario' : mensagemUsuario,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
+      final mensagemUsuario = _mensagemAmigavel(error);
+      final detalhesTecnicos = [
+        if (contexto != null) 'Ação: $contexto',
+        'Erro: $error',
+        if (stackTrace != null) 'Stack:\n$stackTrace',
+      ].join('\n');
+
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 8),
+          content: Text(
+            contexto != null ? '$contexto: $mensagemUsuario' : mensagemUsuario,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          action: SnackBarAction(
+            label: 'COPIAR',
+            textColor: Colors.white,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: detalhesTecnicos));
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Detalhes do erro copiados. Envie para o TI.'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            },
+          ),
         ),
-        action: SnackBarAction(
-          label: 'COPIAR',
-          textColor: Colors.white,
-          onPressed: () {
-            Clipboard.setData(ClipboardData(text: detalhesTecnicos));
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Detalhes do erro copiados. Envie para o TI.'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-          },
-        ),
-      ),
-    );
+      );
+    });
   }
 }

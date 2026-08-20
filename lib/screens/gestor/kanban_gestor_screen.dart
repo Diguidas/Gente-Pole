@@ -221,7 +221,13 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
               color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 3)),
         ],
       ),
-      child: Column(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _abrirFicha(c),
+          child: Column(
         children: [
           // Cabeçalho
           Padding(
@@ -301,7 +307,17 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
 
           const SizedBox(height: 4),
         ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Future<void> _abrirFicha(CandidaturaGestorModel c) async {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (_) => _FichaCandidatoDialog(candidato: c),
     );
   }
 
@@ -490,26 +506,36 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       context,
       titulo: 'Parecer da entrevista',
       instrucao:
-          'Antes de avançar ${c.candidatoNome} para a Proposta, registre seu parecer '
-          'sobre a entrevista (pontos fortes, riscos, adequação à vaga).',
+          'Vai avançar ${c.candidatoNome} para a Proposta. Se quiser, registre '
+          'seu parecer sobre a entrevista (pontos fortes, riscos, adequação à vaga).',
+      obrigatorio: false,
+      hint: 'Descreva o parecer (opcional)...',
     );
-    if (parecer == null || parecer.trim().isEmpty) return;
+    if (parecer == null) return;
     final ok = await _api.aprovarEntrevistaGestor(
       candidaturaId: c.id,
       gestorId: _api.colaboradorAtual?.id ?? 0,
-      observacao: parecer.trim(),
+      observacao: parecer.isEmpty ? null : parecer,
     );
     if (ok) _carregarCandidatos();
     _snack(ok ? 'Candidato avançado para Proposta ✅' : 'Erro ao mover', ok);
   }
 
   Future<void> _confirmarReprovacao(CandidaturaGestorModel c) async {
-    final motivo = await _dialogMotivo(context);
-    if (motivo == null || motivo.trim().isEmpty) return;
+    final motivo = await _dialogParecer(
+      context,
+      titulo: 'Motivo da reprovação',
+      instrucao:
+          'Descreva o motivo pelo qual ${c.candidatoNome} está sendo reprovado(a) '
+          'nesta etapa.',
+      hint: 'Descreva o motivo...',
+      corDestaque: AppColors.magenta,
+    );
+    if (motivo == null || motivo.isEmpty) return;
     final ok = await _api.reprovarEntrevistaGestor(
       candidaturaId: c.id,
       gestorId: _api.colaboradorAtual?.id ?? 0,
-      motivo: motivo.trim(),
+      motivo: motivo,
     );
     if (ok) _carregarCandidatos();
     _snack(ok ? 'Candidato reprovado' : 'Erro ao reprovar', ok);
@@ -520,16 +546,21 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       context,
       titulo: 'Parecer da proposta',
       instrucao:
-          'Antes de confirmar a proposta de ${c.candidatoNome}, registre seu '
+          'Vai confirmar a proposta de ${c.candidatoNome}. Se quiser, registre seu '
           'parecer sobre a negociação (condições aceitas, observações relevantes).',
+      obrigatorio: false,
+      hint: 'Descreva o parecer (opcional)...',
     );
-    if (parecer == null || parecer.trim().isEmpty) return;
+    if (parecer == null) return;
     final ok = await _api.aprovarProposta(
       candidaturaId: c.id,
       gestorId: _api.colaboradorAtual?.id ?? 0,
-      observacao: parecer.trim(),
+      observacao: parecer.isEmpty ? null : parecer,
     );
-    if (ok) _carregarCandidatos();
+    if (ok) {
+      await _api.encerrarVagaSePreenchida(c.vagaId);
+      _carregarCandidatos();
+    }
     _snack(ok ? 'Proposta confirmada! 🎉' : 'Erro ao confirmar', ok);
   }
 
@@ -661,131 +692,311 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
     ));
   }
 
-  Future<String?> _dialogMotivo(BuildContext context) async {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Motivo da reprovação',
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: 'Descreva o motivo...',
-            hintStyle: GoogleFonts.poppins(fontSize: 13),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-            filled: true,
-            fillColor: AppColors.cinzaClaro,
-          ),
-          style: GoogleFonts.poppins(fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancelar',
-                style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.magenta, elevation: 0),
-            child:
-                Text('Confirmar', style: GoogleFonts.poppins(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Diálogo de parecer obrigatório antes de avançar a etapa da candidatura
-  /// (mesma exigência do painel web: parecer em texto antes de mudar de etapa).
-  /// Segue o mesmo padrão visual do [_dialogMotivo] já usado no app.
+  /// Diálogo de parecer/observação usado antes de aprovar ou reprovar uma
+  /// etapa da candidatura. Quando [obrigatorio] é true (reprovação), o texto
+  /// é exigido; quando false (aprovação), fica livre para o gestor registrar
+  /// uma observação se quiser.
   Future<String?> _dialogParecer(
     BuildContext context, {
     required String titulo,
     required String instrucao,
+    bool obrigatorio = true,
+    String hint = 'Descreva o parecer...',
+    Color corDestaque = AppColors.laranja,
   }) async {
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => AlertDialog(
+        builder: (ctx, setSt) => Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.amarelo.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.rate_review_outlined,
-                    color: AppColors.laranja, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(titulo,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: corDestaque.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.rate_review_outlined,
+                            color: corDestaque, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(titulo,
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w700, fontSize: 17)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    instrucao,
                     style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w700, fontSize: 16)),
+                        fontSize: 13, color: AppColors.cinzaTexto, height: 1.4),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: ctrl,
+                    minLines: 4,
+                    maxLines: 8,
+                    autofocus: true,
+                    onChanged: (_) => setSt(() {}),
+                    decoration: InputDecoration(
+                      hintText: hint,
+                      hintStyle: GoogleFonts.poppins(fontSize: 13),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none),
+                      filled: true,
+                      fillColor: AppColors.cinzaClaro,
+                      contentPadding: const EdgeInsets.all(14),
+                    ),
+                    style: GoogleFonts.poppins(fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text('Cancelar',
+                            style: GoogleFonts.poppins(
+                                color: AppColors.cinzaTexto)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: obrigatorio && ctrl.text.trim().isEmpty
+                            ? null
+                            : () => Navigator.pop(ctx, ctrl.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: corDestaque,
+                          disabledBackgroundColor: AppColors.cinzaClaro,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        child: Text('Confirmar',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Ficha do Candidato (somente leitura) ────────────────────────────────
+//
+// Mostra os dados do candidato e os pareceres já registrados (pelo RH no
+// gentepole_admin e pelo próprio gestor) — o mesmo dado que o painel web já
+// exibe na ficha do colaborador, mas que faltava aqui no app do gestor.
+class _FichaCandidatoDialog extends StatefulWidget {
+  final CandidaturaGestorModel candidato;
+  const _FichaCandidatoDialog({required this.candidato});
+
+  @override
+  State<_FichaCandidatoDialog> createState() => _FichaCandidatoDialogState();
+}
+
+class _FichaCandidatoDialogState extends State<_FichaCandidatoDialog> {
+  final _api = ApiService();
+  List<Map<String, dynamic>> _observacoes = [];
+  bool _carregando = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarObservacoes();
+  }
+
+  Future<void> _carregarObservacoes() async {
+    try {
+      final r = await _api.listarObservacoesCandidatura(widget.candidato.id);
+      if (mounted) setState(() => _observacoes = r);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _carregando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.candidato;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxWidth: 480,
+            maxHeight: MediaQuery.of(context).size.height * 0.85),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(c.candidatoNome,
+                        style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.dark)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AppColors.cinzaTexto),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Wrap(spacing: 12, runSpacing: 4, children: [
+                if (c.candidatoEmail.isNotEmpty)
+                  _chipFicha(Icons.email_outlined, c.candidatoEmail),
+                if (c.candidatoTelefone != null &&
+                    c.candidatoTelefone!.isNotEmpty)
+                  _chipFicha(Icons.phone_outlined, c.candidatoTelefone!),
+                if (c.candidatoCidade != null)
+                  _chipFicha(
+                      Icons.location_on_outlined,
+                      c.candidatoEstado != null
+                          ? '${c.candidatoCidade}, ${c.candidatoEstado}'
+                          : c.candidatoCidade!),
+                if (c.salarioEsperado != null)
+                  _chipFicha(Icons.attach_money_rounded,
+                      'R\$ ${c.salarioEsperado!.toStringAsFixed(0)}'),
+              ]),
+              const Divider(height: 24),
+              Text('Pareceres',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark)),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _carregando
+                      ? const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                              child: CircularProgressIndicator(
+                                  color: AppColors.magenta, strokeWidth: 2)),
+                        )
+                      : _observacoes.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text('Nenhum parecer registrado.',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: AppColors.cinzaTexto)),
+                            )
+                          : Column(
+                              children: _observacoes
+                                  .map((o) => _ParecerItem(o))
+                                  .toList(),
+                            ),
+                ),
               ),
             ],
           ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      ),
+    );
+  }
+
+  Widget _chipFicha(IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: AppColors.cinzaTexto),
+        const SizedBox(width: 4),
+        Text(label,
+            style: GoogleFonts.poppins(
+                fontSize: 11, color: AppColors.cinzaTexto)),
+      ],
+    );
+  }
+}
+
+class _ParecerItem extends StatelessWidget {
+  final Map<String, dynamic> observacao;
+  const _ParecerItem(this.observacao);
+
+  @override
+  Widget build(BuildContext context) {
+    final etapa = observacao['etapa'] as String? ?? '';
+    final texto = observacao['texto'] as String? ?? '';
+    final criadoEmRaw = observacao['criado_em'] as String?;
+    final criadoEm =
+        criadoEmRaw != null ? DateTime.tryParse(criadoEmRaw) : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FC),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  instrucao,
-                  style: GoogleFonts.poppins(
-                      fontSize: 13, color: AppColors.cinzaTexto, height: 1.4),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: ctrl,
-                  minLines: 3,
-                  maxLines: 6,
-                  autofocus: true,
-                  onChanged: (_) => setSt(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Descreva o parecer...',
-                    hintStyle: GoogleFonts.poppins(fontSize: 13),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none),
-                    filled: true,
-                    fillColor: AppColors.cinzaClaro,
-                    contentPadding: const EdgeInsets.all(12),
+                if (etapa.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.magenta.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(etapa,
+                        style: GoogleFonts.poppins(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.magenta)),
                   ),
-                  style: GoogleFonts.poppins(fontSize: 13),
-                ),
+                const Spacer(),
+                if (criadoEm != null)
+                  Text(
+                    '${criadoEm.day.toString().padLeft(2, '0')}/'
+                    '${criadoEm.month.toString().padLeft(2, '0')}/'
+                    '${criadoEm.year} '
+                    '${criadoEm.hour.toString().padLeft(2, '0')}:'
+                    '${criadoEm.minute.toString().padLeft(2, '0')}',
+                    style: GoogleFonts.poppins(
+                        fontSize: 10, color: AppColors.cinzaTexto),
+                  ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Cancelar',
-                  style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
-            ),
-            ElevatedButton(
-              onPressed: ctrl.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(ctx, ctrl.text),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.laranja,
-                  disabledBackgroundColor: AppColors.cinzaClaro,
-                  elevation: 0),
-              child: Text('Confirmar',
-                  style: GoogleFonts.poppins(color: Colors.white)),
-            ),
+            const SizedBox(height: 6),
+            Text(texto,
+                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.dark)),
           ],
         ),
       ),

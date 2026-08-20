@@ -508,6 +508,44 @@ class ApiService {
         .toList();
   }
 
+  /// Conta, para cada vaga em [vagaIds], quantas candidaturas já estão com
+  /// status 'APROVADO' — usado para mostrar "X de Y aprovados" e detectar
+  /// quando uma vaga múltipla já preencheu a quantidade solicitada.
+  Future<Map<int, int>> contarAprovadosPorVaga(List<int> vagaIds) async {
+    if (vagaIds.isEmpty) return {};
+    final data = await _client
+        .from('candidaturas')
+        .select('vaga_id')
+        .inFilter('vaga_id', vagaIds)
+        .eq('status', 'APROVADO');
+    final contagem = <int, int>{};
+    for (final row in data as List) {
+      final vagaId = (row as Map)['vaga_id'] as int;
+      contagem[vagaId] = (contagem[vagaId] ?? 0) + 1;
+    }
+    return contagem;
+  }
+
+  /// Encerra automaticamente a vaga quando o número de candidaturas
+  /// aprovadas atinge a `quantidade_vagas` solicitada pelo gestor. Chamado
+  /// depois que um candidato é aprovado na proposta. Não faz nada se a vaga
+  /// já estiver encerrada ou se ainda não atingiu a quantidade.
+  Future<void> encerrarVagaSePreenchida(int vagaId) async {
+    final vaga = await _client
+        .from('vagas')
+        .select('status, quantidade_vagas')
+        .eq('id', vagaId)
+        .maybeSingle();
+    if (vaga == null || vaga['status'] == 'ENCERRADA') return;
+
+    final quantidade = (vaga['quantidade_vagas'] as num?)?.toInt() ?? 1;
+    final aprovados = await contarAprovadosPorVaga([vagaId]);
+    if ((aprovados[vagaId] ?? 0) >= quantidade) {
+      await _client.from('vagas').update({'status': 'ENCERRADA'}).eq(
+          'id', vagaId);
+    }
+  }
+
   // ─── Candidaturas — visão do gestor ──────────────────────────────────────────
 
   /// Candidatos na fase ENTREV_GESTOR de uma vaga
@@ -548,12 +586,26 @@ class ApiService {
     });
   }
 
+  /// Lista os pareceres/observações já registrados sobre a candidatura,
+  /// tanto pelo RH (gentepole_admin) quanto pelo próprio gestor — mesma
+  /// tabela `candidatura_observacoes` usada por [salvarObservacaoCandidatura].
+  Future<List<Map<String, dynamic>>> listarObservacoesCandidatura(
+    int candidaturaId,
+  ) async {
+    final data = await _client
+        .from('candidatura_observacoes')
+        .select()
+        .eq('candidatura_id', candidaturaId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
   /// Gestor aprova candidato na entrevista (move para PROPOSTA).
   /// Exige parecer (mesma regra do painel web: obrigatório antes de avançar de etapa).
   Future<bool> aprovarEntrevistaGestor({
     required int candidaturaId,
     required int gestorId,
-    required String observacao,
+    String? observacao,
   }) async {
     try {
       await _client
@@ -570,12 +622,14 @@ class ApiService {
         'observacao': observacao,
       });
 
-      await salvarObservacaoCandidatura(
-        candidaturaId: candidaturaId,
-        texto: observacao,
-        etapa: 'ENTREV_GESTOR',
-        criadoPor: gestorId,
-      );
+      if (observacao != null && observacao.isNotEmpty) {
+        await salvarObservacaoCandidatura(
+          candidaturaId: candidaturaId,
+          texto: observacao,
+          etapa: 'ENTREV_GESTOR',
+          criadoPor: gestorId,
+        );
+      }
       return true;
     } catch (_) {
       return false;
@@ -629,7 +683,7 @@ class ApiService {
   Future<bool> aprovarProposta({
     required int candidaturaId,
     required int gestorId,
-    required String observacao,
+    String? observacao,
   }) async {
     try {
       await _client
@@ -646,12 +700,14 @@ class ApiService {
         'observacao': observacao,
       });
 
-      await salvarObservacaoCandidatura(
-        candidaturaId: candidaturaId,
-        texto: observacao,
-        etapa: 'PROPOSTA',
-        criadoPor: gestorId,
-      );
+      if (observacao != null && observacao.isNotEmpty) {
+        await salvarObservacaoCandidatura(
+          candidaturaId: candidaturaId,
+          texto: observacao,
+          etapa: 'PROPOSTA',
+          criadoPor: gestorId,
+        );
+      }
       return true;
     } catch (_) {
       return false;
@@ -2501,15 +2557,12 @@ class ApiService {
       final comunicados = filtrados.map((c) {
         final titulo = c['titulo'] as String?;
         final descricao = c['descricao'] as String?;
-        final conteudo = [
-          if (titulo != null && titulo.isNotEmpty) titulo,
-          if (descricao != null && descricao.isNotEmpty) descricao,
-        ].join('\n');
         return FeedPostModel(
           id: -(c['id'] as int),
           autorId: null,
           tipo: 'comunicado',
-          conteudo: conteudo.isNotEmpty ? conteudo : null,
+          titulo: titulo != null && titulo.isNotEmpty ? titulo : null,
+          conteudo: descricao != null && descricao.isNotEmpty ? descricao : null,
           imagemUrl: c['foto_url'] as String?,
           destinatario: 'todos',
           criadoEm: _parseComunicadoTs(c['criado_em'] as String),
@@ -3395,6 +3448,30 @@ class ApiService {
         .select()
         .order('eh_hoje', ascending: false)
         .order('dia_admissao', ascending: true);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Colaboradores admitidos na semana corrente (segunda a domingo) — vira
+  /// automaticamente para a próxima semana assim que ela começa.
+  Future<List<Map<String, dynamic>>> buscarNovosColaboradoresSemana() async {
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    final inicioSemana =
+        hojeSemHora.subtract(Duration(days: hoje.weekday - 1));
+    final fimSemana = inicioSemana.add(const Duration(days: 6));
+    // Nunca inclui admissões com data futura (às vezes cadastram a data em
+    // que o colaborador vai entrar, que pode ser um dia à frente).
+    final limiteSuperior =
+        fimSemana.isBefore(hojeSemHora) ? fimSemana : hojeSemHora;
+    final fmt = (DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+    final res = await _client
+        .from('colaboradores')
+        .select('id, nome, setor, foto_url, data_admissao')
+        .gte('data_admissao', fmt(inicioSemana))
+        .lte('data_admissao', fmt(limiteSuperior))
+        .order('data_admissao', ascending: false);
     return List<Map<String, dynamic>>.from(res as List);
   }
 

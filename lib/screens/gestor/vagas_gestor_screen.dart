@@ -13,29 +13,30 @@ class VagasGestorScreen extends StatefulWidget {
   State<VagasGestorScreen> createState() => _VagasGestorScreenState();
 }
 
-class _VagasGestorScreenState extends State<VagasGestorScreen>
-    with SingleTickerProviderStateMixin {
+class _VagasGestorScreenState extends State<VagasGestorScreen> {
   final _api = ApiService();
-  late TabController _tabController;
   late Future<List<VagaModel>> _futureVagas;
+  Map<int, int> _aprovadosPorVaga = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _carregarVagas();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   void _carregarVagas() {
     final id = _api.colaboradorAtual?.id ?? 0;
+    final future = _api.listarMinhasRequisicoes(id);
     setState(() {
-      _futureVagas = _api.listarMinhasRequisicoes(id);
+      _futureVagas = future;
+    });
+    future.then((vagas) async {
+      final aprovadasIds = vagas
+          .where((v) => v.statusRequisicao == 'APROVADA')
+          .map((v) => v.id)
+          .toList();
+      final contagem = await _api.contarAprovadosPorVaga(aprovadasIds);
+      if (mounted) setState(() => _aprovadosPorVaga = contagem);
     });
   }
 
@@ -87,33 +88,6 @@ class _VagasGestorScreenState extends State<VagasGestorScreen>
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicator: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      labelColor: AppColors.laranja,
-                      unselectedLabelColor: Colors.white,
-                      labelStyle: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w600),
-                      unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13),
-                      dividerColor: Colors.transparent,
-                      tabs: const [
-                        Tab(text: 'Minhas Vagas'),
-                        Tab(text: 'Candidatos'),
-                      ],
-                    ),
-                  ),
-                ),
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 16),
@@ -122,16 +96,11 @@ class _VagasGestorScreenState extends State<VagasGestorScreen>
                       borderRadius:
                           BorderRadius.vertical(top: Radius.circular(28)),
                     ),
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _TabMinhasVagas(
-                          futureVagas: _futureVagas,
-                          onRecarregar: _carregarVagas,
-                          onSolicitarVaga: _abrirSolicitarVaga,
-                        ),
-                        _TabCandidatos(futureVagas: _futureVagas),
-                      ],
+                    child: _TabMinhasVagas(
+                      futureVagas: _futureVagas,
+                      aprovadosPorVaga: _aprovadosPorVaga,
+                      onRecarregar: _carregarVagas,
+                      onSolicitarVaga: _abrirSolicitarVaga,
                     ),
                   ),
                 ),
@@ -156,11 +125,13 @@ class _VagasGestorScreenState extends State<VagasGestorScreen>
 
 class _TabMinhasVagas extends StatelessWidget {
   final Future<List<VagaModel>> futureVagas;
+  final Map<int, int> aprovadosPorVaga;
   final VoidCallback onRecarregar;
   final VoidCallback onSolicitarVaga;
 
   const _TabMinhasVagas({
     required this.futureVagas,
+    required this.aprovadosPorVaga,
     required this.onRecarregar,
     required this.onSolicitarVaga,
   });
@@ -252,7 +223,8 @@ class _TabMinhasVagas extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...vagas.map((v) => _cardVaga(v)),
+                ...vagas.map((v) => _cardVaga(
+                    context, v, aprovadosPorVaga[v.id] ?? 0)),
               ],
             ],
           ),
@@ -261,22 +233,30 @@ class _TabMinhasVagas extends StatelessWidget {
     );
   }
 
-  Widget _cardVaga(VagaModel v) {
+  Widget _cardVaga(BuildContext context, VagaModel v, int totalAprovados) {
     final statusReq = v.statusRequisicao;
-    final corStatus = statusReq == 'APROVADA'
-        ? const Color(0xFF10B981)
-        : statusReq == 'RECUSADA'
-            ? AppColors.magenta
-            : AppColors.amarelo;
-    final labelStatus = statusReq == 'APROVADA'
-        ? 'Aprovada'
-        : statusReq == 'RECUSADA'
-            ? 'Recusada'
-            : 'Aguardando RH';
+    final vagaPreenchida =
+        statusReq == 'APROVADA' && totalAprovados >= v.quantidadeVagas;
+
+    Color corStatus;
+    String labelStatus;
+    if (vagaPreenchida) {
+      corStatus = AppColors.cinzaTexto;
+      labelStatus = 'Vaga preenchida';
+    } else if (statusReq == 'APROVADA') {
+      corStatus = const Color(0xFF10B981);
+      labelStatus = 'Aprovada';
+    } else if (statusReq == 'RECUSADA') {
+      corStatus = AppColors.magenta;
+      labelStatus = 'Recusada';
+    } else {
+      corStatus = AppColors.amarelo;
+      labelStatus = 'Aguardando RH';
+    }
+    final podeVerCandidatos = statusReq == 'APROVADA' && v.status == 'ABERTA';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -285,60 +265,125 @@ class _TabMinhasVagas extends StatelessWidget {
               color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2)),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  v.titulo,
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.dark,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: podeVerCandidatos
+              ? () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => KanbanGestorScreen(vaga: v),
+                    ),
+                  )
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        v.titulo,
+                        style: GoogleFonts.poppins(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.dark,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: corStatus.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        labelStatus,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: corStatus,
+                        ),
+                      ),
+                    ),
+                    if (podeVerCandidatos) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded,
+                          size: 20, color: AppColors.cinzaTexto),
+                    ],
+                  ],
+                ),
+                if (v.departamento != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    v.departamento!,
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.cinzaTexto),
                   ),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _chip(Icons.business_center_outlined, v.tipoContrato),
+                    const SizedBox(width: 8),
+                    _chip(
+                        Icons.category_outlined,
+                        v.tipoVaga == 'MULTIPLA'
+                            ? 'Múltiplas vagas'
+                            : 'Vaga única'),
+                  ],
                 ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: corStatus.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  labelStatus,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: corStatus,
+                if (statusReq == 'APROVADA') ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (vagaPreenchida
+                                  ? AppColors.cinzaTexto
+                                  : const Color(0xFF10B981))
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                            '$totalAprovados de ${v.quantidadeVagas} aprovados',
+                            style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: vagaPreenchida
+                                    ? AppColors.cinzaTexto
+                                    : const Color(0xFF10B981))),
+                      ),
+                      if (podeVerCandidatos) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.laranja.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('Ver candidatos',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.laranja)),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
-              ),
-            ],
-          ),
-          if (v.departamento != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              v.departamento!,
-              style: GoogleFonts.poppins(
-                  fontSize: 12, color: AppColors.cinzaTexto),
+                ],
+              ],
             ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _chip(Icons.business_center_outlined, v.tipoContrato),
-              const SizedBox(width: 8),
-              _chip(
-                  Icons.category_outlined,
-                  v.tipoVaga == 'MULTIPLA'
-                      ? 'Múltiplas vagas'
-                      : 'Vaga única'),
-            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -387,134 +432,3 @@ class _TabMinhasVagas extends StatelessWidget {
   }
 }
 
-// ─── Tab: Candidatos ──────────────────────────────────────────────────────────
-
-class _TabCandidatos extends StatelessWidget {
-  final Future<List<VagaModel>> futureVagas;
-
-  const _TabCandidatos({required this.futureVagas});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<VagaModel>>(
-      future: futureVagas,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.magenta));
-        }
-
-        final vagasAbertas = (snap.data ?? [])
-            .where((v) =>
-                v.statusRequisicao == 'APROVADA' && v.status == 'ABERTA')
-            .toList();
-
-        if (vagasAbertas.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.people_outline_rounded,
-                      size: 56, color: AppColors.cinzaTexto),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Nenhuma vaga aberta',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.dark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Candidatos aparecerão quando suas\nvagas forem aprovadas pelo RH.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                        fontSize: 13, color: AppColors.cinzaTexto),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-          children: [
-            Text(
-              'Selecione uma vaga para ver os candidatos',
-              style: GoogleFonts.poppins(
-                  fontSize: 12, color: AppColors.cinzaTexto),
-            ),
-            const SizedBox(height: 14),
-            ...vagasAbertas.map(
-              (v) => GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => KanbanGestorScreen(vaga: v),
-                  ),
-                ),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x08000000),
-                          blurRadius: 8,
-                          offset: Offset(0, 2)),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: AppColors.laranja.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(Icons.people_outline_rounded,
-                            color: AppColors.laranja),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              v.titulo,
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.dark,
-                              ),
-                            ),
-                            if (v.departamento != null)
-                              Text(
-                                v.departamento!,
-                                style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: AppColors.cinzaTexto),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: AppColors.cinzaTexto),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
