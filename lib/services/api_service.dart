@@ -2807,40 +2807,46 @@ class ApiService {
 
   /// Todas as reações de um post, com dados de quem reagiu — usado tanto
   /// para contar por tipo quanto para o modal "quem reagiu".
+  ///
+  /// [postId] negativo identifica um comunicado (id sintético = -id real na
+  /// tabela `comunicados`), que guarda reações em `comunicado_reacoes`.
   Future<List<Map<String, dynamic>>> buscarReacoesPost(int postId) async {
+    final ehComunicado = postId < 0;
     final res = await _client
-        .from('feed_post_reacoes')
+        .from(ehComunicado ? 'comunicado_reacoes' : 'feed_post_reacoes')
         .select('colaborador_id, tipo, colaboradores(nome, foto_url)')
-        .eq('post_id', postId);
+        .eq(ehComunicado ? 'comunicado_id' : 'post_id', ehComunicado ? -postId : postId);
     return List<Map<String, dynamic>>.from(res as List);
   }
 
-  /// Reage a um post com [tipo]. Repetir o mesmo tipo remove a reação
-  /// (toggle); reagir com um tipo diferente troca a reação anterior — só uma
-  /// reação por colaborador por post, como no LinkedIn.
+  /// Reage a um post (ou comunicado, se [postId] for negativo) com [tipo].
+  /// Repetir o mesmo tipo remove a reação (toggle); reagir com um tipo
+  /// diferente troca a reação anterior — só uma reação por colaborador por
+  /// post, como no LinkedIn.
   Future<void> reagirPost({required int postId, required String tipo}) async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return;
+    final ehComunicado = postId < 0;
+    final tabela = ehComunicado ? 'comunicado_reacoes' : 'feed_post_reacoes';
+    final colunaId = ehComunicado ? 'comunicado_id' : 'post_id';
+    final idReal = ehComunicado ? -postId : postId;
     final existente = await _client
-        .from('feed_post_reacoes')
+        .from(tabela)
         .select('id, tipo')
-        .eq('post_id', postId)
+        .eq(colunaId, idReal)
         .eq('colaborador_id', meuId)
         .maybeSingle();
     if (existente == null) {
-      await _client.from('feed_post_reacoes').insert({
-        'post_id': postId,
+      await _client.from(tabela).insert({
+        colunaId: idReal,
         'colaborador_id': meuId,
         'tipo': tipo,
       });
     } else if (existente['tipo'] == tipo) {
-      await _client
-          .from('feed_post_reacoes')
-          .delete()
-          .eq('id', existente['id'] as int);
+      await _client.from(tabela).delete().eq('id', existente['id'] as int);
     } else {
       await _client
-          .from('feed_post_reacoes')
+          .from(tabela)
           .update({'tipo': tipo})
           .eq('id', existente['id'] as int);
     }

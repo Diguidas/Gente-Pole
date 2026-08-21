@@ -2204,10 +2204,7 @@ class _PostCard extends StatelessWidget {
             const SizedBox(height: 14),
 
           // ── Reações ─────────────────────────────────────────────────────────
-          // Comunicados são sintéticos (id negativo, vêm da tabela
-          // `comunicados`, não de `feed_posts`), então não têm reação.
-          if (post.tipo != 'comunicado')
-            _ReacoesBar(postId: post.id, meuId: meuId),
+          _ReacoesBar(postId: post.id, meuId: meuId),
         ],
       ),
     );
@@ -2398,9 +2395,17 @@ class _ReacoesBar extends StatefulWidget {
 }
 
 class _ReacoesBarState extends State<_ReacoesBar> {
+  static const _rotulos = {
+    'gostei': 'Curtir',
+    'parabens': 'Parabéns',
+    'amei': 'Amei',
+    'estrela': 'Destaque',
+  };
+
   final _api = ApiService();
   List<Map<String, dynamic>> _reacoes = [];
   bool _enviando = false;
+  bool _mostrandoSeletor = false;
 
   @override
   void initState() {
@@ -2434,6 +2439,7 @@ class _ReacoesBarState extends State<_ReacoesBar> {
   }
 
   Future<void> _reagir(String tipo) async {
+    _fecharOverlay();
     if (widget.meuId == null || _enviando) return;
     setState(() => _enviando = true);
     try {
@@ -2442,6 +2448,20 @@ class _ReacoesBarState extends State<_ReacoesBar> {
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
+  }
+
+  // Clique no botão "Curtir": abre o balão de opções (ou fecha, se já
+  // estiver aberto). Só reage a clique — não a hover/scroll — pra não abrir
+  // sozinho enquanto o usuário rola o feed. O balão é posicionado localmente
+  // (Stack dentro do próprio post), sem Overlay/LayerLink — evita o erro de
+  // "paint transform" do CompositedTransformFollower durante o scroll.
+  void _alternarOverlay() {
+    if (widget.meuId == null) return;
+    setState(() => _mostrandoSeletor = !_mostrandoSeletor);
+  }
+
+  void _fecharOverlay() {
+    if (_mostrandoSeletor) setState(() => _mostrandoSeletor = false);
   }
 
   void _abrirQuemReagiu() {
@@ -2458,55 +2478,150 @@ class _ReacoesBarState extends State<_ReacoesBar> {
   Widget build(BuildContext context) {
     final contagens = _contagens;
     final minhaReacao = _minhaReacao;
+    final reagiu = minhaReacao != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Divider(height: 1, color: Color(0xFFF1F5F9)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: _abrirQuemReagiu,
-                  child: contagens.isEmpty
-                      ? const SizedBox(height: 26)
-                      : Row(
-                          children: [
-                            for (final tipo in ApiService.tiposReacaoPost.keys)
-                              if ((contagens[tipo] ?? 0) > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        ApiService.tiposReacaoPost[tipo]!,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '${contagens[tipo]}',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.cinzaTexto,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                          ],
-                        ),
+        if (_mostrandoSeletor)
+          // TapRegion fecha o balão com um toque em qualquer outro lugar da
+          // tela (fora do próprio balão) — sem precisar de Overlay. Usa o
+          // mesmo groupId do botão "Curtir" pra um toque nele não contar
+          // como "fora" (evita fechar e reabrir ao mesmo tempo).
+          TapRegion(
+            groupId: widget.postId,
+            onTapOutside: (_) => _fecharOverlay(),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _SeletorReacoes(
+                  minhaReacao: minhaReacao,
+                  onSelecionar: _reagir,
                 ),
               ),
-              for (final entry in ApiService.tiposReacaoPost.entries)
-                GestureDetector(
-                  onTap: () => _reagir(entry.key),
-                  child: Container(
-                    margin: const EdgeInsets.only(left: 2),
-                    padding: const EdgeInsets.all(6),
+            ),
+          ),
+        if (contagens.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+            child: GestureDetector(
+              onTap: _abrirQuemReagiu,
+              child: Row(
+                children: [
+                  for (final tipo in ApiService.tiposReacaoPost.keys)
+                    if ((contagens[tipo] ?? 0) > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Tooltip(
+                          message: _ReacoesBarState._rotulos[tipo]!,
+                          waitDuration: const Duration(milliseconds: 200),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                ApiService.tiposReacaoPost[tipo]!,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${contagens[tipo]}',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.cinzaTexto,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+        TapRegion(
+          groupId: widget.postId,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+            child: GestureDetector(
+              onTap: _alternarOverlay,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Opacity(
+                      opacity: reagiu ? 1 : 0.45,
+                      child: Text(
+                        reagiu
+                            ? ApiService.tiposReacaoPost[minhaReacao]!
+                            : '👍',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      reagiu ? _rotulos[minhaReacao]! : 'Curtir',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: reagiu
+                            ? AppColors.magenta
+                            : AppColors.cinzaTexto.withOpacity(0.55),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Balão flutuante com as opções de reação (aparece ao passar o mouse por
+// cima do botão "Curtir" no desktop/web, ou ao tocar e segurar no celular).
+class _SeletorReacoes extends StatelessWidget {
+  final String? minhaReacao;
+  final void Function(String tipo) onSelecionar;
+  const _SeletorReacoes({required this.minhaReacao, required this.onSelecionar});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final entry in ApiService.tiposReacaoPost.entries)
+              Tooltip(
+                message: _ReacoesBarState._rotulos[entry.key]!,
+                waitDuration: const Duration(milliseconds: 200),
+                child: GestureDetector(
+                  onTap: () => onSelecionar(entry.key),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: EdgeInsets.all(minhaReacao == entry.key ? 4 : 6),
                     decoration: BoxDecoration(
                       color: minhaReacao == entry.key
                           ? AppColors.magentaOp15
@@ -2515,14 +2630,15 @@ class _ReacoesBarState extends State<_ReacoesBar> {
                     ),
                     child: Text(
                       entry.value,
-                      style: const TextStyle(fontSize: 16),
+                      style: TextStyle(
+                          fontSize: minhaReacao == entry.key ? 26 : 24),
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
