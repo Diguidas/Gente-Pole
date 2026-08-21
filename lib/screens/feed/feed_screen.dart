@@ -38,7 +38,7 @@ class _FeedScreenState extends State<FeedScreen> {
   // empresa/novos Polevalentes), pra não obrigar a rolar por eles pra
   // chegar no feed de verdade.
   static const _previaPostsCount = 5;
-  bool _mostrarTodosPosts = false;
+  int _quantidadePostsVisiveis = _previaPostsCount;
 
   // Humor
   Map<String, dynamic>? _humorHoje;
@@ -169,8 +169,9 @@ class _FeedScreenState extends State<FeedScreen> {
       final p = await _api.buscarPesquisasDisponiveis();
       if (!mounted) return;
       setState(() {
-        _pesquisasPendentes =
-            p.where((e) => e['ja_respondeu'] != true).toList();
+        _pesquisasPendentes = p
+            .where((e) => e['ja_respondeu'] != true)
+            .toList();
       });
     } catch (_) {}
   }
@@ -178,9 +179,13 @@ class _FeedScreenState extends State<FeedScreen> {
   List<AniversarianteModel> get _aniversariantesHoje =>
       _aniversariantes.where((a) => a.ehHoje).toList();
 
-  List<Map<String, dynamic>> get _aniversariosEmpresaHoje => _aniversariosEmpresa
-      .where((a) => a['eh_hoje'] == true && (a['anos_completos'] as int? ?? 0) >= 1)
-      .toList();
+  List<Map<String, dynamic>> get _aniversariosEmpresaHoje =>
+      _aniversariosEmpresa
+          .where(
+            (a) =>
+                a['eh_hoje'] == true && (a['anos_completos'] as int? ?? 0) >= 1,
+          )
+          .toList();
 
   Future<void> _registrarHumor(int nivel) async {
     const emojis = ['😞', '😕', '😐', '🙂', '😄'];
@@ -193,20 +198,13 @@ class _FeedScreenState extends State<FeedScreen> {
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          '$emoji Como você está?',
-          style: AppTextStyles.tituloMedio,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('$emoji Como você está?', style: AppTextStyles.tituloMedio),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Você selecionou: $label',
-              style: AppTextStyles.corpoNormal,
-            ),
+            Text('Você selecionou: $label', style: AppTextStyles.corpoNormal),
             const SizedBox(height: 12),
             TextField(
               controller: motivoCtrl,
@@ -215,10 +213,12 @@ class _FeedScreenState extends State<FeedScreen> {
               decoration: InputDecoration(
                 hintText: 'Por que você está assim? (opcional)',
                 hintStyle: GoogleFonts.poppins(
-                    color: AppColors.cinzaTexto.withOpacity(0.6),
-                    fontSize: 13),
+                  color: AppColors.cinzaTexto.withOpacity(0.6),
+                  fontSize: 13,
+                ),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 contentPadding: const EdgeInsets.all(12),
               ),
             ),
@@ -234,7 +234,8 @@ class _FeedScreenState extends State<FeedScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.magenta,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
             child: Text('OK', style: AppTextStyles.botaoPrimario),
           ),
@@ -246,7 +247,9 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final motivo = motivoCtrl.text.trim();
     final ok = await _api.registrarHumor(
-        nivel: nivel, motivo: motivo.isNotEmpty ? motivo : null);
+      nivel: nivel,
+      motivo: motivo.isNotEmpty ? motivo : null,
+    );
     if (!mounted) return;
 
     if (ok) {
@@ -313,15 +316,21 @@ class _FeedScreenState extends State<FeedScreen> {
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Excluir publicação?',
-            style: AppTextStyles.tituloPequeno
-                .copyWith(fontWeight: FontWeight.w600)),
-        content: Text('Essa ação não pode ser desfeita.',
-            style: AppTextStyles.corpoNormal),
+        title: Text(
+          'Excluir publicação?',
+          style: AppTextStyles.tituloPequeno.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Essa ação não pode ser desfeita.',
+          style: AppTextStyles.corpoNormal,
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancelar', style: AppTextStyles.corpoCinza)),
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar', style: AppTextStyles.corpoCinza),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -349,8 +358,9 @@ class _FeedScreenState extends State<FeedScreen> {
       body: Stack(
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(28),
+            ),
             child: Image.asset(
               'assets/banner_app.png',
               height: 220,
@@ -363,8 +373,10 @@ class _FeedScreenState extends State<FeedScreen> {
               children: [
                 // ── Header ────────────────────────────────────────────────────
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   child: Row(
                     children: [
                       _avatar(colaborador?.nome ?? '', colaborador?.fotoUrl),
@@ -402,11 +414,17 @@ class _FeedScreenState extends State<FeedScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      _chip(Icons.badge_outlined, 'Matrícula',
-                          colaborador?.matricula ?? '—'),
+                      _chip(
+                        Icons.badge_outlined,
+                        'Matrícula',
+                        colaborador?.matricula ?? '—',
+                      ),
                       const SizedBox(width: 10),
-                      _chip(Icons.calendar_today_outlined, 'Admissão',
-                          colaborador?.dataAdmissaoFormatada ?? '—'),
+                      _chip(
+                        Icons.calendar_today_outlined,
+                        'Admissão',
+                        colaborador?.dataAdmissaoFormatada ?? '—',
+                      ),
                     ],
                   ),
                 ),
@@ -419,13 +437,16 @@ class _FeedScreenState extends State<FeedScreen> {
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(28)),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
                     ),
                     child: _carregando
                         ? const Center(
                             child: CircularProgressIndicator(
-                                color: AppColors.magenta))
+                              color: AppColors.magenta,
+                            ),
+                          )
                         : RefreshIndicator(
                             color: AppColors.magenta,
                             onRefresh: () async {
@@ -436,79 +457,86 @@ class _FeedScreenState extends State<FeedScreen> {
                               await _carregarAniversarios();
                               await _carregarPesquisasPendentes();
                             },
-                            child: Builder(builder: (ctx) {
-                              final meuId = _api.colaboradorAtual?.id;
-                              // Separa posts pendentes/rejeitados do próprio usuário
-                              final meusPendentes = meuId == null
-                                  ? <FeedPostModel>[]
-                                  : _posts
-                                      .where((p) =>
-                                          p.autorId == meuId &&
-                                          !p.isAprovado)
-                                      .toList();
-                              // Feed principal: aprovados + qualquer post de outros —
-                              // exceto posts de aniversário (vida/empresa), que agora
-                              // têm containers próprios no topo e não devem mais
-                              // poluir o feed (mesma regra do _filtrarAprovados do
-                              // gentepole_admin).
-                              final feedPrincipal = _posts
-                                  .where((p) =>
-                                      !p.isAniversario &&
-                                      (p.isAprovado ||
-                                          (meuId != null && p.autorId != meuId)))
-                                  .toList();
+                            child: Builder(
+                              builder: (ctx) {
+                                final meuId = _api.colaboradorAtual?.id;
+                                // Separa posts pendentes/rejeitados do próprio usuário
+                                final meusPendentes = meuId == null
+                                    ? <FeedPostModel>[]
+                                    : _posts
+                                          .where(
+                                            (p) =>
+                                                p.autorId == meuId &&
+                                                !p.isAprovado,
+                                          )
+                                          .toList();
+                                // Feed principal: aprovados + qualquer post de outros —
+                                // exceto posts de aniversário (vida/empresa), que agora
+                                // têm containers próprios no topo e não devem mais
+                                // poluir o feed (mesma regra do _filtrarAprovados do
+                                // gentepole_admin).
+                                final feedPrincipal = _posts
+                                    .where(
+                                      (p) =>
+                                          !p.isAniversario &&
+                                          (p.isAprovado ||
+                                              (meuId != null &&
+                                                  p.autorId != meuId)),
+                                    )
+                                    .toList();
 
-                              final temPendentes = meusPendentes.isNotEmpty;
-                              final fixos = _buildItensFixos(
-                                meusPendentes: meusPendentes,
-                                temPendentes: temPendentes,
-                              );
+                                final temPendentes = meusPendentes.isNotEmpty;
+                                final fixos = _buildItensFixos(
+                                  meusPendentes: meusPendentes,
+                                  temPendentes: temPendentes,
+                                );
 
-                              final postsPrevia = feedPrincipal
-                                  .take(_previaPostsCount)
-                                  .toList();
-                              final postsRestantes = feedPrincipal
-                                  .skip(_previaPostsCount)
-                                  .toList();
-                              final mostrarBotaoMais =
-                                  !_mostrarTodosPosts && postsRestantes.isNotEmpty;
+                                final postsVisiveis = feedPrincipal
+                                    .take(_quantidadePostsVisiveis)
+                                    .toList();
+                                final restantes =
+                                    feedPrincipal.length - postsVisiveis.length;
+                                final mostrarBotaoMais = restantes > 0;
 
-                              final itens = <Widget>[
-                                ...fixos,
-                                if (feedPrincipal.isEmpty) _vazioWidget(),
-                                ...postsPrevia.map((p) => _PostCard(
+                                final itens = <Widget>[
+                                  ...fixos,
+                                  if (feedPrincipal.isEmpty) _vazioWidget(),
+                                  ...postsVisiveis.map(
+                                    (p) => _PostCard(
                                       post: p,
                                       meuId: meuId,
                                       onExcluir: () => _confirmarExclusao(p),
-                                    )),
-                                if (mostrarBotaoMais)
-                                  _buildBotaoMostrarMaisPosts(
-                                      postsRestantes.length),
-                                ..._buildItensCelebracao(),
-                                if (_mostrarTodosPosts)
-                                  ...postsRestantes.map((p) => _PostCard(
-                                        post: p,
-                                        meuId: meuId,
-                                        onExcluir: () => _confirmarExclusao(p),
-                                      )),
-                              ];
-
-                              return ListView.builder(
-                                controller: _scrollCtrl,
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-                                itemCount: itens.length + (_carregandoMais ? 1 : 0),
-                                itemBuilder: (_, i) {
-                                  if (i < itens.length) return itens[i];
-                                  return const Padding(
-                                    padding: EdgeInsets.all(24),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                          color: AppColors.magenta),
                                     ),
-                                  );
-                                },
-                              );
-                            }),
+                                  ),
+                                  if (mostrarBotaoMais)
+                                    _buildBotaoMostrarMaisPosts(restantes),
+                                  ..._buildItensCelebracao(),
+                                ];
+
+                                return ListView.builder(
+                                  controller: _scrollCtrl,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    40,
+                                  ),
+                                  itemCount:
+                                      itens.length + (_carregandoMais ? 1 : 0),
+                                  itemBuilder: (_, i) {
+                                    if (i < itens.length) return itens[i];
+                                    return const Padding(
+                                      padding: EdgeInsets.all(24),
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: AppColors.magenta,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
                   ),
                 ),
@@ -537,8 +565,11 @@ class _FeedScreenState extends State<FeedScreen> {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
             child: Row(
               children: [
-                const Icon(Icons.hourglass_top_rounded,
-                    size: 16, color: Color(0xFFB45309)),
+                const Icon(
+                  Icons.hourglass_top_rounded,
+                  size: 16,
+                  color: Color(0xFFB45309),
+                ),
                 const SizedBox(width: 6),
                 Text(
                   posts.any((p) => p.isPendente)
@@ -554,56 +585,63 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFFDE68A)),
-          ...posts.map((p) => Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
+          ...posts.map(
+            (p) => Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: p.isPendente
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      p.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
                         color: p.isPendente
-                            ? const Color(0xFFFEF3C7)
-                            : const Color(0xFFFEE2E2),
-                        borderRadius: BorderRadius.circular(10),
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFFB91C1C),
                       ),
-                      child: Text(
-                        p.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
-                        style: GoogleFonts.poppins(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: p.isPendente
-                              ? const Color(0xFFB45309)
-                              : const Color(0xFFB91C1C),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      p.conteudo ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: const Color(0xFF78350F),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  if (p.isRejeitado)
+                    GestureDetector(
+                      onTap: () => _confirmarExclusao(p),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Color(0xFFB91C1C),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        p.conteudo ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: const Color(0xFF78350F),
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                    if (p.isRejeitado)
-                      GestureDetector(
-                        onTap: () => _confirmarExclusao(p),
-                        child: const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: Icon(Icons.delete_outline_rounded,
-                              size: 18, color: Color(0xFFB91C1C)),
-                        ),
-                      ),
-                  ],
-                ),
-              )),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -649,8 +687,11 @@ class _FeedScreenState extends State<FeedScreen> {
               color: const Color(0xFFFB923C).withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.medical_services_outlined,
-                color: Color(0xFFF97316), size: 24),
+            child: const Icon(
+              Icons.medical_services_outlined,
+              color: Color(0xFFF97316),
+              size: 24,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -670,7 +711,9 @@ class _FeedScreenState extends State<FeedScreen> {
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFB923C).withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
@@ -699,8 +742,9 @@ class _FeedScreenState extends State<FeedScreen> {
                   Text(
                     obs,
                     style: TextStyle(
-                        fontSize: 12,
-                        color: const Color(0xFF92400E).withOpacity(0.7)),
+                      fontSize: 12,
+                      color: const Color(0xFF92400E).withOpacity(0.7),
+                    ),
                   ),
                 ],
               ],
@@ -751,17 +795,23 @@ class _FeedScreenState extends State<FeedScreen> {
       child: SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () => setState(() => _mostrarTodosPosts = true),
+          onPressed: () =>
+              setState(() => _quantidadePostsVisiveis += _previaPostsCount),
           icon: const Icon(Icons.expand_more_rounded, size: 18),
-          label: Text('Mostrar mais posts ($restantes)',
-              style: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w600)),
+          label: Text(
+            'Mostrar mais posts ($restantes)',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.magenta,
             side: const BorderSide(color: AppColors.magenta),
             padding: const EdgeInsets.symmetric(vertical: 12),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         ),
       ),
@@ -777,9 +827,10 @@ class _FeedScreenState extends State<FeedScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 10,
-              offset: const Offset(0, 3)),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
         ],
       ),
       // Proporção da imagem cadastrada no RH (1128x191) — evita cortar ou
@@ -789,8 +840,11 @@ class _FeedScreenState extends State<FeedScreen> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: _banners.length == 1
-              ? Image.network(_banners.first['url'] as String,
-                  fit: BoxFit.cover, width: double.infinity)
+              ? Image.network(
+                  _banners.first['url'] as String,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                )
               : _BannerCarrossel(banners: _banners),
         ),
       ),
@@ -804,13 +858,15 @@ class _FeedScreenState extends State<FeedScreen> {
     return _CardAniversarioMes(
       titulo: '🎂 Aniversariantes de hoje',
       itens: hoje
-          .map((a) => _LinhaAniversario(
-                nome: a.colaborador.nome,
-                setor: a.colaborador.setor,
-                fotoUrl: a.colaborador.fotoUrl,
-                cor: AppColors.magenta,
-                mensagem: 'Feliz aniversário! 🎉',
-              ))
+          .map(
+            (a) => _LinhaAniversario(
+              nome: a.colaborador.nome,
+              setor: a.colaborador.setor,
+              fotoUrl: a.colaborador.fotoUrl,
+              cor: AppColors.magenta,
+              mensagem: 'Feliz aniversário! 🎉',
+            ),
+          )
           .toList(),
     );
   }
@@ -821,8 +877,9 @@ class _FeedScreenState extends State<FeedScreen> {
       titulo: '🏆 Aniversário de empresa hoje',
       itens: hoje.map((a) {
         final anos = (a['anos_completos'] as num?)?.toInt() ?? 0;
-        final nivel =
-            NivelTempoCasa.deCategoria(NivelTempoCasa.categoriaDeAnos(anos));
+        final nivel = NivelTempoCasa.deCategoria(
+          NivelTempoCasa.categoriaDeAnos(anos),
+        );
         return _LinhaAniversario(
           nome: a['nome'] as String? ?? '—',
           setor: a['setor'] as String?,
@@ -839,7 +896,9 @@ class _FeedScreenState extends State<FeedScreen> {
     return _CardAniversarioMes(
       titulo: '🚀 Novos Polevalentes essa semana',
       itens: _novosColaboradoresSemana.map((c) {
-        final dataAdmissao = DateTime.tryParse(c['data_admissao'] as String? ?? '');
+        final dataAdmissao = DateTime.tryParse(
+          c['data_admissao'] as String? ?? '',
+        );
         final dataFormatada = dataAdmissao != null
             ? '${dataAdmissao.day.toString().padLeft(2, '0')}/${dataAdmissao.month.toString().padLeft(2, '0')}'
             : '';
@@ -896,15 +955,18 @@ class _FeedScreenState extends State<FeedScreen> {
                         ? 'Você tem 1 pesquisa para responder'
                         : 'Você tem $qtd pesquisas para responder',
                     style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Sua opinião ajuda a Pole a melhorar',
                     style: GoogleFonts.poppins(
-                        fontSize: 12, color: AppColors.cinzaTexto),
+                      fontSize: 12,
+                      color: AppColors.cinzaTexto,
+                    ),
                   ),
                 ],
               ),
@@ -919,90 +981,101 @@ class _FeedScreenState extends State<FeedScreen> {
   // ── Humor Card ────────────────────────────────────────────────────────────────
 
   Widget _buildHumorCard() {
-    return _HumorCard(
-      humorHoje: _humorHoje,
-      onRegistrar: _registrarHumor,
-    );
+    return _HumorCard(humorHoje: _humorHoje, onRegistrar: _registrarHumor);
   }
 
   // ── Widgets auxiliares ────────────────────────────────────────────────────────
 
   Widget _vazioWidget() => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.dynamic_feed_rounded,
-                  size: 64,
-                  color: AppColors.cinzaTexto.withOpacity(0.4)),
-              const SizedBox(height: 16),
-              Text('Nenhuma publicação ainda',
-                  style: AppTextStyles.corpoCinza
-                      .copyWith(fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Text('Seja o primeiro a publicar algo!',
-                  style: AppTextStyles.corpoCinza),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.dynamic_feed_rounded,
+            size: 64,
+            color: AppColors.cinzaTexto.withOpacity(0.4),
           ),
-        ),
-      );
+          const SizedBox(height: 16),
+          Text(
+            'Nenhuma publicação ainda',
+            style: AppTextStyles.corpoCinza.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Seja o primeiro a publicar algo!',
+            style: AppTextStyles.corpoCinza,
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _avatar(String nome, String? fotoUrl) {
     if (fotoUrl != null && fotoUrl.isNotEmpty) {
       return CircleAvatar(
-          radius: 22, backgroundImage: CachedNetworkImageProvider(fotoUrl));
+        radius: 22,
+        backgroundImage: CachedNetworkImageProvider(fotoUrl),
+      );
     }
     return CircleAvatar(
       radius: 22,
       backgroundColor: Colors.white.withOpacity(0.3),
-      child: Text(_iniciais(nome),
-          style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 14)),
+      child: Text(
+        _iniciais(nome),
+        style: GoogleFonts.poppins(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      ),
     );
   }
 
-  Widget _headerIcon(
-          {required IconData icon,
-          required String tooltip,
-          required VoidCallback onTap}) =>
-      IconButton(
-        onPressed: onTap,
-        tooltip: tooltip,
-        icon: Icon(icon, color: Colors.white),
-      );
+  Widget _headerIcon({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) => IconButton(
+    onPressed: onTap,
+    tooltip: tooltip,
+    icon: Icon(icon, color: Colors.white),
+  );
 
   Widget _chip(IconData icon, String label, String valor) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.18),
-          borderRadius: BorderRadius.circular(20),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.18),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: Colors.white70),
+        const SizedBox(width: 5),
+        Text(
+          '$label: $valor',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: Colors.white70),
-            const SizedBox(width: 5),
-            Text(
-              '$label: $valor',
-              style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 
   String _iniciais(String nome) {
     final p = nome.trim().split(' ');
     return p.length >= 2
         ? '${p.first[0]}${p.last[0]}'.toUpperCase()
         : nome.isNotEmpty
-            ? nome[0].toUpperCase()
-            : '?';
+        ? nome[0].toUpperCase()
+        : '?';
   }
 
   // ── Modais ────────────────────────────────────────────────────────────────────
@@ -1012,16 +1085,21 @@ class _FeedScreenState extends State<FeedScreen> {
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Sair da conta?',
-            style: AppTextStyles.tituloPequeno
-                .copyWith(fontWeight: FontWeight.w600)),
+        title: Text(
+          'Sair da conta?',
+          style: AppTextStyles.tituloPequeno.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         content: Text(
-            'Você precisará digitar seu CPF e senha novamente.',
-            style: AppTextStyles.corpoNormal),
+          'Você precisará digitar seu CPF e senha novamente.',
+          style: AppTextStyles.corpoNormal,
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancelar', style: AppTextStyles.corpoCinza)),
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar', style: AppTextStyles.corpoCinza),
+          ),
           ElevatedButton(
             onPressed: () async {
               await _api.limparSessao();
@@ -1143,7 +1221,8 @@ class _InlineComposerState extends State<_InlineComposer> {
 
   // Posição do @ ativo (início) e fim da última menção confirmada
   int _mencaoStart = -1;
-  int _mencaoEnd = -1; // posição após o último label inserido; ignora @s anteriores
+  int _mencaoEnd =
+      -1; // posição após o último label inserido; ignora @s anteriores
 
   void _onTextoMudou() {
     setState(() {});
@@ -1242,9 +1321,9 @@ class _InlineComposerState extends State<_InlineComposer> {
   }
 
   void _removerImagem() => setState(() {
-        _imagemBytes = null;
-        _imagemNome = null;
-      });
+    _imagemBytes = null;
+    _imagemNome = null;
+  });
 
   Future<void> _publicar() async {
     final conteudo = _ctrl.text.trim();
@@ -1278,8 +1357,10 @@ class _InlineComposerState extends State<_InlineComposer> {
       if (pendente && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Post enviado para aprovação do RH.',
-                style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+            content: Text(
+              'Post enviado para aprovação do RH.',
+              style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+            ),
             backgroundColor: const Color(0xFFF59E0B),
             behavior: SnackBarBehavior.floating,
           ),
@@ -1289,9 +1370,10 @@ class _InlineComposerState extends State<_InlineComposer> {
       setState(() => _enviando = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao publicar. Tente novamente.',
-              style: AppTextStyles.corpoNormal
-                  .copyWith(color: Colors.white)),
+          content: Text(
+            'Erro ao publicar. Tente novamente.',
+            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+          ),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -1311,9 +1393,10 @@ class _InlineComposerState extends State<_InlineComposer> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -1335,13 +1418,16 @@ class _InlineComposerState extends State<_InlineComposer> {
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.magenta.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: AppColors.magenta.withOpacity(0.25),
-                                width: 1),
+                              color: AppColors.magenta.withOpacity(0.25),
+                              width: 1,
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1350,8 +1436,9 @@ class _InlineComposerState extends State<_InlineComposer> {
                                 _destinatario == 'todos'
                                     ? Icons.public_rounded
                                     : _destinatario.startsWith('@setor:')
-                                        ? Icons.group_rounded
-                                        : Icons.person_rounded, // @colaborador:id|nome
+                                    ? Icons.group_rounded
+                                    : Icons
+                                          .person_rounded, // @colaborador:id|nome
                                 size: 13,
                                 color: AppColors.magenta,
                               ),
@@ -1375,8 +1462,11 @@ class _InlineComposerState extends State<_InlineComposer> {
                                     _destinatarioLabel = 'Todos';
                                     _mencaoEnd = -1;
                                   }),
-                                  child: Icon(Icons.close_rounded,
-                                      size: 14, color: AppColors.magenta),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 14,
+                                    color: AppColors.magenta,
+                                  ),
                                 ),
                               ],
                             ],
@@ -1432,8 +1522,11 @@ class _InlineComposerState extends State<_InlineComposer> {
                                   color: Colors.black54,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.close_rounded,
-                                    color: Colors.white, size: 18),
+                                child: const Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
                               ),
                             ),
                           ],
@@ -1450,21 +1543,21 @@ class _InlineComposerState extends State<_InlineComposer> {
           if (_expandido) ...[
             const Divider(height: 1),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
                 children: [
                   _actionBtn(Icons.image_outlined, 'Foto', _escolherImagem),
                   const SizedBox(width: 8),
                   _actionBtn(Icons.alternate_email_rounded, 'Mencionar', () {
-                    final offset = _ctrl.selection.baseOffset
-                        .clamp(0, _ctrl.text.length);
+                    final offset = _ctrl.selection.baseOffset.clamp(
+                      0,
+                      _ctrl.text.length,
+                    );
                     final texto = _ctrl.text;
                     _ctrl.value = TextEditingValue(
                       text:
                           '${texto.substring(0, offset)}@${texto.substring(offset)}',
-                      selection:
-                          TextSelection.collapsed(offset: offset + 1),
+                      selection: TextSelection.collapsed(offset: offset + 1),
                     );
                     _focusNode.requestFocus();
                   }),
@@ -1474,7 +1567,9 @@ class _InlineComposerState extends State<_InlineComposer> {
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.magenta),
+                            strokeWidth: 2,
+                            color: AppColors.magenta,
+                          ),
                         )
                       : TextButton(
                           onPressed: temConteudo ? _publicar : null,
@@ -1489,13 +1584,17 @@ class _InlineComposerState extends State<_InlineComposer> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 8),
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
                           ),
-                          child: Text('Publicar',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              )),
+                          child: Text(
+                            'Publicar',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                 ],
               ),
@@ -1513,9 +1612,10 @@ class _InlineComposerState extends State<_InlineComposer> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 12,
-              offset: const Offset(0, 4))
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
         ],
         border: Border.all(color: const Color(0xFFEEEEEE)),
       ),
@@ -1523,15 +1623,17 @@ class _InlineComposerState extends State<_InlineComposer> {
           ? const Padding(
               padding: EdgeInsets.all(16),
               child: Center(
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.magenta)),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.magenta,
+                ),
+              ),
             )
           : ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _sugestoes.length,
-              separatorBuilder: (_, __) =>
-                  const Divider(height: 1, indent: 16),
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
               itemBuilder: (_, i) {
                 final s = _sugestoes[i];
                 final tipo = s['tipo']!;
@@ -1542,27 +1644,35 @@ class _InlineComposerState extends State<_InlineComposer> {
                     backgroundColor: tipo == 'setor'
                         ? AppColors.laranja.withOpacity(0.15)
                         : tipo == 'todos'
-                            ? AppColors.magenta.withOpacity(0.15)
-                            : const Color(0xFFEEEEEE),
+                        ? AppColors.magenta.withOpacity(0.15)
+                        : const Color(0xFFEEEEEE),
                     child: Icon(
                       tipo == 'setor'
                           ? Icons.group_rounded
                           : tipo == 'todos'
-                              ? Icons.people_alt_rounded
-                              : Icons.person_rounded,
+                          ? Icons.people_alt_rounded
+                          : Icons.person_rounded,
                       size: 18,
                       color: tipo == 'setor'
                           ? AppColors.laranja
                           : AppColors.magenta,
                     ),
                   ),
-                  title: Text(s['label']!,
-                      style: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  title: Text(
+                    s['label']!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   subtitle: s['sublabel']!.isNotEmpty
-                      ? Text(s['sublabel']!,
+                      ? Text(
+                          s['sublabel']!,
                           style: GoogleFonts.poppins(
-                              fontSize: 11, color: AppColors.cinzaTexto))
+                            fontSize: 11,
+                            color: AppColors.cinzaTexto,
+                          ),
+                        )
                       : null,
                   onTap: () => _selecionarMencao(s),
                 );
@@ -1574,24 +1684,29 @@ class _InlineComposerState extends State<_InlineComposer> {
   Widget _avatarWidget(String nome, String? fotoUrl) {
     if (fotoUrl != null && fotoUrl.isNotEmpty) {
       return CircleAvatar(
-          radius: 20, backgroundImage: CachedNetworkImageProvider(fotoUrl));
+        radius: 20,
+        backgroundImage: CachedNetworkImageProvider(fotoUrl),
+      );
     }
     final iniciais = () {
       final p = nome.trim().split(' ');
       return p.length >= 2
           ? '${p.first[0]}${p.last[0]}'.toUpperCase()
           : nome.isNotEmpty
-              ? nome[0].toUpperCase()
-              : '?';
+          ? nome[0].toUpperCase()
+          : '?';
     }();
     return CircleAvatar(
       radius: 20,
       backgroundColor: AppColors.magenta,
-      child: Text(iniciais,
-          style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 13)),
+      child: Text(
+        iniciais,
+        style: GoogleFonts.poppins(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
     );
   }
 
@@ -1609,11 +1724,14 @@ class _InlineComposerState extends State<_InlineComposer> {
             children: [
               Icon(icon, size: 18, color: AppColors.cinzaTexto),
               const SizedBox(width: 6),
-              Text(label,
-                  style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: AppColors.cinzaTexto,
-                      fontWeight: FontWeight.w500)),
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: AppColors.cinzaTexto,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
         ),
@@ -1642,8 +1760,9 @@ class _HumorCardState extends State<_HumorCard> {
     const emojis = ['😞', '😕', '😐', '🙂', '😄'];
     const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
     final jaRegistrou = widget.humorHoje != null;
-    final nivelAtual =
-        jaRegistrou ? (widget.humorHoje!['nivel'] as int? ?? 0) : -1;
+    final nivelAtual = jaRegistrou
+        ? (widget.humorHoje!['nivel'] as int? ?? 0)
+        : -1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1653,9 +1772,10 @@ class _HumorCardState extends State<_HumorCard> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -1671,9 +1791,10 @@ class _HumorCardState extends State<_HumorCard> {
                       ? 'Humor de hoje: ${labels[nivelAtual - 1]}'
                       : 'Como você está hoje?',
                   style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: AppColors.dark),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.dark,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1683,7 +1804,9 @@ class _HumorCardState extends State<_HumorCard> {
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.magenta),
+                    strokeWidth: 2,
+                    color: AppColors.magenta,
+                  ),
                 ),
               ],
             ],
@@ -1702,7 +1825,9 @@ class _HumorCardState extends State<_HumorCard> {
                       },
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 8),
+                    horizontal: 6,
+                    vertical: 8,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   backgroundColor: selecionado
@@ -1713,7 +1838,8 @@ class _HumorCardState extends State<_HumorCard> {
                     side: selecionado
                         ? BorderSide(
                             color: AppColors.magenta.withOpacity(0.4),
-                            width: 1.5)
+                            width: 1.5,
+                          )
                         : BorderSide.none,
                   ),
                 ),
@@ -1737,8 +1863,8 @@ class _HumorCardState extends State<_HumorCard> {
                         color: selecionado
                             ? AppColors.magenta
                             : jaRegistrou
-                                ? AppColors.cinzaTexto.withOpacity(0.5)
-                                : AppColors.cinzaTexto,
+                            ? AppColors.cinzaTexto.withOpacity(0.5)
+                            : AppColors.cinzaTexto,
                         fontWeight: selecionado
                             ? FontWeight.w700
                             : FontWeight.normal,
@@ -1776,29 +1902,28 @@ class _PostCard extends StatelessWidget {
     final isDoSistema = post.isDoSistema;
     final isHumor = post.isHumor;
     final isRespostaParabens = post.isRespostaParabens;
-    final corDestaque = isRespostaParabens ? _douradoResposta : AppColors.magenta;
+    // Card de humor não tem mais destaque de cor forte (fundo/borda) — só a
+    // etiqueta "💬 Humor do dia" no cabeçalho já avisa o tipo, e o card fica
+    // discreto/branco igual aos demais, sem o gradiente magenta que ficava
+    // pesado visualmente.
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        gradient: (isHumor || isRespostaParabens)
+        gradient: isRespostaParabens
             ? LinearGradient(
-                colors: [corDestaque.withOpacity(0.08), Colors.white],
+                colors: [_douradoResposta.withOpacity(0.08), Colors.white],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               )
             : null,
-        color: (isHumor || isRespostaParabens) ? null : Colors.white,
+        color: isRespostaParabens ? null : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: (isHumor || isRespostaParabens)
-            ? Border.all(color: corDestaque.withOpacity(0.35), width: 1.5)
+        border: isRespostaParabens
+            ? Border.all(color: _douradoResposta.withOpacity(0.35), width: 1.5)
             : isAniversario
-                ? Border.all(
-                    color: AppColors.laranja.withOpacity(0.4), width: 1.5)
-                : isDoSistema
-                    ? Border.all(
-                        color: AppColors.magenta.withOpacity(0.3), width: 1.5)
-                    : null,
+            ? Border.all(color: AppColors.laranja.withOpacity(0.4), width: 1.5)
+            : Border.all(color: const Color(0xFFEFEFEF)),
         boxShadow: [
           BoxShadow(
             color: isAniversario
@@ -1820,7 +1945,9 @@ class _PostCard extends StatelessWidget {
                 isDoSistema
                     ? _avatarSistema(isAniversario)
                     : _avatarColaborador(
-                        post.autorNome ?? '', post.autorFotoUrl),
+                        post.autorNome ?? '',
+                        post.autorFotoUrl,
+                      ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1828,7 +1955,9 @@ class _PostCard extends StatelessWidget {
                     children: [
                       Text(
                         isDoSistema
-                            ? (isAniversario ? '🎉 Gente Pole' : '📢 Gente Pole')
+                            ? (isAniversario
+                                  ? '🎉 Gente Pole'
+                                  : '📢 Gente Pole')
                             : (post.autorNome ?? 'Colaborador'),
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.w700,
@@ -1841,15 +1970,18 @@ class _PostCard extends StatelessWidget {
                           Text(
                             post.tempoRelativo,
                             style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                color: AppColors.cinzaTexto),
+                              fontSize: 11,
+                              color: AppColors.cinzaTexto,
+                            ),
                           ),
                           ...[
                             const SizedBox(width: 6),
                             Flexible(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 1),
+                                  horizontal: 7,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.magenta.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(10),
@@ -1859,9 +1991,10 @@ class _PostCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   maxLines: 1,
                                   style: GoogleFonts.poppins(
-                                      fontSize: 10,
-                                      color: AppColors.magenta,
-                                      fontWeight: FontWeight.w600),
+                                    fontSize: 10,
+                                    color: AppColors.magenta,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1874,32 +2007,91 @@ class _PostCard extends StatelessWidget {
                 if (isHumor)
                   Container(
                     margin: const EdgeInsets.only(right: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.magenta.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text('💬 Humor do dia',
-                        style: GoogleFonts.poppins(
-                            fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.magenta)),
+                    child: Text(
+                      '💬 Humor do dia',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.magenta,
+                      ),
+                    ),
+                  ),
+                if (isDoSistema && !isAniversario)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.amarelo.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '📢 Comunicado',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF8A6400),
+                      ),
+                    ),
+                  ),
+                if (!isDoSistema && !isHumor && !isRespostaParabens)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.laranja.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '✍️ Post',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.laranja,
+                      ),
+                    ),
                   ),
                 if (isRespostaParabens)
                   Container(
                     margin: const EdgeInsets.only(right: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _douradoResposta.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text('✨ Resposta de aniversário',
-                        style: GoogleFonts.poppins(
-                            fontSize: 10.5, fontWeight: FontWeight.w700, color: _douradoResposta)),
+                    child: Text(
+                      '✨ Resposta de aniversário',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: _douradoResposta,
+                      ),
+                    ),
                   ),
                 // Pill de status para posts do próprio usuário que estão pendentes ou rejeitados
                 if (meuId != null && post.autorId == meuId && !post.isAprovado)
                   Container(
                     margin: const EdgeInsets.only(right: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: post.isPendente
                           ? const Color(0xFFFEF3C7)
@@ -1929,20 +2121,30 @@ class _PostCard extends StatelessWidget {
                         value: 'excluir',
                         child: Row(
                           children: [
-                            const Icon(Icons.delete_outline_rounded,
-                                color: Colors.red, size: 18),
+                            const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.red,
+                              size: 18,
+                            ),
                             const SizedBox(width: 8),
-                            Text('Excluir',
-                                style: GoogleFonts.poppins(
-                                    color: Colors.red, fontSize: 13)),
+                            Text(
+                              'Excluir',
+                              style: GoogleFonts.poppins(
+                                color: Colors.red,
+                                fontSize: 13,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ],
-                    icon:
-                        Icon(Icons.more_horiz_rounded, color: AppColors.cinzaTexto),
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      color: AppColors.cinzaTexto,
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
               ],
             ),
@@ -1962,8 +2164,12 @@ class _PostCard extends StatelessWidget {
           // ── Título (comunicados) ───────────────────────────────────────────
           if (post.titulo != null && post.titulo!.isNotEmpty)
             Padding(
-              padding: EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14,
-                  post.conteudo != null && post.conteudo!.isNotEmpty ? 2 : 16),
+              padding: EdgeInsets.fromLTRB(
+                14,
+                post.temImagem ? 12 : 0,
+                14,
+                post.conteudo != null && post.conteudo!.isNotEmpty ? 2 : 16,
+              ),
               child: Text(
                 post.titulo!,
                 style: GoogleFonts.poppins(
@@ -1978,25 +2184,42 @@ class _PostCard extends StatelessWidget {
           if (post.conteudo != null && post.conteudo!.isNotEmpty)
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  14,
-                  (post.titulo != null && post.titulo!.isNotEmpty)
-                      ? 0
-                      : (post.temImagem ? 12 : 0),
-                  14,
-                  16),
-              child: _buildConteudo(post.conteudo!, isAniversario, isHumor, isRespostaParabens),
+                14,
+                (post.titulo != null && post.titulo!.isNotEmpty)
+                    ? 0
+                    : (post.temImagem ? 12 : 0),
+                14,
+                16,
+              ),
+              child: _buildConteudo(
+                post.conteudo!,
+                isAniversario,
+                isHumor,
+                isRespostaParabens,
+              ),
             ),
 
           if ((post.conteudo == null || post.conteudo!.isEmpty) &&
               (post.titulo == null || post.titulo!.isEmpty))
             const SizedBox(height: 14),
+
+          // ── Reações ─────────────────────────────────────────────────────────
+          // Comunicados são sintéticos (id negativo, vêm da tabela
+          // `comunicados`, não de `feed_posts`), então não têm reação.
+          if (post.tipo != 'comunicado')
+            _ReacoesBar(postId: post.id, meuId: meuId),
         ],
       ),
     );
   }
 
   // Renderiza texto com @menções e *nomes* (aniversário/humor) em destaque
-  Widget _buildConteudo(String texto, bool isAniversario, bool isHumor, bool isRespostaParabens) {
+  Widget _buildConteudo(
+    String texto,
+    bool isAniversario,
+    bool isHumor,
+    bool isRespostaParabens,
+  ) {
     final fontSize = isAniversario ? 15.0 : 14.0;
     final baseStyle = GoogleFonts.poppins(
       fontSize: fontSize,
@@ -2008,7 +2231,9 @@ class _PostCard extends StatelessWidget {
     // Posts de aniversário, humor e resposta de aniversário destacam *nome*
     // — laranja no aniversário, magenta no humor, dourado na resposta.
     if (isAniversario || isHumor || isRespostaParabens) {
-      final corNome = isRespostaParabens ? _douradoResposta : (isHumor ? AppColors.magenta : AppColors.laranja);
+      final corNome = isRespostaParabens
+          ? _douradoResposta
+          : (isHumor ? AppColors.magenta : AppColors.laranja);
       final regex = RegExp(r'\*([^*]+)\*');
       final matches = regex.allMatches(texto).toList();
       if (matches.isNotEmpty) {
@@ -2018,15 +2243,17 @@ class _PostCard extends StatelessWidget {
           if (m.start > last) {
             spans.add(TextSpan(text: texto.substring(last, m.start)));
           }
-          spans.add(TextSpan(
-            text: m.group(1), // sem os asteriscos
-            style: GoogleFonts.poppins(
-              fontSize: fontSize,
-              color: corNome,
-              fontWeight: FontWeight.w700,
-              height: 1.5,
+          spans.add(
+            TextSpan(
+              text: m.group(1), // sem os asteriscos
+              style: GoogleFonts.poppins(
+                fontSize: fontSize,
+                color: corNome,
+                fontWeight: FontWeight.w700,
+                height: 1.5,
+              ),
             ),
-          ));
+          );
           last = m.end;
         }
         if (last < texto.length) {
@@ -2036,16 +2263,24 @@ class _PostCard extends StatelessWidget {
           if ((isHumor || isRespostaParabens) && resto.contains('\n\n')) {
             final partes = resto.split('\n\n');
             spans.add(TextSpan(text: partes.first));
-            spans.add(TextSpan(
-              text: '\n\n${partes.sublist(1).join('\n\n')}',
-              style: GoogleFonts.poppins(
-                  fontSize: fontSize, color: AppColors.cinzaTexto, fontStyle: FontStyle.italic, height: 1.5),
-            ));
+            spans.add(
+              TextSpan(
+                text: '\n\n${partes.sublist(1).join('\n\n')}',
+                style: GoogleFonts.poppins(
+                  fontSize: fontSize,
+                  color: AppColors.cinzaTexto,
+                  fontStyle: FontStyle.italic,
+                  height: 1.5,
+                ),
+              ),
+            );
           } else {
             spans.add(TextSpan(text: resto));
           }
         }
-        return RichText(text: TextSpan(style: baseStyle, children: spans));
+        return RichText(
+          text: TextSpan(style: baseStyle, children: spans),
+        );
       }
       return Text(texto, style: baseStyle);
     }
@@ -2054,7 +2289,8 @@ class _PostCard extends StatelessWidget {
     String? mencaoTexto;
     if (post.destinatario.startsWith('@colaborador:')) {
       final pipeIdx = post.destinatario.indexOf('|');
-      if (pipeIdx >= 0) mencaoTexto = '@${post.destinatario.substring(pipeIdx + 1)}';
+      if (pipeIdx >= 0)
+        mencaoTexto = '@${post.destinatario.substring(pipeIdx + 1)}';
     } else if (post.destinatario.startsWith('@setor:')) {
       mencaoTexto = '@${post.destinatario.substring(7)}';
     }
@@ -2075,16 +2311,18 @@ class _PostCard extends StatelessWidget {
       final exibido = bruto.startsWith('@[') && bruto.endsWith(']')
           ? '@${bruto.substring(2, bruto.length - 1)}'
           : bruto;
-      spans.add(TextSpan(
-        text: exibido,
-        style: GoogleFonts.poppins(
-          fontSize: fontSize,
-          color: AppColors.magenta,
-          fontWeight: FontWeight.w700,
-          height: 1.5,
-          backgroundColor: AppColors.magenta.withOpacity(0.08),
+      spans.add(
+        TextSpan(
+          text: exibido,
+          style: GoogleFonts.poppins(
+            fontSize: fontSize,
+            color: AppColors.magenta,
+            fontWeight: FontWeight.w700,
+            height: 1.5,
+            backgroundColor: AppColors.magenta.withOpacity(0.08),
+          ),
         ),
-      ));
+      );
       last = m.end;
     }
     if (last < texto.length) {
@@ -2097,45 +2335,265 @@ class _PostCard extends StatelessWidget {
   }
 
   Widget _avatarSistema(bool isAniversario) => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isAniversario
-                ? [AppColors.laranja, const Color(0xFFFF8C42)]
-                : [AppColors.laranja, AppColors.magenta],
-          ),
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: Text(
-            isAniversario ? '🎉' : '📢',
-            style: const TextStyle(fontSize: 20),
-          ),
-        ),
-      );
+    width: 40,
+    height: 40,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: isAniversario
+            ? [AppColors.laranja, const Color(0xFFFF8C42)]
+            : [AppColors.laranja, AppColors.magenta],
+      ),
+      shape: BoxShape.circle,
+    ),
+    child: Center(
+      child: Text(
+        isAniversario ? '🎉' : '📢',
+        style: const TextStyle(fontSize: 20),
+      ),
+    ),
+  );
 
   Widget _avatarColaborador(String nome, String? fotoUrl) {
     if (fotoUrl != null && fotoUrl.isNotEmpty) {
       return CircleAvatar(
-          radius: 20, backgroundImage: CachedNetworkImageProvider(fotoUrl));
+        radius: 20,
+        backgroundImage: CachedNetworkImageProvider(fotoUrl),
+      );
     }
     final iniciais = () {
       final p = nome.trim().split(' ');
       return p.length >= 2
           ? '${p.first[0]}${p.last[0]}'.toUpperCase()
           : nome.isNotEmpty
-              ? nome[0].toUpperCase()
-              : '?';
+          ? nome[0].toUpperCase()
+          : '?';
     }();
     return CircleAvatar(
       radius: 20,
       backgroundColor: AppColors.magenta.withOpacity(0.85),
-      child: Text(iniciais,
-          style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 13)),
+      child: Text(
+        iniciais,
+        style: GoogleFonts.poppins(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// _ReacoesBar — reações estilo LinkedIn (gostei/parabéns/amei/estrela) por
+// post: contagem por tipo (tocável, abre "quem reagiu") + botões pra reagir.
+// ════════════════════════════════════════════════════════════════════════════════
+
+class _ReacoesBar extends StatefulWidget {
+  final int postId;
+  final int? meuId;
+  const _ReacoesBar({required this.postId, required this.meuId});
+
+  @override
+  State<_ReacoesBar> createState() => _ReacoesBarState();
+}
+
+class _ReacoesBarState extends State<_ReacoesBar> {
+  final _api = ApiService();
+  List<Map<String, dynamic>> _reacoes = [];
+  bool _enviando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    try {
+      final r = await _api.buscarReacoesPost(widget.postId);
+      if (mounted) setState(() => _reacoes = r);
+    } catch (_) {
+      // falha silenciosa — a barra some, mas não trava o post
+    }
+  }
+
+  String? get _minhaReacao =>
+      _reacoes.firstWhere(
+            (r) => r['colaborador_id'] == widget.meuId,
+            orElse: () => const {},
+          )['tipo']
+          as String?;
+
+  Map<String, int> get _contagens {
+    final mapa = <String, int>{};
+    for (final r in _reacoes) {
+      final tipo = r['tipo'] as String;
+      mapa[tipo] = (mapa[tipo] ?? 0) + 1;
+    }
+    return mapa;
+  }
+
+  Future<void> _reagir(String tipo) async {
+    if (widget.meuId == null || _enviando) return;
+    setState(() => _enviando = true);
+    try {
+      await _api.reagirPost(postId: widget.postId, tipo: tipo);
+      await _carregar();
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
+  void _abrirQuemReagiu() {
+    if (_reacoes.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QuemReagiuSheet(reacoes: _reacoes),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contagens = _contagens;
+    final minhaReacao = _minhaReacao;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _abrirQuemReagiu,
+                  child: contagens.isEmpty
+                      ? const SizedBox(height: 26)
+                      : Row(
+                          children: [
+                            for (final tipo in ApiService.tiposReacaoPost.keys)
+                              if ((contagens[tipo] ?? 0) > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        ApiService.tiposReacaoPost[tipo]!,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '${contagens[tipo]}',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.cinzaTexto,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                          ],
+                        ),
+                ),
+              ),
+              for (final entry in ApiService.tiposReacaoPost.entries)
+                GestureDetector(
+                  onTap: () => _reagir(entry.key),
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 2),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: minhaReacao == entry.key
+                          ? AppColors.magentaOp15
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      entry.value,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuemReagiuSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> reacoes;
+  const _QuemReagiuSheet({required this.reacoes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('${reacoes.length} reações', style: AppTextStyles.tituloMedio),
+          const SizedBox(height: 12),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: reacoes.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final r = reacoes[i];
+                final colab = r['colaboradores'] as Map<String, dynamic>?;
+                final nome = colab?['nome'] as String? ?? 'Colaborador';
+                final fotoUrl = colab?['foto_url'] as String?;
+                final emoji = ApiService.tiposReacaoPost[r['tipo']] ?? '👍';
+                return Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.laranjaOp15,
+                      backgroundImage: (fotoUrl != null && fotoUrl.isNotEmpty)
+                          ? NetworkImage(fotoUrl)
+                          : null,
+                      child: (fotoUrl == null || fotoUrl.isEmpty)
+                          ? Text(nome.isNotEmpty ? nome[0].toUpperCase() : '?')
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(nome, style: AppTextStyles.corpoMedio),
+                    ),
+                    Text(emoji, style: const TextStyle(fontSize: 18)),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2172,9 +2630,10 @@ class _BannerCarrosselState extends State<_BannerCarrossel> {
           itemCount: widget.banners.length,
           onPageChanged: (i) => setState(() => _pagina = i),
           itemBuilder: (_, i) => Image.network(
-              widget.banners[i]['url'] as String,
-              fit: BoxFit.cover,
-              width: double.infinity),
+            widget.banners[i]['url'] as String,
+            fit: BoxFit.cover,
+            width: double.infinity,
+          ),
         ),
         Positioned(
           bottom: 10,
@@ -2236,9 +2695,10 @@ class _CardAniversarioMesState extends State<_CardAniversarioMes> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -2246,11 +2706,14 @@ class _CardAniversarioMesState extends State<_CardAniversarioMes> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(widget.titulo,
-                style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: AppColors.dark)),
+            child: Text(
+              widget.titulo,
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: AppColors.dark,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           SizedBox(
@@ -2315,9 +2778,13 @@ class _LinhaAniversario extends StatelessWidget {
                 ? CachedNetworkImageProvider(fotoUrl!)
                 : null,
             child: (fotoUrl == null || fotoUrl!.isEmpty)
-                ? Text(iniciais,
-                    style:
-                        GoogleFonts.poppins(fontWeight: FontWeight.w700, color: cor))
+                ? Text(
+                    iniciais,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w700,
+                      color: cor,
+                    ),
+                  )
                 : null,
           ),
           const SizedBox(width: 10),
@@ -2326,40 +2793,57 @@ class _LinhaAniversario extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(nome,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark)),
+                Text(
+                  nome,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.dark,
+                  ),
+                ),
                 if (setor != null && setor!.isNotEmpty && setor != '—')
-                  Text(setor!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                          fontSize: 11, color: AppColors.cinzaTexto)),
-                const SizedBox(height: 4),
-                Text(mensagem,
+                  Text(
+                    setor!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.poppins(
-                        fontSize: 11.5, fontWeight: FontWeight.w600, color: cor)),
+                      fontSize: 11,
+                      color: AppColors.cinzaTexto,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  mensagem,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: cor,
+                  ),
+                ),
                 if (nivel != null) ...[
                   const SizedBox(height: 4),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: nivel!.cor.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: nivel!.cor.withOpacity(0.4)),
                     ),
-                    child: Text('${nivel!.emoji} ${nivel!.label}',
-                        style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: nivel!.cor)),
+                    child: Text(
+                      '${nivel!.emoji} ${nivel!.label}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: nivel!.cor,
+                      ),
+                    ),
                   ),
                 ],
               ],

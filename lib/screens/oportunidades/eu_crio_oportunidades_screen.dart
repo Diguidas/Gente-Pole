@@ -17,6 +17,8 @@ class _EuCrioOportunidadesScreenState
   final _api = ApiService();
   List<VagaModel> _vagas = [];
   List<Map<String, dynamic>> _indicacoesPendentes = [];
+  Set<int> _vagasJaCandidatadas = {};
+  Map<int, String> _vagasJaIndicadas = {};
   bool _loading = true;
   String? _erro;
 
@@ -35,12 +37,16 @@ class _EuCrioOportunidadesScreenState
       final results = await Future.wait([
         _api.listarVagasAbertas(),
         _api.buscarIndicacoesPendentes(),
+        _api.buscarVagasJaCandidatadas(),
+        _api.buscarIndicacoesDoColaborador(),
       ]);
       if (mounted) {
         setState(() {
           _vagas = results[0] as List<VagaModel>;
           _indicacoesPendentes =
               results[1] as List<Map<String, dynamic>>;
+          _vagasJaCandidatadas = results[2] as Set<int>;
+          _vagasJaIndicadas = results[3] as Map<int, String>;
         });
       }
     } catch (e) {
@@ -222,6 +228,10 @@ class _EuCrioOportunidadesScreenState
                                     .expand((e) => [
                                           _CardVaga(
                                             vaga: e.value,
+                                            jaCandidatado: _vagasJaCandidatadas
+                                                .contains(e.value.id),
+                                            nomeIndicado:
+                                                _vagasJaIndicadas[e.value.id],
                                             onTap: () =>
                                                 _abrirOpcoes(e.value),
                                           ),
@@ -448,8 +458,15 @@ class _CardIndicacaoPendente extends StatelessWidget {
 class _CardVaga extends StatelessWidget {
   final VagaModel vaga;
   final VoidCallback onTap;
+  final bool jaCandidatado;
+  final String? nomeIndicado;
 
-  const _CardVaga({required this.vaga, required this.onTap});
+  const _CardVaga({
+    required this.vaga,
+    required this.onTap,
+    this.jaCandidatado = false,
+    this.nomeIndicado,
+  });
 
   String get _salario {
     if (!vaga.salarioAExibir) return 'Salário a combinar';
@@ -502,14 +519,63 @@ class _CardVaga extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    vaga.titulo,
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: Colors.black87,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          vaga.titulo,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (jaCandidatado) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withOpacity(.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_circle,
+                                  size: 11, color: Color(0xFF10B981)),
+                              const SizedBox(width: 3),
+                              Text('Você já se candidatou',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF10B981))),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
+                  if (nomeIndicado != null) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_add_alt_1_outlined,
+                            size: 12, color: Color(0xFF10B981)),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text('Você indicou $nomeIndicado',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF10B981)),
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (vaga.departamento != null) ...[
                     const SizedBox(height: 2),
                     Text(
