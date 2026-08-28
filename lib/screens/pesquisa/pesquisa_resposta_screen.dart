@@ -629,47 +629,77 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
     final valores = (_respostas[id] as Map<String, String>?) ?? <String, String>{};
     _respostas[id] ??= valores;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columnSpacing: 18,
-        headingRowHeight: 44,
-        columns: [
-          const DataColumn(label: SizedBox.shrink()),
-          ...List.generate(niveis.length, (i) {
-            final legenda = i < colunas.length ? colunas[i] : '';
-            return DataColumn(
-              label: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('${niveis[i]}', style: AppTextStyles.corpoMenor),
-                  if (legenda.isNotEmpty)
-                    Text(
-                      legenda,
-                      style: AppTextStyles.corpoMinimo
-                          .copyWith(color: AppColors.cinzaTexto),
-                    ),
-                ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: linhas.map((linha) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F9FC),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                linha,
+                style: AppTextStyles.corpoNormal
+                    .copyWith(fontWeight: FontWeight.w600),
               ),
-            );
-          }),
-        ],
-        rows: linhas.map((linha) {
-          return DataRow(cells: [
-            DataCell(Text(
-              linha,
-              style: AppTextStyles.corpoNormal
-                  .copyWith(fontWeight: FontWeight.w500),
-            )),
-            ...niveis.map((n) => DataCell(Radio<String>(
-                  value: '$n',
-                  groupValue: valores[linha],
-                  activeColor: AppColors.magenta,
-                  onChanged: (v) => setState(() => valores[linha] = v!),
-                ))),
-          ]);
-        }).toList(),
-      ),
+              const SizedBox(height: 10),
+              Row(
+                children: List.generate(niveis.length, (i) {
+                  final n = niveis[i];
+                  final sel = valores[linha] == '$n';
+                  final legenda = i < colunas.length ? colunas[i] : '';
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => valores[linha] = '$n'),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: sel ? AppColors.magenta : Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: sel
+                                    ? AppColors.magenta
+                                    : Colors.grey[300]!,
+                              ),
+                            ),
+                            child: Text(
+                              '$n',
+                              style: AppTextStyles.corpoMenor.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: sel ? Colors.white : AppColors.dark,
+                              ),
+                            ),
+                          ),
+                          if (legenda.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              legenda,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.corpoMinimo
+                                  .copyWith(color: AppColors.cinzaTexto),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
