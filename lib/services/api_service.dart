@@ -41,33 +41,46 @@ class ApiService {
   // ─── Sessão ──────────────────────────────────────────────────────────────────
 
   static const _kMatriculaKey = 'sessao_matricula';
+  // Matrícula sozinha não identifica a pessoa — o mesmo número pode existir
+  // em empresas diferentes, pertencendo a pessoas diferentes. A sessão
+  // precisa guardar as duas.
+  static const _kEmpresaKey = 'sessao_empresa';
 
   ColaboradorModel? colaboradorAtual;
 
-  Future<void> salvarSessao(String matricula) async {
+  Future<void> salvarSessao(String matricula, String? empresa) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kMatriculaKey, matricula);
+    if (empresa != null) {
+      await prefs.setString(_kEmpresaKey, empresa);
+    } else {
+      await prefs.remove(_kEmpresaKey);
+    }
   }
 
   Future<void> limparSessao() async {
     colaboradorAtual = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kMatriculaKey);
+    await prefs.remove(_kEmpresaKey);
   }
 
   /// Tenta restaurar a sessão salva. Retorna true se conseguiu.
   Future<bool> restaurarSessao() async {
     final prefs = await SharedPreferences.getInstance();
     final matricula = prefs.getString(_kMatriculaKey);
-    if (matricula == null) return false;
+    final empresa = prefs.getString(_kEmpresaKey);
+    if (matricula == null || empresa == null) return false;
 
     final data = await _client
         .from('colaboradores')
         .select()
         .eq('matricula', matricula)
+        .eq('empresa', empresa)
         .maybeSingle();
     if (data == null) {
       await prefs.remove(_kMatriculaKey);
+      await prefs.remove(_kEmpresaKey);
       return false;
     }
     colaboradorAtual = ColaboradorModel.fromJson(data);
@@ -108,6 +121,7 @@ class ApiService {
         .from('usuarios_auth')
         .select('id')
         .eq('matricula', colaborador.matricula)
+        .eq('empresa', colaborador.empresa!)
         .maybeSingle();
 
     return resultAuth == null
@@ -121,16 +135,17 @@ class ApiService {
     required String dataNascimento,
     required String? empresa,
   }) async {
+    if (empresa == null) return false;
     try {
-      await _client.from('usuarios_auth').insert({
-        'matricula': matricula,
-        'senha_hash': _hash(senha),
-        'data_nascimento_verificacao': dataNascimento,
-        'empresa': empresa,
+      await _client.rpc('criar_usuario_auth', params: {
+        'p_matricula': matricula,
+        'p_empresa': empresa,
+        'p_senha_hash': _hash(senha),
+        'p_data_nascimento': dataNascimento,
       });
       return true;
     } catch (e, st) {
-      debugPrint('criarConta ERRO matricula=$matricula: $e');
+      debugPrint('criarConta ERRO matricula=$matricula empresa=$empresa: $e');
       ErrorReporter.report(e, st, contexto: 'Criar conta (primeiro acesso)');
       return false;
     }
@@ -138,12 +153,14 @@ class ApiService {
 
   Future<bool> validarLogin({
     required String matricula,
+    required String empresa,
     required String senha,
   }) async {
     final data = await _client
         .from('usuarios_auth')
         .select('senha_hash')
         .eq('matricula', matricula)
+        .eq('empresa', empresa)
         .maybeSingle();
     if (data == null) return false;
     return data['senha_hash'] == _hash(senha);
@@ -154,6 +171,7 @@ class ApiService {
   /// Retorna false se a data não bater ou se a conta não existir.
   Future<bool> resetarSenhaEsquecida({
     required String matricula,
+    required String empresa,
     required String dataNascimento,
     required String novaSenha,
   }) async {
@@ -162,6 +180,7 @@ class ApiService {
           .from('colaboradores')
           .select('data_nascimento')
           .eq('matricula', matricula)
+          .eq('empresa', empresa)
           .maybeSingle();
       if (colaborador == null) return false;
       if (colaborador['data_nascimento'] != dataNascimento) return false;
@@ -170,10 +189,11 @@ class ApiService {
           .from('usuarios_auth')
           .update({'senha_hash': _hash(novaSenha)})
           .eq('matricula', matricula)
+          .eq('empresa', empresa)
           .select('id');
       return auth.isNotEmpty;
     } catch (e, st) {
-      debugPrint('resetarSenhaEsquecida ERRO matricula=$matricula: $e');
+      debugPrint('resetarSenhaEsquecida ERRO matricula=$matricula empresa=$empresa: $e');
       ErrorReporter.report(e, st, contexto: 'Resetar senha esquecida');
       return false;
     }
@@ -429,17 +449,20 @@ class ApiService {
     required String novaSenha,
   }) async {
     final matricula = colaboradorAtual?.matricula;
-    if (matricula == null) return false;
+    final empresa = colaboradorAtual?.empresa;
+    if (matricula == null || empresa == null) return false;
 
     // Verifica senha atual
-    final ok = await validarLogin(matricula: matricula, senha: senhaAtual);
+    final ok = await validarLogin(
+        matricula: matricula, empresa: empresa, senha: senhaAtual);
     if (!ok) return false;
 
     try {
       await _client
           .from('usuarios_auth')
           .update({'senha_hash': _hash(novaSenha)})
-          .eq('matricula', matricula);
+          .eq('matricula', matricula)
+          .eq('empresa', empresa);
       return true;
     } catch (_) {
       return false;
@@ -1485,11 +1508,13 @@ class ApiService {
   /// massoterapia: quem assina não é sempre quem estava agendado).
   Future<ColaboradorModel?> buscarColaboradorPorMatricula(
     String matricula,
+    String empresa,
   ) async {
     final data = await _client
         .from('colaboradores')
         .select()
         .eq('matricula', matricula)
+        .eq('empresa', empresa)
         .maybeSingle();
     if (data == null) return null;
     return ColaboradorModel.fromJson(data);
@@ -3123,11 +3148,13 @@ class ApiService {
   /// contendo 'gestor' (tabela que não existe neste projeto). Aqui usamos o
   /// mesmo sinal já usado por [verificarSeEhGestor] — `colaboradores.eh_gestor`
   /// — que é o equivalente mais simples disponível neste schema.
-  Future<ColaboradorModel?> buscarGestorDoSetor(String setor) async {
+  Future<ColaboradorModel?> buscarGestorDoSetor(
+      String setor, String empresa) async {
     final data = await _client
         .from('colaboradores')
         .select()
         .eq('setor', setor)
+        .eq('empresa', empresa)
         .eq('eh_gestor', true)
         .limit(1)
         .maybeSingle();

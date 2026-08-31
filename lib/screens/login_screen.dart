@@ -164,6 +164,7 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _carregando = true);
       final ok = await _api.resetarSenhaEsquecida(
         matricula: _colaboradorEncontrado!.matricula,
+        empresa: _colaboradorEncontrado!.empresa!,
         dataNascimento: dataFormatada,
         novaSenha: novaSenha,
       );
@@ -212,6 +213,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       final ok = await _api.validarLogin(
         matricula: _colaboradorEncontrado!.matricula,
+        empresa: _colaboradorEncontrado!.empresa!,
         senha: _senhaController.text,
       );
 
@@ -228,7 +230,8 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _irParaHome() async {
-    await _api.salvarSessao(_colaboradorEncontrado!.matricula);
+    await _api.salvarSessao(
+        _colaboradorEncontrado!.matricula, _colaboradorEncontrado!.empresa);
     if (!mounted) return;
     Navigator.pushReplacement(
       context,

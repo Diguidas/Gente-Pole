@@ -213,8 +213,10 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
     );
     if (matricula == null || matricula.isEmpty || !mounted) return;
 
-    final colaborador =
-        await ApiService().buscarColaboradorPorMatricula(matricula);
+    final empresaAtual = ApiService().colaboradorAtual?.empresa;
+    if (empresaAtual == null) return;
+    final colaborador = await ApiService()
+        .buscarColaboradorPorMatricula(matricula, empresaAtual);
     if (!mounted) return;
     if (colaborador == null) {
       ScaffoldMessenger.of(context).showSnackBar(

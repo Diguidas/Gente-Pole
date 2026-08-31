@@ -55,8 +55,8 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
       _api.listarElogiosRecebidos(_meuId),
       _api.listarFeedbacksAvaliacao(_meuId),
       _api.listarSolicitacoesFeedbackEnviadas(_meuId),
-      if (eu?.setor != null)
-        _api.buscarGestorDoSetor(eu!.setor!)
+      if (eu?.setor != null && eu?.empresa != null)
+        _api.buscarGestorDoSetor(eu!.setor!, eu.empresa!)
       else
         Future.value(null),
     ]);
