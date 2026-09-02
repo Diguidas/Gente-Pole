@@ -15,6 +15,9 @@ class ColaboradorModel {
   final String? codCentro;
   final String? empresa;
   final bool ehGestor;
+  /// Código da filial vindo direto do TOTVS RM (campo `branch`) — mais
+  /// confiável que derivar de codCentro.
+  final String? branch;
 
   ColaboradorModel({
     required this.id,
@@ -30,6 +33,7 @@ class ColaboradorModel {
     this.codCentro,
     this.empresa,
     this.ehGestor = false,
+    this.branch,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -48,12 +52,17 @@ class ColaboradorModel {
       codCentro: json['cod_centro'],
       empresa: json['empresa'],
       ehGestor: json['eh_gestor'] as bool? ?? false,
+      branch: json['branch'],
     );
   }
 
   /// Código da filial: primeiros 4 dígitos do cod_centro.
   String? get codFilial =>
       (codCentro != null && codCentro!.length == 10) ? codCentro!.substring(0, 4) : null;
+
+  /// Filial efetiva do colaborador: prioriza `branch` (vem direto do TOTVS
+  /// RM), cai pra derivar de codCentro se `branch` não vier preenchido.
+  String? get filialEfetiva => branch ?? codFilial;
 
   /// Código do segmento: primeiros 6 dígitos do cod_centro.
   String? get codSegmento =>

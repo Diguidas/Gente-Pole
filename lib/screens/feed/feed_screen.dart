@@ -1,4 +1,5 @@
 // screens/feed/feed_screen.dart
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -7,6 +8,7 @@ import 'package:gentepole/core/app_theme.dart';
 import 'package:gentepole/core/nivel_tempo_casa.dart';
 import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
+import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/services/api_service.dart';
@@ -60,11 +62,15 @@ class _FeedScreenState extends State<FeedScreen> {
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
 
+  // Saldo de Polens (gamificação) — null enquanto carrega, pra não piscar "0"
+  int? _meusPontos;
+
   RealtimeChannel? _statusChannel;
 
   @override
   void initState() {
     super.initState();
+    _carregarPontos();
     _carregarFeed();
     _carregarHumor();
     _carregarExame();
@@ -112,6 +118,18 @@ class _FeedScreenState extends State<FeedScreen> {
           },
         )
         .subscribe();
+  }
+
+  // ── Polens (gamificação) ─────────────────────────────────────────────────
+
+  Future<void> _carregarPontos() async {
+    try {
+      final pontos = await _api.buscarMeusPontos();
+      if (!mounted) return;
+      setState(() => _meusPontos = pontos);
+    } catch (_) {
+      // falha silenciosa — chip só não aparece
+    }
   }
 
   // ── Humor ─────────────────────────────────────────────────────────────────────
@@ -409,10 +427,12 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                 ),
 
-                // Chips matrícula + admissão
+                // Chips matrícula + admissão + Polens
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
                     children: [
                       _chip(
                         Icons.badge_outlined,
@@ -425,7 +445,40 @@ class _FeedScreenState extends State<FeedScreen> {
                         'Admissão',
                         colaborador?.dataAdmissaoFormatada ?? '—',
                       ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const GamificacaoScreen()),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.25),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.emoji_events_rounded,
+                                  size: 13, color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text(
+                                '$_meusPontos $nomeMoeda',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
+                  ),
                   ),
                 ),
 
@@ -2730,9 +2783,31 @@ class _BannerCarrossel extends StatefulWidget {
 class _BannerCarrosselState extends State<_BannerCarrossel> {
   final _controller = PageController();
   int _pagina = 0;
+  Timer? _autoPlay;
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarAutoPlay();
+  }
+
+  void _iniciarAutoPlay() {
+    _autoPlay?.cancel();
+    if (widget.banners.length <= 1) return;
+    _autoPlay = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final proxima = (_pagina + 1) % widget.banners.length;
+      _controller.animateToPage(
+        proxima,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
 
   @override
   void dispose() {
+    _autoPlay?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -2744,7 +2819,10 @@ class _BannerCarrosselState extends State<_BannerCarrossel> {
         PageView.builder(
           controller: _controller,
           itemCount: widget.banners.length,
-          onPageChanged: (i) => setState(() => _pagina = i),
+          onPageChanged: (i) {
+            setState(() => _pagina = i);
+            _iniciarAutoPlay();
+          },
           itemBuilder: (_, i) => Image.network(
             widget.banners[i]['url'] as String,
             fit: BoxFit.cover,

@@ -226,6 +226,50 @@ class ApiService {
         .toList();
   }
 
+  // ─── Gamificação: pontos e ranking ────────────────────────────────────────
+
+  /// Ações elegíveis e o valor de cada uma, configurado pelo RH.
+  Future<List<Map<String, dynamic>>> listarPontosConfig() async {
+    final data = await _client
+        .from('pontos_config')
+        .select()
+        .eq('ativo', true)
+        .order('chave');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Meta de pontos pra virar vaúcher (o RH entra em contato quando o
+  /// colaborador atinge — não há resgate automático no app).
+  Future<Map<String, dynamic>?> buscarMetaPontos() async {
+    return await _client.from('pontos_meta').select().eq('id', 1).maybeSingle();
+  }
+
+  /// Saldo de Polens do colaborador logado.
+  Future<int> buscarMeusPontos() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return 0;
+    final row = await _client
+        .from('vw_ranking_pontos')
+        .select('total_pontos')
+        .eq('colaborador_id', meuId)
+        .maybeSingle();
+    return row?['total_pontos'] as int? ?? 0;
+  }
+
+  /// Ranking de pontos da mesma filial do colaborador logado — nunca mostra
+  /// gente de outra filial.
+  Future<List<Map<String, dynamic>>> buscarRankingPontosDaMinhaFilial() async {
+    final filial = colaboradorAtual?.filialEfetiva;
+    if (filial == null || filial.isEmpty) return [];
+    final data = await _client
+        .from('vw_ranking_pontos')
+        .select()
+        .eq('branch', filial)
+        .gt('total_pontos', 0)
+        .order('total_pontos', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
   /// Parabéns recebidos por um colaborador no ano corrente.
   Future<List<ParabensModel>> buscarParabens(int destinatarioId) async {
     final data = await _client
@@ -480,6 +524,7 @@ class ApiService {
   /// Retorna os templates ativos cadastrados pelo RH.
   Future<List<Map<String, dynamic>>> listarTemplatesGestor({
     String? setor,
+    List<String>? setores,
   }) async {
     var q = _client
         .from('ats_templates')
@@ -487,11 +532,37 @@ class ApiService {
           'id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao',
         )
         .eq('ativo', true);
-    if (setor != null && setor.isNotEmpty) {
+    final listaSetores =
+        setores?.where((s) => s.isNotEmpty).toList() ?? const [];
+    if (listaSetores.isNotEmpty) {
+      q = q.inFilter('departamento', listaSetores);
+    } else if (setor != null && setor.isNotEmpty) {
       q = q.eq('departamento', setor);
     }
     final res = await q.order('titulo');
     return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Setores que o gestor logado efetivamente enxerga: o setor do próprio
+  /// cadastro dele SEMPRE conta, somado aos setores extras associados
+  /// manualmente em `gestor_setores` (gestor de mais de um setor).
+  Future<List<String>> buscarSetoresEfetivosDoGestor() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final matricula = colab.matricula;
+    final empresa = colab.empresa ?? '';
+    final data = await _client
+        .from('gestor_setores')
+        .select('setor')
+        .eq('matricula_gestor', matricula)
+        .eq('empresa', empresa);
+    final setores = <String>{
+      for (final row in (data as List)) row['setor'] as String,
+    };
+    if (colab.setor != null && colab.setor!.isNotEmpty) {
+      setores.add(colab.setor!);
+    }
+    return setores.toList();
   }
 
   Future<String?> uploadDocAprovacaoDiretoria({
@@ -1007,16 +1078,39 @@ class ApiService {
 
   /// Busca todos os colaboradores do mesmo setor do usuário logado.
   Future<List<ColaboradorModel>> buscarMinhaEquipe() async {
-    final setor = colaboradorAtual?.setor;
-    if (setor == null || setor.isEmpty) return [];
+    final setores = await buscarSetoresEfetivosDoGestor();
+    if (setores.isEmpty) return [];
     final res = await _client
         .from('colaboradores')
         .select()
-        .eq('setor', setor)
+        .inFilter('setor', setores)
         .order('nome');
     return (res as List)
         .map((e) => ColaboradorModel.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando
+  /// confirmação dele — só depois de confirmado o colaborador vê no feed.
+  Future<List<Map<String, dynamic>>> listarExamesAguardandoConfirmacao() async {
+    final setores = await buscarSetoresEfetivosDoGestor();
+    if (setores.isEmpty) return [];
+    final data = await _client
+        .from('exames')
+        .select('id, tipo, clinica, data_agendamento, observacoes, '
+            'colaborador:colaborador_id(id, nome, setor, cargo)')
+        .eq('status_confirmacao', 'AGUARDANDO_GESTOR')
+        .order('data_agendamento');
+    return List<Map<String, dynamic>>.from(data as List)
+        .where((e) => setores.contains(
+            (e['colaborador'] as Map<String, dynamic>?)?['setor']))
+        .toList();
+  }
+
+  Future<void> confirmarExame(int exameId) async {
+    await _client
+        .from('exames')
+        .update({'status_confirmacao': 'CONFIRMADO'}).eq('id', exameId);
   }
 
   /// Busca a mensagem institucional da empresa para o aniversariante.
@@ -1665,6 +1759,7 @@ class ApiService {
           .select('id, tipo, clinica, data_agendamento, observacoes')
           .eq('colaborador_id', meuId)
           .eq('tipo', 'periodico')
+          .eq('status_confirmacao', 'CONFIRMADO')
           .gte('data_agendamento', hojeStr)
           .isFilter('data_realizacao', null)
           .order('data_agendamento', ascending: true)

@@ -18,6 +18,7 @@ import 'feedback/elogiar_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
+import 'gamificacao/gamificacao_screen.dart';
 import 'integracao/integracao_screen.dart';
 import 'documentos/documentos_institucionais_screen.dart';
 import 'acesso_rapido/acesso_rapido_screen.dart';
@@ -213,6 +214,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const LojinhaHomeScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.emoji_events_outlined,
+                            titulo: 'Polecoin',
+                            subtitulo: 'Seus pontos e o ranking da sua filial',
+                            cor: AppColors.magenta,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const GamificacaoScreen(),
                               ),
                             ),
                           ),

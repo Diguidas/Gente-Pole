@@ -99,6 +99,10 @@ class NotificationService {
         AppNavigator.goToTab(1);
       case 'servicos':
       case 'pesquisas':
+      case 'gestor_exames':
+      case 'gestor_vagas':
+      case 'gestor_feedback':
+      case 'gestor_equipe':
         AppNavigator.goToTab(2);
       case 'perfil':
         AppNavigator.goToTab(3);

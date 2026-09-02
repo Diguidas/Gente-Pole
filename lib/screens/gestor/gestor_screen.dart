@@ -6,6 +6,7 @@ import 'vagas_gestor_screen.dart';
 import 'minha_equipe_screen.dart';
 import 'avaliar_equipe_screen.dart';
 import 'feedback_gestor_screen.dart';
+import 'exames_gestor_screen.dart';
 
 class GestorScreen extends StatelessWidget {
   const GestorScreen({super.key});
@@ -183,6 +184,22 @@ class GestorScreen extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const FeedbackGestorScreen(),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Botão: Exames ──────────────────────────────
+                        _BotaoGestor(
+                          icone: Icons.medical_information_outlined,
+                          titulo: 'Exames',
+                          subtitulo: 'Confirme os exames marcados pelo SESMT',
+                          cor: const Color(0xFF16A34A),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ExamesGestorScreen(),
                             ),
                           ),
                         ),

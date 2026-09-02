@@ -66,11 +66,19 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   Future<void> _carregarTemplates() async {
     try {
-      final lista = await _api.listarTemplatesGestor(setor: _api.colaboradorAtual?.setor);
+      final setores = await _api.buscarSetoresEfetivosDoGestor();
+      final lista = await _api.listarTemplatesGestor(
+          setor: _api.colaboradorAtual?.setor, setores: setores);
       if (mounted) setState(() { _templates = lista; _carregandoTemplates = false; });
     } catch (_) {
       if (mounted) setState(() => _carregandoTemplates = false);
     }
+  }
+
+  List<ColaboradorModel> get _equipeDoSetorDaVaga {
+    final setorVaga = _templateSelecionado?['departamento'] as String?;
+    if (setorVaga == null || setorVaga.isEmpty) return _equipe;
+    return _equipe.where((c) => c.setor == setorVaga).toList();
   }
 
   Future<void> _carregarEquipe() async {
@@ -450,7 +458,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
         // Picker de colaborador (só se substituição)
         if (_ehSubstituicao) ...[
-          _secao('Quem será substituído?'),
+          _secao('Quem será substituído?', obrigatorio: true),
           const SizedBox(height: 12),
           if (_carregandoEquipe)
             const Center(
@@ -458,7 +466,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
               padding: EdgeInsets.all(16),
               child: CircularProgressIndicator(color: AppColors.magenta),
             ))
-          else if (_equipe.isEmpty)
+          else if (_equipeDoSetorDaVaga.isEmpty)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -466,17 +474,51 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Text(
-                'Nenhum colaborador encontrado no seu setor.',
+                'Nenhum colaborador encontrado no setor desta vaga.',
                 style: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
               ),
             )
           else
-            ..._equipe.map((c) => _cardColaboradorPicker(c)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(
+                  color: _colaboradorSubstituido != null
+                      ? AppColors.magenta
+                      : const Color(0xFFE5E7EB),
+                  width: _colaboradorSubstituido != null ? 1.5 : 1,
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<ColaboradorModel>(
+                  value: _colaboradorSubstituido,
+                  isExpanded: true,
+                  hint: Text('Selecione...',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13, color: AppColors.cinzaTexto)),
+                  items: _equipeDoSetorDaVaga.map((c) {
+                    return DropdownMenuItem(
+                      value: c,
+                      child: Text(
+                        c.cargo != null && c.cargo!.isNotEmpty
+                            ? '${c.nome} – ${c.cargo}'
+                            : c.nome,
+                        style: GoogleFonts.poppins(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (c) => setState(() => _colaboradorSubstituido = c),
+                ),
+              ),
+            ),
           const SizedBox(height: 20),
         ],
 
         // Quantidade de vagas
-        _secao('Quantidade de vagas'),
+        _secao('Quantidade de vagas', obrigatorio: true),
         const SizedBox(height: 4),
         Text(
           'A vaga é encerrada automaticamente quando o número for atingido.',
@@ -520,7 +562,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         const SizedBox(height: 20),
 
         // Horário
-        _secao('Horário da vaga'),
+        _secao('Horário da vaga', obrigatorio: true),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -629,7 +671,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         ],
 
         // Informações da vaga
-        _secao('Informações da vaga'),
+        _secao('Informações da vaga', obrigatorio: true),
         const SizedBox(height: 10),
         _campoTexto(
           ctrl: _centroCustoCtrl,
@@ -679,7 +721,14 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           width: double.infinity,
           height: 54,
           child: ElevatedButton(
-            onPressed: (_enviando || (_ehSubstituicao && _colaboradorSubstituido == null && _equipe.isNotEmpty))
+            onPressed: (_enviando ||
+                    (_ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty) ||
+                    (!_ehSubstituicao && _docAprovacao == null) ||
+                    _horarioEntrada == null ||
+                    _horarioSaida == null ||
+                    _centroCustoCtrl.text.trim().isEmpty ||
+                    _liderancaMatriculaCtrl.text.trim().isEmpty ||
+                    _filialSelecionada == null)
                 ? null
                 : _enviar,
             style: ElevatedButton.styleFrom(
@@ -694,7 +743,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     height: 22,
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                 : Text(
-                    _ehSubstituicao && _colaboradorSubstituido == null && _equipe.isNotEmpty
+                    _ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty
                         ? 'Selecione quem será substituído'
                         : 'Enviar para o RH',
                     style: GoogleFonts.poppins(
@@ -708,77 +757,25 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     );
   }
 
-  Widget _cardColaboradorPicker(ColaboradorModel c) {
-    final selecionado = _colaboradorSubstituido?.id == c.id;
-    final iniciais = c.nome
-        .trim()
-        .split(' ')
-        .where((p) => p.isNotEmpty)
-        .take(2)
-        .map((p) => p[0].toUpperCase())
-        .join();
-
-    return GestureDetector(
-      onTap: () => setState(() => _colaboradorSubstituido = selecionado ? null : c),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: selecionado ? AppColors.magenta.withOpacity(0.07) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selecionado ? AppColors.magenta : const Color(0xFFE5E7EB),
-            width: selecionado ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: selecionado
-                  ? AppColors.magenta.withOpacity(0.15)
-                  : AppColors.laranja.withOpacity(0.1),
-              backgroundImage: c.fotoUrl != null ? NetworkImage(c.fotoUrl!) : null,
-              child: c.fotoUrl == null
-                  ? Text(iniciais,
-                      style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: selecionado ? AppColors.magenta : AppColors.laranja))
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(c.nome,
-                      style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: selecionado ? AppColors.magenta : AppColors.dark)),
-                  if (c.cargo != null && c.cargo!.isNotEmpty)
-                    Text(c.cargo!,
-                        style: GoogleFonts.poppins(
-                            fontSize: 11, color: AppColors.cinzaTexto)),
-                ],
-              ),
-            ),
-            if (selecionado)
-              const Icon(Icons.check_circle_rounded, color: AppColors.magenta, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  Widget _secao(String titulo) => Text(
-        titulo,
-        style: GoogleFonts.poppins(
-            fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark),
+  Widget _secao(String titulo, {bool obrigatorio = false}) => RichText(
+        text: TextSpan(
+          style: GoogleFonts.poppins(
+              fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark),
+          children: [
+            TextSpan(text: titulo),
+            if (obrigatorio)
+              TextSpan(
+                text: ' *',
+                style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.magenta),
+              ),
+          ],
+        ),
       );
 
   Widget _horarioPicker({
@@ -876,6 +873,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         ),
         child: TextField(
           controller: ctrl,
+          onChanged: (_) => setState(() {}),
           style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
           decoration: InputDecoration(
             labelText: label,

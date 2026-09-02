@@ -93,7 +93,7 @@ class VagaModel {
       'faixa_salarial_max': faixaSalarialMax,
       'salario_a_exibir': salarioAExibir,
       'teste_pratico': testePratico,
-      'status': 'FECHADA', // vaga começa fechada até RH aprovar
+      'status': 'ENCERRADA', // vaga começa fechada até RH aprovar
       'tipo_vaga': tipoVaga,
       'requisitado_por_id': requisitadoPorId,
       'status_requisicao': 'AGUARDANDO_APROVACAO_RH',
