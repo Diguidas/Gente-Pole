@@ -3194,10 +3194,12 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listarSolicitacoesFeedbackEnviadas(
     int colaboradorId,
   ) async {
+    // solicitante_id é text no banco (guarda o id como string) — comparar
+    // direto com int dá "operator does not exist: text = integer".
     final data = await _client
         .from('feedback_solicitacoes')
         .select()
-        .eq('solicitante_id', colaboradorId)
+        .eq('solicitante_id', colaboradorId.toString())
         .order('criado_em', ascending: false);
     return List<Map<String, dynamic>>.from(data as List);
   }
@@ -3767,10 +3769,11 @@ class ApiService {
     int colaboradorId, {
     bool apenasPendentes = false,
   }) async {
+    // destinatario_id é text no banco — mesmo motivo do solicitante_id acima.
     var query = _client
         .from('feedback_solicitacoes')
         .select()
-        .eq('destinatario_id', colaboradorId);
+        .eq('destinatario_id', colaboradorId.toString());
     if (apenasPendentes) query = query.eq('status', 'pendente');
     final data = await query.order('criado_em', ascending: false);
     return List<Map<String, dynamic>>.from(data as List);

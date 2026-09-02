@@ -216,7 +216,10 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
   }
 
   Widget _cardPendente(Map<String, dynamic> s) {
-    final solicitante = _colaboradoresPorId[s['solicitante_id'] as int];
+    // feedback_solicitacoes.solicitante_id é text no banco (guarda o id do
+    // colaborador como string), não integer — 'as int' direto quebra.
+    final solicitante =
+        _colaboradoresPorId[int.parse(s['solicitante_id'].toString())];
     final mensagem = s['mensagem'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
