@@ -241,14 +241,17 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: () => _recusarSolicitacao(s['id'] as int),
+                // feedback_solicitacoes.id é bigint — o PostgREST/Supabase
+                // serializa como string, então 'as int' quebra.
+                onPressed: () =>
+                    _recusarSolicitacao(int.parse(s['id'].toString())),
                 child: Text('Recusar', style: AppTextStyles.corpoMenor),
               ),
               const SizedBox(width: 4),
               ElevatedButton(
                 onPressed: () => _abrirDarFeedback(
                   colaborador: solicitante,
-                  solicitacaoId: s['id'] as int,
+                  solicitacaoId: int.parse(s['id'].toString()),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.magenta,

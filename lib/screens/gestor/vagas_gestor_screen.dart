@@ -253,7 +253,11 @@ class _TabMinhasVagas extends StatelessWidget {
       corStatus = AppColors.amarelo;
       labelStatus = 'Aguardando RH';
     }
-    final podeVerCandidatos = statusReq == 'APROVADA' && v.status == 'ABERTA';
+    // Inclui 'ENCERRADA' (vaga preenchida) — senão o gestor perde acesso ao
+    // board assim que o número de aprovados é atingido, mesmo tendo o resto
+    // do fluxo de admissão (ASO, contrato, integração) ainda em andamento.
+    final podeVerCandidatos = statusReq == 'APROVADA' &&
+        (v.status == 'ABERTA' || v.status == 'ENCERRADA');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

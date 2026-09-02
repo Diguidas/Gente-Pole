@@ -12,6 +12,7 @@ import 'package:gentepole/models/vaga_model.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/pontos_bus.dart';
 import '../models/colaborador_model.dart';
 import '../models/aniversariante_model.dart';
 import '../core/error_reporter.dart';
@@ -316,6 +317,7 @@ class ApiService {
         'remetente_id': colaboradorAtual?.id,
         'mensagem': mensagem.trim(),
       });
+      PontosBus.notificarGanho();
       return true;
     } catch (e, st) {
       ErrorReporter.report(e, st, contexto: 'Enviar parabéns');
@@ -662,7 +664,10 @@ class ApiService {
 
   // ─── Candidaturas — visão do gestor ──────────────────────────────────────────
 
-  /// Candidatos na fase ENTREV_GESTOR de uma vaga
+  /// Candidatos de uma vaga, do início da triagem até a admissão concluída
+  /// — inclui quem já terminou o processo (não filtra por admissaoStatus),
+  /// pra o board do gestor continuar mostrando o restante do fluxo mesmo
+  /// depois da vaga ficar preenchida/encerrada, igual ao painel web.
   Future<List<CandidaturaGestorModel>> listarCandidatosGestor(
     int vagaId,
   ) async {
@@ -683,7 +688,6 @@ class ApiService {
 
     return (data as List)
         .map((e) => CandidaturaGestorModel.fromJson(e as Map<String, dynamic>))
-        .where((c) => c.admissaoStatus != 'CONCLUIDO')
         .toList();
   }
 
@@ -1740,6 +1744,7 @@ class ApiService {
         'data': dataStr,
         if (motivo != null && motivo.isNotEmpty) 'motivo': motivo,
       });
+      PontosBus.notificarGanho();
       return true;
     } catch (_) {
       return false;
@@ -2147,6 +2152,7 @@ class ApiService {
           'colaborador_alvo_id': alvoId,
           'respondido_em': DateTime.now().toIso8601String(),
         }, onConflict: 'pesquisa_id,colaborador_id,colaborador_alvo_id');
+        PontosBus.notificarGanho();
       }
 
       return true;
@@ -3224,6 +3230,7 @@ class ApiService {
       'texto': texto.trim(),
       'anonimo': anonimo,
     });
+    PontosBus.notificarGanho();
   }
 
   Future<List<Map<String, dynamic>>> listarElogiosRecebidos(
@@ -3640,6 +3647,7 @@ class ApiService {
 
   Future<void> atualizarStatusAcaoPdi(int acaoId, String status) async {
     await _client.from('pdi_acoes').update({'status': status}).eq('id', acaoId);
+    if (status == 'concluido') PontosBus.notificarGanho();
   }
 
   Future<void> excluirAcaoPdi(int acaoId) async {

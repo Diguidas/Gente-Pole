@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/core/app_theme.dart';
 import 'package:gentepole/core/nivel_tempo_casa.dart';
+import 'package:gentepole/core/pontos_bus.dart';
 import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
@@ -80,10 +81,12 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarPesquisasPendentes();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
+    PontosBus.versao.addListener(_carregarPontos);
   }
 
   @override
   void dispose() {
+    PontosBus.versao.removeListener(_carregarPontos);
     _statusChannel?.unsubscribe();
     _scrollCtrl.dispose();
     super.dispose();

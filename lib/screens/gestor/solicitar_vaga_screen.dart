@@ -888,45 +888,58 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         ),
       );
 
-  Widget _dropdownFilial() => Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _filialSelecionada != null
-                ? AppColors.laranja
-                : const Color(0xFFE5E7EB),
-            width: _filialSelecionada != null ? 1.5 : 1,
-          ),
+  Widget _dropdownFilial() {
+    // O value do DropdownButton precisa bater com exatamente um item. Usar o
+    // 'nome' como value quebra silenciosamente (dropdown não abre, sem erro
+    // visível em build de produção) quando duas filiais têm o mesmo nome de
+    // exibição — a 'chave' (código da filial) é a que garante unicidade.
+    final chaveSelecionada = _filiais
+        .firstWhere((f) => f['nome'] == _filialSelecionada, orElse: () => const {})['chave']
+        as String?;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _filialSelecionada != null
+              ? AppColors.laranja
+              : const Color(0xFFE5E7EB),
+          width: _filialSelecionada != null ? 1.5 : 1,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Row(children: [
-          Icon(Icons.location_city_outlined,
-              size: 18, color: AppColors.cinzaTexto),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _filialSelecionada,
-                hint: Text('Filial',
-                    style: GoogleFonts.poppins(
-                        fontSize: 13, color: AppColors.cinzaTexto)),
-                isExpanded: true,
-                style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
-                items: _filiais.map((f) {
-                  final nome = f['nome'] as String;
-                  final chave = f['chave'] as String;
-                  return DropdownMenuItem<String>(
-                    value: nome,
-                    child: Text('$nome ($chave)'),
-                  );
-                }).toList(),
-                onChanged: (v) => setState(() => _filialSelecionada = v),
-              ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(children: [
+        Icon(Icons.location_city_outlined,
+            size: 18, color: AppColors.cinzaTexto),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: chaveSelecionada,
+              hint: Text('Filial',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, color: AppColors.cinzaTexto)),
+              isExpanded: true,
+              style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+              items: _filiais.map((f) {
+                final nome = f['nome'] as String;
+                final chave = f['chave'] as String;
+                return DropdownMenuItem<String>(
+                  value: chave,
+                  child: Text('$nome ($chave)'),
+                );
+              }).toList(),
+              onChanged: (novaChave) {
+                final nome = _filiais.firstWhere(
+                    (f) => f['chave'] == novaChave)['nome'] as String;
+                setState(() => _filialSelecionada = nome);
+              },
             ),
           ),
-        ]),
-      );
+        ),
+      ]),
+    );
+  }
 
   Widget _tag(String label, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

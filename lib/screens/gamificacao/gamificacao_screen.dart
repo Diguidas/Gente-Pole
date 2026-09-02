@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../core/pontos_bus.dart';
 import '../../services/api_service.dart';
 
 /// Nome da moeda do programa de pontos — trocar aqui muda em toda a tela.
@@ -25,10 +26,19 @@ class _GamificacaoScreenState extends State<GamificacaoScreen> {
   void initState() {
     super.initState();
     _carregar();
+    PontosBus.versao.addListener(_recarregarSilencioso);
   }
 
-  Future<void> _carregar() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    PontosBus.versao.removeListener(_recarregarSilencioso);
+    super.dispose();
+  }
+
+  void _recarregarSilencioso() => _carregar(silencioso: true);
+
+  Future<void> _carregar({bool silencioso = false}) async {
+    if (!silencioso) setState(() => _loading = true);
     try {
       final acoes = await _api.listarPontosConfig();
       final ranking = await _api.buscarRankingPontosDaMinhaFilial();
