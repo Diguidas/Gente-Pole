@@ -955,16 +955,84 @@ class ApiService {
         (global.isEmpty ? false : global.first['ativo'] as bool);
   }
 
-  /// Retorna APENAS o próximo dia disponível para massoterapia, resolvendo a
-  /// regra específica do colaborador logado (setor > segmento > filial >
-  /// global). Inclui hoje se o dia da semana estiver ativo.
+  /// Status do ciclo atual: quantas sessões grátis já usou, limite do ciclo,
+  /// custo da extra, saldo de PoleCoins e se a PRÓXIMA sessão sairia paga —
+  /// pra mostrar o contador e confirmar cobrança antes de agendar.
+  Future<Map<String, dynamic>> buscarStatusCicloMassoterapia() async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) {
+      return {
+        'usadas': 0,
+        'limite': 0,
+        'custo_polecoins_extra': 0,
+        'saldo_polecoins': 0,
+        'proxima_paga': false,
+      };
+    }
+    final res = await _client.rpc(
+      'status_ciclo_massoterapia',
+      params: {'p_colaborador_id': colaborador.id},
+    );
+    return Map<String, dynamic>.from(res as Map);
+  }
+
+  /// Config geral de massoterapia (janela de dias, limite grátis por ciclo e
+  /// custo em PoleCoins da sessão extra) — linha única configurada pelo admin.
+  Future<Map<String, dynamic>> buscarConfigGeralMassoterapia() async {
+    final data = await _client
+        .from('massoterapia_config_geral')
+        .select()
+        .eq('id', 1)
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  /// Resolve o período de calendário do ciclo vigente conforme [janelaDias]:
+  /// 7 = semana (segunda a domingo), 14 = quinzena (1-15 ou 16-fim do mês),
+  /// 30 (ou qualquer outro valor) = mês calendário inteiro. Espelha
+  /// `_periodo_ciclo_massoterapia` no banco — não é janela rolante, é sempre
+  /// o mesmo bloco fixo do calendário.
+  ({DateTime inicio, DateTime fim}) _periodoCicloMassoterapia(
+    DateTime hoje,
+    int janelaDias,
+  ) {
+    if (janelaDias == 7) {
+      final inicio = hoje.subtract(Duration(days: hoje.weekday - 1));
+      return (inicio: inicio, fim: inicio.add(const Duration(days: 6)));
+    }
+    if (janelaDias == 14) {
+      if (hoje.day <= 15) {
+        return (
+          inicio: DateTime(hoje.year, hoje.month, 1),
+          fim: DateTime(hoje.year, hoje.month, 15),
+        );
+      }
+      return (
+        inicio: DateTime(hoje.year, hoje.month, 16),
+        fim: DateTime(hoje.year, hoje.month + 1, 0),
+      );
+    }
+    return (
+      inicio: DateTime(hoje.year, hoje.month, 1),
+      fim: DateTime(hoje.year, hoje.month + 1, 0),
+    );
+  }
+
+  /// Retorna todos os dias do ciclo vigente (período de calendário completo
+  /// — semana/quinzena/mês, conforme configurado), incluindo dias passados
+  /// (pra ver onde a vaga já foi usada) e futuros (pra agendar).
   Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
     final colaborador = colaboradorAtual;
     final agora = _brasilia();
     final hoje = DateTime(agora.year, agora.month, agora.day);
+    final config = await buscarConfigGeralMassoterapia();
+    final janelaDias = config['janela_dias'] as int? ?? 14;
+    final periodo = _periodoCicloMassoterapia(hoje, janelaDias);
 
-    for (var i = 0; i < 14; i++) {
-      final d = hoje.add(Duration(days: i));
+    final dias = <String>[];
+    for (var d = periodo.inicio;
+        !d.isAfter(periodo.fim);
+        d = d.add(const Duration(days: 1))) {
       final ativo = await diaMassoterapiaAtivoParaColaborador(
         diaSemana: d.weekday,
         setor: colaborador?.setor,
@@ -974,10 +1042,10 @@ class ApiService {
       if (ativo) {
         final str =
             '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-        return [str];
+        dias.add(str);
       }
     }
-    return [];
+    return dias;
   }
 
   /// Todos os agendamentos com status AGENDADO nas próximas 4 semanas.
@@ -1025,49 +1093,51 @@ class ApiService {
     return MassoterapiaConfigSetorModel.fromJson(data);
   }
 
-  /// Cria um agendamento para o colaborador logado.
-  /// Retorna false se o slot já estiver ocupado ou o setor estiver lotado.
-  Future<bool> agendarMassoterapia({
+  /// Cria um agendamento para o colaborador logado, respeitando o limite
+  /// grátis por ciclo — se estourado, debita PoleCoins (ou recusa por saldo
+  /// insuficiente). Toda a regra roda atômica na RPC `agendar_massoterapia_com_limite`.
+  /// Retorna `ok=false` se o slot já estiver ocupado, o setor estiver lotado,
+  /// ou o saldo de PoleCoins for insuficiente (`motivo == 'saldo_insuficiente'`).
+  Future<({bool ok, bool pagoComPolecoins, String? motivo})> agendarMassoterapia({
     required String data,
     required String horario,
   }) async {
     final colaborador = colaboradorAtual;
-    if (colaborador == null) return false;
+    if (colaborador == null) {
+      return (ok: false, pagoComPolecoins: false, motivo: null);
+    }
     try {
-      // A constraint única (colaborador_id, data) não distingue status: uma
-      // linha CANCELADO deixada para trás bloquearia o insert abaixo com um
-      // erro de chave duplicada. Limpa qualquer resquício antes de tentar.
-      await _client
-          .from('massoterapia_agendamentos')
-          .delete()
-          .eq('colaborador_id', colaborador.id)
-          .eq('data', data)
-          .eq('status', 'CANCELADO');
-
-      await _client.from('massoterapia_agendamentos').insert({
-        'colaborador_id': colaborador.id,
-        'data': data,
-        'horario': horario,
-        'status': 'AGENDADO',
-      });
-      return true;
+      final res = await _client.rpc(
+        'agendar_massoterapia_com_limite',
+        params: {
+          'p_colaborador_id': colaborador.id,
+          'p_data': data,
+          'p_horario': horario,
+        },
+      );
+      final map = Map<String, dynamic>.from(res as Map);
+      return (
+        ok: map['ok'] as bool? ?? false,
+        pagoComPolecoins: map['pago_com_polecoins'] as bool? ?? false,
+        motivo: map['motivo'] as String?,
+      );
     } catch (_) {
-      return false;
+      return (ok: false, pagoComPolecoins: false, motivo: null);
     }
   }
 
-  /// Soft delete: marca como CANCELADO em vez de apagar, para manter
-  /// histórico (relatórios de quem cancelou). O reagendamento no mesmo dia
-  /// continua funcionando porque `agendarMassoterapia` limpa esse resquício
-  /// antes do insert.
+  /// Cancela (soft delete, marca CANCELADO) e estorna os PoleCoins
+  /// automaticamente se a sessão tinha sido paga (RPC `cancelar_massoterapia_com_estorno`).
   Future<bool> cancelarMassoterapia(int agendamentoId) async {
     try {
-      await _client
-          .from('massoterapia_agendamentos')
-          .update({'status': 'CANCELADO'})
-          .eq('id', agendamentoId)
-          .eq('colaborador_id', colaboradorAtual!.id); // segurança: só o dono
-      return true;
+      final ok = await _client.rpc(
+        'cancelar_massoterapia_com_estorno',
+        params: {
+          'p_agendamento_id': agendamentoId,
+          'p_colaborador_id': colaboradorAtual!.id,
+        },
+      );
+      return ok as bool? ?? false;
     } catch (_) {
       return false;
     }

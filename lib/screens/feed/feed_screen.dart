@@ -1359,6 +1359,8 @@ class _InlineComposerState extends State<_InlineComposer> {
     });
   }
 
+  static const int _limiteImagemBytes = 2 * 1024 * 1024; // 2 MB
+
   Future<void> _escolherImagem() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -1369,6 +1371,19 @@ class _InlineComposerState extends State<_InlineComposer> {
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
+    if (bytes.length > _limiteImagemBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Imagem muito grande (máx. 2 MB). Escolha outra foto.',
+            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     setState(() {
       _imagemBytes = bytes;
       _imagemNome = picked.name;
