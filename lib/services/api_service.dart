@@ -600,13 +600,39 @@ class ApiService {
     };
   }
 
-  Future<bool> solicitarVaga(VagaModel vaga) async {
+  /// Retorna o id da vaga criada, ou null se falhar.
+  Future<int?> solicitarVaga(VagaModel vaga) async {
     try {
-      await _client.from('vagas').insert(vaga.toInsertMap());
-      return true;
+      final res = await _client
+          .from('vagas')
+          .insert(vaga.toInsertMap())
+          .select('id')
+          .single();
+      return res['id'] as int;
     } catch (_) {
-      return false;
+      return null;
     }
+  }
+
+  /// Passo 3 do "Solicitar Vaga": registra o chamado de TI vinculado, se o
+  /// gestor marcou que a vaga precisa de algum provisionamento.
+  Future<void> criarChamadoTIVaga({
+    required int vagaId,
+    required bool precisaUsuarioRede,
+    int? acessoIgualColaboradorId,
+    required bool precisaOffice365,
+    required bool precisaMaquina,
+    String? observacao,
+  }) async {
+    await _client.from('ti_chamados_vaga').insert({
+      'vaga_id': vagaId,
+      'precisa_usuario_rede': precisaUsuarioRede,
+      if (acessoIgualColaboradorId != null)
+        'acesso_igual_colaborador_id': acessoIgualColaboradorId,
+      'precisa_office365': precisaOffice365,
+      'precisa_maquina': precisaMaquina,
+      if (observacao != null && observacao.isNotEmpty) 'observacao': observacao,
+    });
   }
 
   /// Lista as requisições do gestor logado (por supervisorId ou pelo id direto)
@@ -926,7 +952,8 @@ class ApiService {
 
   /// Resolve se [diaSemana] (1–7) é dia de massoterapia, considerando a regra
   /// mais específica disponível para o colaborador: setor > segmento >
-  /// filial > global. Retorna false se nenhuma regra estiver configurada.
+  /// filial. Sem regra global — retorna false se nem a filial tiver
+  /// configuração (ver [filialTemMassoterapiaConfigurada]).
   Future<bool> diaMassoterapiaAtivoParaColaborador({
     required int diaSemana,
     String? setor,
@@ -947,12 +974,38 @@ class ApiService {
       return achado.isEmpty ? null : achado.first['ativo'] as bool;
     }
 
-    final global = linhas.where((l) => l['escopo'] == 'global');
-
     return buscar('setor', setor) ??
         buscar('segmento', segmento) ??
         buscar('filial', filial) ??
-        (global.isEmpty ? false : global.first['ativo'] as bool);
+        false;
+  }
+
+  /// Massoterapia não tem mais regra global — só existe pra colaborador de
+  /// filial que a RH configurou explicitamente. Usado pra esconder o
+  /// módulo por completo de quem está numa filial sem nenhuma config
+  /// (nenhum dia cadastrado pra essa filial, direto ou por segmento/setor
+  /// dela).
+  Future<bool> filialTemMassoterapiaConfigurada(String? filial) async {
+    if (filial == null || filial.isEmpty) return false;
+    final res = await _client
+        .from('massoterapia_dias_config')
+        .select('id')
+        .eq('escopo', 'filial')
+        .eq('chave', filial)
+        .limit(1);
+    return (res as List).isNotEmpty;
+  }
+
+  /// Nutrição não tem regra global — só existe pra colaborador de filial
+  /// com pelo menos uma data cadastrada.
+  Future<bool> filialTemNutricaoConfigurada(String? filial) async {
+    if (filial == null || filial.isEmpty) return false;
+    final res = await _client
+        .from('nutricionista_config_dias')
+        .select('id')
+        .eq('filial', filial)
+        .limit(1);
+    return (res as List).isNotEmpty;
   }
 
   /// Status do ciclo atual: quantas sessões grátis já usou, limite do ciclo,
@@ -1021,25 +1074,49 @@ class ApiService {
   /// Retorna todos os dias do ciclo vigente (período de calendário completo
   /// — semana/quinzena/mês, conforme configurado), incluindo dias passados
   /// (pra ver onde a vaga já foi usada) e futuros (pra agendar).
+  ///
+  /// Uma única query pras regras relevantes, em vez de uma consulta por
+  /// dia do período (até 30+ round-trips sequenciais pra uma janela de
+  /// mês, antes desta correção — era o motivo da tela demorar pra abrir).
   Future<List<String>> buscarDiasDisponiveisMassoterapia() async {
     final colaborador = colaboradorAtual;
+    final setor = colaborador?.setor;
+    final segmento = colaborador?.codSegmento;
+    final filial = colaborador?.filialEfetiva;
     final agora = _brasilia();
     final hoje = DateTime(agora.year, agora.month, agora.day);
     final config = await buscarConfigGeralMassoterapia();
     final janelaDias = config['janela_dias'] as int? ?? 14;
     final periodo = _periodoCicloMassoterapia(hoje, janelaDias);
 
+    final chaves = [setor, segmento, filial].whereType<String>().toList();
+    final regras = chaves.isEmpty
+        ? <Map<String, dynamic>>[]
+        : List<Map<String, dynamic>>.from(await _client
+            .from('massoterapia_dias_config')
+            .select('escopo, chave, dia_semana, ativo')
+            .inFilter('chave', chaves));
+
+    bool? buscar(String escopo, String? chave, int diaSemana) {
+      if (chave == null) return null;
+      final achado = regras.where((l) =>
+          l['escopo'] == escopo &&
+          l['chave'] == chave &&
+          l['dia_semana'] == diaSemana);
+      return achado.isEmpty ? null : achado.first['ativo'] as bool;
+    }
+
+    bool ativoNoDia(int diaSemana) =>
+        buscar('setor', setor, diaSemana) ??
+        buscar('segmento', segmento, diaSemana) ??
+        buscar('filial', filial, diaSemana) ??
+        false;
+
     final dias = <String>[];
     for (var d = periodo.inicio;
         !d.isAfter(periodo.fim);
         d = d.add(const Duration(days: 1))) {
-      final ativo = await diaMassoterapiaAtivoParaColaborador(
-        diaSemana: d.weekday,
-        setor: colaborador?.setor,
-        segmento: colaborador?.codSegmento,
-        filial: colaborador?.codFilial,
-      );
-      if (ativo) {
+      if (ativoNoDia(d.weekday)) {
         final str =
             '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
         dias.add(str);
@@ -1080,13 +1157,18 @@ class ApiService {
   }
 
   /// Configuração de vagas por setor. Retorna null se o setor não tiver config.
+  /// Sem regra global — sem [filial] (ou sem regra própria dessa filial)
+  /// retorna null, tratado como "sem limite" pelo restante do fluxo.
   Future<MassoterapiaConfigSetorModel?> buscarConfigSetorMassoterapia(
-    String setor,
-  ) async {
+    String setor, {
+    String? filial,
+  }) async {
+    if (filial == null || filial.isEmpty) return null;
     final data = await _client
         .from('massoterapia_config_setor')
         .select()
         .eq('setor', setor)
+        .eq('filial', filial)
         .eq('ativo', true)
         .maybeSingle();
     if (data == null) return null;
@@ -2515,11 +2597,13 @@ class ApiService {
   // ─── Nutricionista ───────────────────────────────────────────────────────────
   // Cole após os métodos de massoterapia
 
+  /// Sem regra global — só existe pra colaborador de filial com pelo menos
+  /// uma data cadastrada.
   Future<List<String>> buscarDiasDisponiveisNutricionista() async {
-    // Reutiliza a mesma tabela de configuração de dias disponíveis.
-    // Crie uma tabela nutricionista_config_dias (data DATE, ativo BOOL)
-    // ou use a lógica de dias úteis que já existe na massoterapia.
-    // Ajuste a query abaixo conforme seu schema:
+    final colaborador = colaboradorAtual;
+    final filial = colaborador?.filialEfetiva;
+    if (filial == null || filial.isEmpty) return [];
+
     final hoje = _brasilia();
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
@@ -2528,6 +2612,7 @@ class ApiService {
         .from('nutricionista_config_dias')
         .select('data')
         .eq('ativo', true)
+        .eq('filial', filial)
         .gte('data', hojeStr)
         .order('data', ascending: true);
 
@@ -3223,13 +3308,45 @@ class ApiService {
     }
   }
 
+  /// Portado do gentepole_admin: não depende só de `hierarquia_nomes` (que
+  /// pode vir vazia por RLS/falta de apelido cadastrado nesse contexto) —
+  /// deriva os códigos de filial de `colaboradores.branch` (sempre
+  /// sincronizado do TOTVS) e usa `hierarquia_nomes` só pra dar nome
+  /// bonito, com fallback pro código cru.
   Future<List<Map<String, dynamic>>> listarFiliais() async {
-    final res = await _client
+    final nomesRes = await _client
         .from('hierarquia_nomes')
-        .select('id, chave, nome')
-        .eq('tipo', 'filial')
-        .order('nome');
-    return List<Map<String, dynamic>>.from(res as List);
+        .select('chave, nome')
+        .eq('tipo', 'filial');
+    final nomesPorChave = {
+      for (final n in nomesRes as List)
+        n['chave'] as String: n['nome'] as String
+    };
+
+    // Paginado — o Supabase limita a 1000 linhas por padrão.
+    final codigos = <String>{};
+    int from = 0;
+    const pageSize = 1000;
+    while (true) {
+      final page = await _client
+          .from('colaboradores')
+          .select('branch')
+          .range(from, from + pageSize - 1);
+      final linhas = page as List;
+      for (final c in linhas) {
+        final branch = c['branch'] as String?;
+        if (branch != null && branch.isNotEmpty) codigos.add(branch);
+      }
+      if (linhas.length < pageSize) break;
+      from += pageSize;
+    }
+
+    final lista = codigos
+        .map<Map<String, dynamic>>((cod) =>
+            {'chave': cod, 'nome': nomesPorChave[cod] ?? 'Filial $cod'})
+        .toList();
+    lista.sort((a, b) => (a['nome'] as String).compareTo(b['nome'] as String));
+    return lista;
   }
 
   // ─── Performance: Feedback (Avaliação) ──────────────────────────────────

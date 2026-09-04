@@ -24,6 +24,7 @@ class _AtalhosSheet extends StatefulWidget {
 class _AtalhosSheetState extends State<_AtalhosSheet> {
   bool _loading = true;
   List<String> _favoritosIds = [];
+  List<AtalhoDef> _visiveis = [];
 
   @override
   void initState() {
@@ -32,10 +33,14 @@ class _AtalhosSheetState extends State<_AtalhosSheet> {
   }
 
   Future<void> _carregar() async {
-    final ids = await AtalhosFavoritosService.obterFavoritos();
+    final resultados = await Future.wait([
+      AtalhosFavoritosService.obterFavoritos(),
+      atalhosVisiveis(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _favoritosIds = ids;
+      _favoritosIds = resultados[0] as List<String>;
+      _visiveis = resultados[1] as List<AtalhoDef>;
       _loading = false;
     });
   }
@@ -45,14 +50,22 @@ class _AtalhosSheetState extends State<_AtalhosSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EditorAtalhosSheet(favoritosAtuais: _favoritosIds),
+      builder: (_) => _EditorAtalhosSheet(
+        favoritosAtuais: _favoritosIds,
+        visiveis: _visiveis,
+      ),
     );
     if (salvou == true) _carregar();
   }
 
   @override
   Widget build(BuildContext context) {
-    final favoritos = _favoritosIds.map(buscarAtalho).whereType<AtalhoDef>().toList();
+    final visiveisIds = _visiveis.map((a) => a.id).toSet();
+    final favoritos = _favoritosIds
+        .map(buscarAtalho)
+        .whereType<AtalhoDef>()
+        .where((a) => visiveisIds.contains(a.id))
+        .toList();
 
     return SafeArea(
       child: Container(
@@ -141,7 +154,8 @@ class _AtalhosSheetState extends State<_AtalhosSheet> {
 
 class _EditorAtalhosSheet extends StatefulWidget {
   final List<String> favoritosAtuais;
-  const _EditorAtalhosSheet({required this.favoritosAtuais});
+  final List<AtalhoDef> visiveis;
+  const _EditorAtalhosSheet({required this.favoritosAtuais, required this.visiveis});
 
   @override
   State<_EditorAtalhosSheet> createState() => _EditorAtalhosSheetState();
@@ -199,10 +213,10 @@ class _EditorAtalhosSheetState extends State<_EditorAtalhosSheet> {
                 Expanded(
                   child: ListView.separated(
                     controller: scrollController,
-                    itemCount: atalhosDisponiveis.length,
+                    itemCount: widget.visiveis.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 6),
                     itemBuilder: (_, i) {
-                      final a = atalhosDisponiveis[i];
+                      final a = widget.visiveis[i];
                       final sel = _selecionados.contains(a.id);
                       final desabilitado = !sel && _selecionados.length >= AtalhosFavoritosService.maxAtalhos;
                       return Material(

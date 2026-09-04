@@ -42,6 +42,16 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   List<Map<String, dynamic>> _filiais = [];
   String? _filialSelecionada;
 
+  // Etapa 3: chamado de TI. null = ainda não respondido (obrigatório
+  // responder Sim/Não em cada pergunta antes de poder enviar).
+  bool _mostrarEtapa3 = false;
+  bool? _abrirChamadoTI;
+  bool? _precisaUsuarioRede;
+  ColaboradorModel? _acessoIgualColaborador;
+  bool? _precisaOffice365;
+  bool? _precisaMaquina;
+  final _observacaoTICtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +64,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     _motivoCtrl.dispose();
     _centroCustoCtrl.dispose();
     _liderancaMatriculaCtrl.dispose();
+    _observacaoTICtrl.dispose();
     super.dispose();
   }
 
@@ -61,7 +72,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     try {
       final lista = await _api.listarFiliais();
       if (mounted) setState(() => _filiais = lista);
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[FILIAIS] ERRO: $e\n$st');
+    }
   }
 
   Future<void> _carregarTemplates() async {
@@ -110,6 +123,13 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _horarioSaida = null;
       _docAprovacao = null;
       _filialSelecionada = null;
+      _mostrarEtapa3 = false;
+      _abrirChamadoTI = null;
+      _precisaUsuarioRede = null;
+      _acessoIgualColaborador = null;
+      _precisaOffice365 = null;
+      _precisaMaquina = null;
+      _observacaoTICtrl.clear();
     });
   }
 
@@ -119,6 +139,20 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _colaboradorSubstituido = null;
     });
     if (substituicao && _equipe.isEmpty) _carregarEquipe();
+  }
+
+  bool get _podeEnviarEtapa3 {
+    if (_abrirChamadoTI == null) return false;
+    if (_abrirChamadoTI == false) return true;
+    if (_precisaUsuarioRede == null) return false;
+    if (_precisaUsuarioRede == true &&
+        _acessoIgualColaborador == null &&
+        _equipeDoSetorDaVaga.isNotEmpty) {
+      return false;
+    }
+    if (_precisaOffice365 == null) return false;
+    if (_precisaMaquina == null) return false;
+    return true;
   }
 
   String _timeStr(TimeOfDay t) =>
@@ -173,11 +207,30 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       colaboradorSubstituidoId: _ehSubstituicao ? _colaboradorSubstituido?.id : null,
     );
 
-    final ok = await _api.solicitarVaga(vaga);
+    final vagaId = await _api.solicitarVaga(vaga);
+    if (vagaId != null && _abrirChamadoTI == true) {
+      try {
+        await _api.criarChamadoTIVaga(
+          vagaId: vagaId,
+          precisaUsuarioRede: _precisaUsuarioRede ?? false,
+          acessoIgualColaboradorId:
+              _precisaUsuarioRede == true ? _acessoIgualColaborador?.id : null,
+          precisaOffice365: _precisaOffice365 ?? false,
+          precisaMaquina: _precisaMaquina ?? false,
+          observacao: _observacaoTICtrl.text.trim().isEmpty
+              ? null
+              : _observacaoTICtrl.text.trim(),
+        );
+      } catch (e, st) {
+        // Vaga já foi criada; a falha em gravar o chamado de TI não deve
+        // travar o fluxo do gestor. RH ainda vê a vaga normalmente.
+        debugPrint('[CHAMADO_TI] ERRO ao criar chamado: $e\n$st');
+      }
+    }
     if (!mounted) return;
     setState(() => _enviando = false);
 
-    if (ok) {
+    if (vagaId != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Solicitação enviada! O RH será notificado. ✅',
             style: GoogleFonts.poppins()),
@@ -215,9 +268,11 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                   child: Row(
                     children: [
                       IconButton(
-                        onPressed: _templateSelecionado != null
-                            ? _voltarParaTemplates
-                            : () => Navigator.pop(context),
+                        onPressed: _mostrarEtapa3
+                            ? () => setState(() => _mostrarEtapa3 = false)
+                            : _templateSelecionado != null
+                                ? _voltarParaTemplates
+                                : () => Navigator.pop(context),
                         icon: const Icon(Icons.arrow_back_ios_new_rounded,
                             color: Colors.white, size: 20),
                       ),
@@ -228,7 +283,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                             Text(
                               _templateSelecionado == null
                                   ? 'Solicitar Vaga'
-                                  : 'Detalhes da Solicitação',
+                                  : _mostrarEtapa3
+                                      ? 'Chamado de TI'
+                                      : 'Detalhes da Solicitação',
                               style: GoogleFonts.poppins(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -237,7 +294,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                             Text(
                               _templateSelecionado == null
                                   ? 'Selecione o cargo'
-                                  : 'Passo 2 de 2',
+                                  : _mostrarEtapa3
+                                      ? 'Passo 3 de 3'
+                                      : 'Passo 2 de 3',
                               style: GoogleFonts.poppins(
                                   color: Colors.white.withOpacity(0.8),
                                   fontSize: 12),
@@ -258,7 +317,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     ),
                     child: _templateSelecionado == null
                         ? _buildEtapa1()
-                        : _buildEtapa2(),
+                        : _mostrarEtapa3
+                            ? _buildEtapa3()
+                            : _buildEtapa2(),
                   ),
                 ),
               ],
@@ -492,15 +553,19 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<ColaboradorModel>(
-                  value: _colaboradorSubstituido,
+                // Value é a matrícula, não o model inteiro — ColaboradorModel
+                // não sobrescreve `==`, então usá-lo como value quebra o
+                // dropdown silenciosamente se a equipe for recarregada
+                // (mesmo bug já achado no dropdown de filial).
+                child: DropdownButton<String>(
+                  value: _colaboradorSubstituido?.matricula,
                   isExpanded: true,
                   hint: Text('Selecione...',
                       style: GoogleFonts.poppins(
                           fontSize: 13, color: AppColors.cinzaTexto)),
                   items: _equipeDoSetorDaVaga.map((c) {
                     return DropdownMenuItem(
-                      value: c,
+                      value: c.matricula,
                       child: Text(
                         c.cargo != null && c.cargo!.isNotEmpty
                             ? '${c.nome} – ${c.cargo}'
@@ -510,7 +575,12 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                       ),
                     );
                   }).toList(),
-                  onChanged: (c) => setState(() => _colaboradorSubstituido = c),
+                  onChanged: (matricula) => setState(() {
+                    _colaboradorSubstituido = matricula == null
+                        ? null
+                        : _equipeDoSetorDaVaga
+                            .firstWhere((c) => c.matricula == matricula);
+                  }),
                 ),
               ),
             ),
@@ -721,14 +791,242 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           width: double.infinity,
           height: 54,
           child: ElevatedButton(
-            onPressed: (_enviando ||
-                    (_ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty) ||
+            onPressed: (_ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty) ||
                     (!_ehSubstituicao && _docAprovacao == null) ||
                     _horarioEntrada == null ||
                     _horarioSaida == null ||
                     _centroCustoCtrl.text.trim().isEmpty ||
                     _liderancaMatriculaCtrl.text.trim().isEmpty ||
-                    _filialSelecionada == null)
+                    _filialSelecionada == null
+                ? null
+                : () => setState(() => _mostrarEtapa3 = true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.magenta,
+              disabledBackgroundColor: AppColors.cinzaTexto.withOpacity(0.3),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 0,
+            ),
+            child: Text(
+              _ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty
+                  ? 'Selecione quem será substituído'
+                  : 'Continuar',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Etapa 3: Chamado de TI ──────────────────────────────────────────────────────
+
+  Widget _buildEtapa3() {
+    final precisaObservacao =
+        _precisaOffice365 == true || _precisaMaquina == true;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
+      children: [
+        _secao('Essa vaga vai precisar de chamado de TI?', obrigatorio: true),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _botaoTipo(
+                label: 'Não',
+                icone: Icons.close_rounded,
+                selecionado: _abrirChamadoTI == false,
+                onTap: () => setState(() {
+                  _abrirChamadoTI = false;
+                  _precisaUsuarioRede = null;
+                  _acessoIgualColaborador = null;
+                  _precisaOffice365 = null;
+                  _precisaMaquina = null;
+                  _observacaoTICtrl.clear();
+                }),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _botaoTipo(
+                label: 'Sim',
+                icone: Icons.build_outlined,
+                selecionado: _abrirChamadoTI == true,
+                onTap: () => setState(() => _abrirChamadoTI = true),
+              ),
+            ),
+          ],
+        ),
+        if (_abrirChamadoTI == true) ...[
+          const SizedBox(height: 24),
+          _secao('Precisa de usuário de rede?', obrigatorio: true),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Não',
+                  icone: Icons.close_rounded,
+                  selecionado: _precisaUsuarioRede == false,
+                  onTap: () => setState(() {
+                    _precisaUsuarioRede = false;
+                    _acessoIgualColaborador = null;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Sim',
+                  icone: Icons.person_outline_rounded,
+                  selecionado: _precisaUsuarioRede == true,
+                  onTap: () {
+                    setState(() => _precisaUsuarioRede = true);
+                    if (_equipe.isEmpty) _carregarEquipe();
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (_precisaUsuarioRede == true) ...[
+            const SizedBox(height: 16),
+            _secao('Acesso igual ao de qual colaborador?', obrigatorio: true),
+            const SizedBox(height: 8),
+            Text(
+              'Colaboradores do mesmo setor da vaga.',
+              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto),
+            ),
+            const SizedBox(height: 8),
+            if (_carregandoEquipe)
+              const Center(
+                  child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(color: AppColors.magenta),
+              ))
+            else if (_equipeDoSetorDaVaga.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  'Nenhum colaborador encontrado no setor desta vaga.',
+                  style: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+                ),
+              )
+            else
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _acessoIgualColaborador != null
+                        ? AppColors.laranja
+                        : const Color(0xFFE5E7EB),
+                    width: _acessoIgualColaborador != null ? 1.5 : 1,
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: DropdownButtonHideUnderline(
+                  // Value é a matrícula — mesmo motivo do dropdown de
+                  // "Colaborador a substituir" acima.
+                  child: DropdownButton<String>(
+                    value: _acessoIgualColaborador?.matricula,
+                    isExpanded: true,
+                    hint: Text('Selecione...',
+                        style:
+                            GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto)),
+                    style: GoogleFonts.poppins(fontSize: 13, color: AppColors.dark),
+                    items: _equipeDoSetorDaVaga.map((c) {
+                      return DropdownMenuItem(
+                        value: c.matricula,
+                        child: Text('${c.nome} – ${c.cargo}',
+                            overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+                    onChanged: (matricula) => setState(() {
+                      _acessoIgualColaborador = matricula == null
+                          ? null
+                          : _equipeDoSetorDaVaga
+                              .firstWhere((c) => c.matricula == matricula);
+                    }),
+                  ),
+                ),
+              ),
+          ],
+          const SizedBox(height: 24),
+          _secao('Precisa de Office 365?', obrigatorio: true),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Não',
+                  icone: Icons.close_rounded,
+                  selecionado: _precisaOffice365 == false,
+                  onTap: () => setState(() => _precisaOffice365 = false),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Sim',
+                  icone: Icons.email_outlined,
+                  selecionado: _precisaOffice365 == true,
+                  onTap: () => setState(() => _precisaOffice365 = true),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _secao('Precisa de máquina?', obrigatorio: true),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Não',
+                  icone: Icons.close_rounded,
+                  selecionado: _precisaMaquina == false,
+                  onTap: () => setState(() => _precisaMaquina = false),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _botaoTipo(
+                  label: 'Sim',
+                  icone: Icons.computer_outlined,
+                  selecionado: _precisaMaquina == true,
+                  onTap: () => setState(() => _precisaMaquina = true),
+                ),
+              ),
+            ],
+          ),
+          if (precisaObservacao) ...[
+            const SizedBox(height: 24),
+            _secao('Alguma especificidade?'),
+            const SizedBox(height: 4),
+            Text(
+              'Ex: versão do Office, configuração da máquina, sistema específico...',
+              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto),
+            ),
+            const SizedBox(height: 8),
+            _campoTexto(
+              ctrl: _observacaoTICtrl,
+              label: 'Observação',
+              icone: Icons.notes_outlined,
+            ),
+          ],
+        ],
+        const SizedBox(height: 32),
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: ElevatedButton(
+            onPressed: (_enviando || !_podeEnviarEtapa3)
                 ? null
                 : _enviar,
             style: ElevatedButton.styleFrom(
@@ -742,10 +1040,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text(
-                    _ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty
-                        ? 'Selecione quem será substituído'
-                        : 'Enviar para o RH',
+                : Text('Enviar para o RH',
                     style: GoogleFonts.poppins(
                         fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
                     maxLines: 1,
@@ -756,7 +1051,6 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       ],
     );
   }
-
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -881,6 +1175,8 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
             prefixIcon:
                 Icon(icone, size: 18, color: AppColors.cinzaTexto),
+            filled: true,
+            fillColor: Colors.white,
             border: InputBorder.none,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

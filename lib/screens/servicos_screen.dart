@@ -34,6 +34,8 @@ class _ServicosScreenState extends State<ServicosScreen> {
   final _api = ApiService();
   bool _ehGestor = false;
   bool _ehIntegracao = false;
+  bool _massoterapiaDisponivel = false;
+  bool _nutricaoDisponivel = false;
   bool _loadingPerfis = true;
 
   @override
@@ -43,14 +45,19 @@ class _ServicosScreenState extends State<ServicosScreen> {
   }
 
   Future<void> _verificarPerfis() async {
+    final filial = _api.colaboradorAtual?.filialEfetiva;
     final resultados = await Future.wait([
       _api.verificarSeEhGestor(),
       _api.verificarSeEhIntegracao(),
+      _api.filialTemMassoterapiaConfigurada(filial),
+      _api.filialTemNutricaoConfigurada(filial),
     ]);
     if (mounted) {
       setState(() {
         _ehGestor = resultados[0] as bool;
         _ehIntegracao = resultados[1] as bool;
+        _massoterapiaDisponivel = resultados[2] as bool;
+        _nutricaoDisponivel = resultados[3] as bool;
         _loadingPerfis = false;
       });
     }
@@ -320,37 +327,41 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           _sectionLabel('Bem na Pole', AppColors.magenta),
                           const SizedBox(height: 10),
 
-                          _botaoServico(
-                            context,
-                            icone: Icons.self_improvement_rounded,
-                            titulo: 'Massoterapia',
-                            subtitulo: 'Agende sua sessão de bem-estar',
-                            cor: AppColors.magenta,
-                            emBreve: false,
-                            onTap: () => Navigator.push(
+                          if (!_loadingPerfis && _massoterapiaDisponivel) ...[
+                            _botaoServico(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const MassoterapiaScreen(),
+                              icone: Icons.self_improvement_rounded,
+                              titulo: 'Massoterapia',
+                              subtitulo: 'Agende sua sessão de bem-estar',
+                              cor: AppColors.magenta,
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const MassoterapiaScreen(),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
+                          ],
 
-                          _botaoServico(
-                            context,
-                            icone: Icons.local_dining_outlined,
-                            titulo: 'Nutricionista',
-                            subtitulo: 'Agende uma consulta nutricional',
-                            cor: const Color(0xFF10B981),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
+                          if (!_loadingPerfis && _nutricaoDisponivel) ...[
+                            _botaoServico(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const NutricionistaScreen(),
+                              icone: Icons.local_dining_outlined,
+                              titulo: 'Nutricionista',
+                              subtitulo: 'Agende uma consulta nutricional',
+                              cor: const Color(0xFF10B981),
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const NutricionistaScreen(),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
+                          ],
 
                           _botaoServico(
                             context,

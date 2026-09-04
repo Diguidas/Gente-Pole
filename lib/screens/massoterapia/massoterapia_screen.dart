@@ -60,7 +60,10 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
       final resultados = await Future.wait([
         _api.buscarDiasDisponiveisMassoterapia(),
         _api.buscarAgendamentosMassoterapia(),
-        _api.buscarConfigSetorMassoterapia(_api.colaboradorAtual?.setor ?? ''),
+        _api.buscarConfigSetorMassoterapia(
+          _api.colaboradorAtual?.setor ?? '',
+          filial: _api.colaboradorAtual?.filialEfetiva,
+        ),
         _api.buscarStatusCicloMassoterapia(),
       ]);
       if (!mounted) return;

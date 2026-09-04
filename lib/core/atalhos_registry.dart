@@ -10,6 +10,7 @@ import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
 import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/plantao_psicologico_screen.dart';
+import '../services/api_service.dart';
 
 /// Serviços que podem ser marcados como atalho na barra de navegação.
 /// Mantém só os serviços "gerais" (visíveis pra todo colaborador) — painéis
@@ -117,6 +118,25 @@ AtalhoDef? buscarAtalho(String id) {
     if (a.id == id) return a;
   }
   return null;
+}
+
+/// [atalhosDisponiveis] filtrado pelos que o colaborador atual pode
+/// realmente usar. Massoterapia e Nutrição dependem disso — somem da
+/// lista (favoritos e editor de atalhos) quando a filial do colaborador
+/// não tem nenhuma configuração própria.
+Future<List<AtalhoDef>> atalhosVisiveis() async {
+  final api = ApiService();
+  final filial = api.colaboradorAtual?.filialEfetiva;
+  final resultados = await Future.wait([
+    api.filialTemMassoterapiaConfigurada(filial),
+    api.filialTemNutricaoConfigurada(filial),
+  ]);
+  final massoterapiaDisponivel = resultados[0];
+  final nutricaoDisponivel = resultados[1];
+  return atalhosDisponiveis
+      .where((a) => a.id != 'massoterapia' || massoterapiaDisponivel)
+      .where((a) => a.id != 'nutricionista' || nutricaoDisponivel)
+      .toList();
 }
 
 /// Cores usadas nos ícones dos atalhos, sem depender de app_theme.dart para
