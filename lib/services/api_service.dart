@@ -2524,6 +2524,25 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Todas as reservas de uma sala num intervalo de datas — usado pra montar
+  /// a agenda do dia antes de escolher o horário.
+  Future<List<Map<String, dynamic>>> listarTodasReservasSalas({
+    int? salaId,
+    DateTime? dataInicio,
+    DateTime? dataFim,
+  }) async {
+    String fmt(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    var query = _client.from('reservas_salas').select();
+    if (salaId != null) query = query.eq('sala_id', salaId);
+    if (dataInicio != null) query = query.gte('data', fmt(dataInicio));
+    if (dataFim != null) query = query.lte('data', fmt(dataFim));
+    final res = await query
+        .order('data', ascending: true)
+        .order('hora_inicio', ascending: true);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   Future<List<Map<String, dynamic>>> listarMinhasReservasSalas(
     String colaboradorId,
   ) async {

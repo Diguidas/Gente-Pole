@@ -302,8 +302,14 @@ class _DialogReserva extends StatefulWidget {
   State<_DialogReserva> createState() => _DialogReservaState();
 }
 
+// Grade de horários da agenda: 07:00 às 20:00, em blocos de 30min.
+const _agendaInicioMin = 7 * 60;
+const _agendaFimMin = 20 * 60;
+const _agendaSlotMin = 30;
+const _agendaTotalSlots = (_agendaFimMin - _agendaInicioMin) ~/ _agendaSlotMin;
+
 class _DialogReservaState extends State<_DialogReserva> {
-  int _etapa = 0;
+  int _etapa = 0; // 0 = confirmação do tipo, 1 = formulário, 2 = agenda do dia
   String? _subtipo;
 
   DateTime _data = DateTime.now();
@@ -315,6 +321,13 @@ class _DialogReservaState extends State<_DialogReserva> {
   final _obsCtrl = TextEditingController();
   bool _salvando = false;
   String? _erro;
+
+  // ── Agenda do dia (etapa 2) ────────────────────────────────────────────
+  bool _carregandoAgenda = false;
+  List<Map<String, dynamic>> _reservasDoDia = [];
+  int? _slotInicio;
+  int? _slotFim;
+  final _agendaScrollCtrl = ScrollController();
 
   String get _tipo => widget.sala['tipo'] as String;
 
@@ -330,6 +343,7 @@ class _DialogReservaState extends State<_DialogReserva> {
     _responsavelCtrl.dispose();
     _contatoCtrl.dispose();
     _obsCtrl.dispose();
+    _agendaScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -374,6 +388,102 @@ class _DialogReservaState extends State<_DialogReserva> {
     Navigator.pop(context, true);
   }
 
+  Future<void> _irParaAgenda() async {
+    setState(() {
+      _etapa = 2;
+      _slotInicio = null;
+      _slotFim = null;
+    });
+    await _carregarAgenda();
+  }
+
+  Future<void> _carregarAgenda() async {
+    setState(() => _carregandoAgenda = true);
+    final res = await widget.api.listarTodasReservasSalas(
+      salaId: widget.sala['id'] as int,
+      dataInicio: _data,
+      dataFim: _data,
+    );
+    if (!mounted) return;
+    setState(() {
+      _reservasDoDia = res;
+      _carregandoAgenda = false;
+    });
+  }
+
+  void _mudarDia(int deltaDias) {
+    final novaData = _data.add(Duration(days: deltaDias));
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    if (novaData.isBefore(hojeSemHora)) return;
+    setState(() {
+      _data = novaData;
+      _slotInicio = null;
+      _slotFim = null;
+    });
+    _carregarAgenda();
+  }
+
+  int _minutosFromHHMMSS(String s) {
+    final p = s.split(':');
+    return int.parse(p[0]) * 60 + int.parse(p[1]);
+  }
+
+  bool _slotOcupado(int slotIndex) {
+    final inicio = _agendaInicioMin + slotIndex * _agendaSlotMin;
+    final fim = inicio + _agendaSlotMin;
+    for (final r in _reservasDoDia) {
+      final ri = _minutosFromHHMMSS(r['hora_inicio'] as String);
+      final rf = _minutosFromHHMMSS(r['hora_fim'] as String);
+      if (ri < fim && rf > inicio) return true;
+    }
+    return false;
+  }
+
+  void _tocarSlot(int slotIndex) {
+    if (_slotOcupado(slotIndex)) return;
+    if (_slotInicio == null || _slotFim != null) {
+      setState(() {
+        _slotInicio = slotIndex;
+        _slotFim = null;
+      });
+      return;
+    }
+    if (slotIndex == _slotInicio) {
+      setState(() => _slotInicio = null);
+      return;
+    }
+    if (slotIndex < _slotInicio!) {
+      setState(() {
+        _slotInicio = slotIndex;
+        _slotFim = null;
+      });
+      return;
+    }
+    // Confirma o fim do intervalo só se nenhum slot no meio estiver ocupado.
+    for (var i = _slotInicio!; i <= slotIndex; i++) {
+      if (_slotOcupado(i)) {
+        setState(() {
+          _slotInicio = slotIndex;
+          _slotFim = null;
+        });
+        return;
+      }
+    }
+    setState(() => _slotFim = slotIndex);
+  }
+
+  void _confirmarHorarioDaAgenda() {
+    if (_slotInicio == null || _slotFim == null) return;
+    final inicioMin = _agendaInicioMin + _slotInicio! * _agendaSlotMin;
+    final fimMin = _agendaInicioMin + (_slotFim! + 1) * _agendaSlotMin;
+    setState(() {
+      _horaInicio = TimeOfDay(hour: inicioMin ~/ 60, minute: inicioMin % 60);
+      _horaFim = TimeOfDay(hour: fimMin ~/ 60, minute: fimMin % 60);
+      _etapa = 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -382,9 +492,11 @@ class _DialogReservaState extends State<_DialogReserva> {
         constraints: const BoxConstraints(maxHeight: 620),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: _etapa == 0 ? _buildEtapaInicial() : _buildFormulario(),
-          ),
+          child: _etapa == 2
+              ? _buildAgenda()
+              : SingleChildScrollView(
+                  child: _etapa == 0 ? _buildEtapaInicial() : _buildFormulario(),
+                ),
         ),
       ),
     );
@@ -405,10 +517,10 @@ class _DialogReservaState extends State<_DialogReserva> {
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () => setState(() {
+                  onPressed: () {
                     _subtipo = e.key;
-                    _etapa = 1;
-                  }),
+                    _irParaAgenda();
+                  },
                   style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: const BorderSide(color: _corSalas)),
                   child: Text(e.value, style: GoogleFonts.poppins(color: _corSalas, fontWeight: FontWeight.w600)),
                 ),
@@ -429,10 +541,10 @@ class _DialogReservaState extends State<_DialogReserva> {
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () => setState(() {
+                  onPressed: () {
                     _subtipo = e.key;
-                    _etapa = 1;
-                  }),
+                    _irParaAgenda();
+                  },
                   style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: const BorderSide(color: _corSalas)),
                   child: Text(e.value, style: GoogleFonts.poppins(color: _corSalas, fontWeight: FontWeight.w600)),
                 ),
@@ -462,7 +574,7 @@ class _DialogReservaState extends State<_DialogReserva> {
         const SizedBox(width: 8),
         Expanded(
           child: ElevatedButton(
-            onPressed: () => setState(() => _etapa = 1),
+            onPressed: _irParaAgenda,
             style: ElevatedButton.styleFrom(backgroundColor: _corSalas, foregroundColor: Colors.white),
             child: const Text('Sim, é essa'),
           ),
@@ -475,7 +587,7 @@ class _DialogReservaState extends State<_DialogReserva> {
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         IconButton(
-          onPressed: () => setState(() => _etapa = 0),
+          onPressed: () => setState(() => _etapa = 2),
           icon: const Icon(Icons.arrow_back_rounded, size: 18),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -546,6 +658,134 @@ class _DialogReservaState extends State<_DialogReserva> {
               : const Text('Reservar'),
         ),
       ]),
+    ]);
+  }
+
+  Widget _buildAgenda() {
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    final dataSemHora = DateTime(_data.year, _data.month, _data.day);
+    final podeVoltarDia = dataSemHora.isAfter(hojeSemHora);
+    const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        IconButton(
+          onPressed: () => setState(() => _etapa = 0),
+          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(widget.sala['nome'] as String,
+              style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
+        ),
+      ]),
+      const SizedBox(height: 4),
+      Text('Toque num horário livre pra começar e no fim desejado.',
+          style: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto)),
+      const SizedBox(height: 12),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        IconButton(
+          onPressed: podeVoltarDia ? () => _mudarDia(-1) : null,
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        Text('${dataSemHora.day.toString().padLeft(2, '0')} de ${meses[dataSemHora.month - 1]}',
+            style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.dark)),
+        IconButton(
+          onPressed: () => _mudarDia(1),
+          icon: const Icon(Icons.chevron_right_rounded),
+        ),
+      ]),
+      Row(children: [
+        _legendaItem(const Color(0xFFE2E8F0), 'Ocupado'),
+        const SizedBox(width: 16),
+        _legendaItem(Colors.white, 'Livre', comBorda: true),
+        const SizedBox(width: 16),
+        _legendaItem(_corSalas, 'Selecionado'),
+      ]),
+      const SizedBox(height: 12),
+      if (_carregandoAgenda)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: _corSalas)))
+      else
+        SizedBox(
+          height: 320,
+          child: Scrollbar(
+            controller: _agendaScrollCtrl,
+            child: ListView.builder(
+              controller: _agendaScrollCtrl,
+              itemCount: _agendaTotalSlots,
+              itemBuilder: (_, i) {
+                final ocupado = _slotOcupado(i);
+                final selecionado = _slotInicio != null &&
+                    _slotFim != null &&
+                    i >= _slotInicio! &&
+                    i <= _slotFim!;
+                final inicioSelecao = _slotInicio == i && _slotFim == null;
+                final minutoInicio = _agendaInicioMin + i * _agendaSlotMin;
+                final label =
+                    '${(minutoInicio ~/ 60).toString().padLeft(2, '0')}:${(minutoInicio % 60).toString().padLeft(2, '0')}';
+                final cor = ocupado
+                    ? const Color(0xFFE2E8F0)
+                    : (selecionado || inicioSelecao)
+                        ? _corSalas
+                        : Colors.white;
+                return GestureDetector(
+                  onTap: () => _tocarSlot(i),
+                  child: Container(
+                    height: 30,
+                    margin: const EdgeInsets.only(bottom: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: cor,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: ocupado ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
+                    ),
+                    alignment: Alignment.centerLeft,
+                    child: Text(label,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: ocupado
+                              ? AppColors.cinzaTexto
+                              : (selecionado || inicioSelecao)
+                                  ? Colors.white
+                                  : AppColors.dark,
+                        )),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      const SizedBox(height: 12),
+      Row(children: [
+        const Spacer(),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        const SizedBox(width: 8),
+        ElevatedButton(
+          onPressed: (_slotInicio != null && _slotFim != null) ? _confirmarHorarioDaAgenda : null,
+          style: ElevatedButton.styleFrom(backgroundColor: _corSalas, foregroundColor: Colors.white),
+          child: const Text('Continuar'),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _legendaItem(Color cor, String label, {bool comBorda = false}) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(
+          color: cor,
+          borderRadius: BorderRadius.circular(3),
+          border: comBorda ? Border.all(color: const Color(0xFFCBD5E1)) : null,
+        ),
+      ),
+      const SizedBox(width: 4),
+      Text(label, style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
     ]);
   }
 

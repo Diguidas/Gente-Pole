@@ -53,15 +53,13 @@ final List<AtalhoDef> atalhosDisponiveis = [
     cor: const Color(0xFFF59E0B),
     builder: (_) => const CardapioScreen(),
   ),
-  // Reserva de Salas desativada temporariamente (em testes) — religar antes
-  // de retomar os testes in loco.
-  // AtalhoDef(
-  //   id: 'reserva_salas',
-  //   label: 'Reserva de Salas',
-  //   icon: Icons.meeting_room_outlined,
-  //   cor: const Color(0xFF0891B2),
-  //   builder: (_) => const ReservaSalasScreen(),
-  // ),
+  AtalhoDef(
+    id: 'reserva_salas',
+    label: 'Reserva de Salas',
+    icon: Icons.meeting_room_outlined,
+    cor: const Color(0xFF0891B2),
+    builder: (_) => const ReservaSalasScreen(),
+  ),
   AtalhoDef(
     id: 'massoterapia',
     label: 'Massoterapia',

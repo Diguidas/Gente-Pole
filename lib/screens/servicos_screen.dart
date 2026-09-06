@@ -305,21 +305,19 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           const SizedBox(height: 14),
 
                           // ── Reserva de Salas ──────────────────────────────
-                          // Mude para true para exibir nas demonstrações
-                          if (false) ...[
-                            _botaoServico(
+                          _botaoServico(
+                            context,
+                            icone: Icons.meeting_room_outlined,
+                            titulo: 'Reserva de Salas',
+                            subtitulo: 'Copa, salas de reunião e auditório',
+                            cor: const Color(0xFF0891B2),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
                               context,
-                              icone: Icons.meeting_room_outlined,
-                              titulo: 'Reserva de Salas',
-                              subtitulo: 'Copa, salas de reunião e auditório',
-                              cor: const Color(0xFF0891B2),
-                              emBreve: false,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ReservaSalasScreen()),
-                              ),
+                              MaterialPageRoute(builder: (_) => const ReservaSalasScreen()),
                             ),
-                          ],
+                          ),
+                          const SizedBox(height: 14),
 
                           const SizedBox(height: 28),
 
