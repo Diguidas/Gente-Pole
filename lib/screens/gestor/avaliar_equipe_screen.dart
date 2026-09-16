@@ -108,6 +108,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
 
     final autoDesempenho = avaliacao['autoavaliacao_desempenho'];
     final autoPotencial = avaliacao['autoavaliacao_potencial'];
+    String? erroDialog;
 
     final salvou = await showDialog<bool>(
       context: context,
@@ -166,17 +167,25 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                           const SizedBox(height: 8),
                           SeletorNota1a5(
                               valor: notas[pid]!,
-                              onChanged: (v) => setStateDialog(() => notas[pid] = v)),
+                              onChanged: (v) => setStateDialog(() => notas[pid] = v),
+                              legendaBaixa: p['legenda_nota_1'] as String?,
+                              legendaAlta: p['legenda_nota_5'] as String?),
                           const SizedBox(height: 6),
                           TextField(
                             controller: comentarioCtrls[pid],
                             maxLines: 2,
-                            decoration: const InputDecoration(hintText: 'Comentário (opcional)'),
+                            decoration: const InputDecoration(hintText: 'Comentário (obrigatório)'),
                           ),
                         ],
                       ),
                     );
                   }),
+                  if (erroDialog != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(erroDialog!,
+                          style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.erro)),
+                    ),
                 ],
               ),
             ),
@@ -184,7 +193,16 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () {
+                final semComentario = perguntas
+                    .any((p) => comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
+                if (semComentario) {
+                  setStateDialog(
+                      () => erroDialog = 'Preencha o comentário de todas as perguntas.');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.laranja),
               child: const Text('Salvar', style: TextStyle(color: Colors.white)),
             ),

@@ -129,7 +129,9 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                         const SizedBox(height: 8),
                         SeletorNota1a5(
                             valor: notas[pid]!,
-                            onChanged: (v) => setStateDialog(() => notas[pid] = v)),
+                            onChanged: (v) => setStateDialog(() => notas[pid] = v),
+                            legendaBaixa: p['legenda_nota_1'] as String?,
+                            legendaAlta: p['legenda_nota_5'] as String?),
                         const SizedBox(height: 6),
                         TextField(
                           controller: comentarioCtrls[pid],

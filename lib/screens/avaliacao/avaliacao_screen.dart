@@ -19,6 +19,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
   bool _loading = true;
   bool _salvando = false;
   String? _erro;
+  String? _erroValidacao;
   Map<String, dynamic>? _cicloAberto;
   Map<String, dynamic>? _avaliacao;
   String _tipoAvaliacao = 'gestor';
@@ -121,7 +122,16 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
   Future<void> _salvar() async {
     if (_avaliacao == null) return;
-    setState(() => _salvando = true);
+    final semComentario = _perguntas
+        .any((p) => _comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
+    if (semComentario) {
+      setState(() => _erroValidacao = 'Preencha o comentário de todas as perguntas.');
+      return;
+    }
+    setState(() {
+      _erroValidacao = null;
+      _salvando = true;
+    });
     final respostasParaSalvar = _perguntas
         .map((p) => {
               'perguntaId': p['id'],
@@ -315,17 +325,26 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   const SizedBox(height: 10),
                   SeletorNota1a5(
                       valor: _notas[pid]!,
-                      onChanged: (v) => setState(() => _notas[pid] = v)),
+                      onChanged: (v) => setState(() => _notas[pid] = v),
+                      legendaBaixa: p['legenda_nota_1'] as String?,
+                      legendaAlta: p['legenda_nota_5'] as String?),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _comentarioCtrls[pid],
                     maxLines: 2,
-                    decoration: const InputDecoration(hintText: 'Comentário (opcional)'),
+                    decoration: const InputDecoration(hintText: 'Comentário (obrigatório)'),
                   ),
                 ],
               ),
             );
           }),
+          if (_erroValidacao != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(_erroValidacao!,
+                  style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.erro)),
+            ),
+          ],
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,

@@ -22,6 +22,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
   bool _loading = true;
   bool _salvando = false;
   String? _erro;
+  String? _erroValidacao;
   Map<String, dynamic>? _avaliacao;
   List<Map<String, dynamic>> _perguntas = [];
 
@@ -112,11 +113,11 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
     final semComentario = _perguntas
         .any((p) => _comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
     if (semComentario) {
-      setState(() => _erro = 'Preencha o comentário de todas as perguntas.');
+      setState(() => _erroValidacao = 'Preencha o comentário de todas as perguntas.');
       return;
     }
     setState(() {
-      _erro = null;
+      _erroValidacao = null;
       _salvando = true;
     });
     final respostas = _perguntas
@@ -304,7 +305,9 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
                   const SizedBox(height: 10),
                   SeletorNota1a5(
                       valor: _notas[pid]!,
-                      onChanged: (v) => setState(() => _notas[pid] = v)),
+                      onChanged: (v) => setState(() => _notas[pid] = v),
+                      legendaBaixa: p['legenda_nota_1'] as String?,
+                      legendaAlta: p['legenda_nota_5'] as String?),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _comentarioCtrls[pid],
@@ -316,6 +319,13 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
               ),
             );
           }),
+          if (_erroValidacao != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(_erroValidacao!,
+                  style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.erro)),
+            ),
+          ],
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,

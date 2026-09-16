@@ -24,7 +24,7 @@ class _PdiScreenState extends State<PdiScreen> {
   final _api = ApiService();
   bool _loading = true;
   String? _erro;
-  List<Map<String, dynamic>> _planos = [];
+  List<Map<String, dynamic>> _grupos = [];
 
   @override
   void initState() {
@@ -46,10 +46,10 @@ class _PdiScreenState extends State<PdiScreen> {
         });
         return;
       }
-      final planos = await _api.listarPdiPlanos(col.id);
+      final grupos = await _api.listarPdiGrupos(col.id);
       if (!mounted) return;
       setState(() {
-        _planos = planos;
+        _grupos = grupos;
         _loading = false;
       });
     } catch (e) {
@@ -166,7 +166,7 @@ class _PdiScreenState extends State<PdiScreen> {
     if (_erro != null) {
       return Center(child: Text(_erro!, style: AppTextStyles.corpoCinza));
     }
-    if (_planos.isEmpty) {
+    if (_grupos.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -184,7 +184,31 @@ class _PdiScreenState extends State<PdiScreen> {
       color: AppColors.laranja,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-        children: _planos.map(_buildPlanoCard).toList(),
+        children: _grupos.map(_buildGrupoSecao).toList(),
+      ),
+    );
+  }
+
+  Widget _buildGrupoSecao(Map<String, dynamic> grupo) {
+    final titulo = grupo['titulo'] as String? ?? 'PDI';
+    final planos =
+        (grupo['pdi_planos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.flag_rounded, size: 16, color: AppColors.laranja),
+              const SizedBox(width: 6),
+              Text(titulo,
+                  style: AppTextStyles.labelSecao),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...planos.map(_buildPlanoCard),
+        ],
       ),
     );
   }

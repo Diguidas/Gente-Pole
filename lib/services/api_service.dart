@@ -4158,6 +4158,17 @@ class ApiService {
     return List<Map<String, dynamic>>.from(data as List);
   }
 
+  /// Lista os PDIs (grupos nomeados) do colaborador, com os planos já
+  /// aninhados — cada PDI agrupa seus próprios planos de desenvolvimento.
+  Future<List<Map<String, dynamic>>> listarPdiGrupos(int colaboradorId) async {
+    final data = await _client
+        .from('pdi_grupos')
+        .select('*, pdi_planos(*, pdi_acoes(*), pdi_termos_compromisso(*))')
+        .eq('colaborador_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
   Future<int> criarPdiPlano({
     required int colaboradorId,
     required String objetivo,
@@ -4804,6 +4815,7 @@ class ApiService {
         'solicitanteMatricula': colab.matricula,
         'solicitanteEmail': solicitanteEmail,
         if (anexoUrl != null) 'anexoUrl': anexoUrl,
+        if (tiMembroId != null) 'tiMembroId': tiMembroId,
       },
     );
     final data = res.data as Map<String, dynamic>?;
@@ -4824,6 +4836,7 @@ class ApiService {
         'azure_work_item_id': workItemId,
         'azure_url': data['url'],
         'atribuido_para': atribuidoPara,
+        'solicitante_email': solicitanteEmail,
         if (tiMembroId != null) 'ti_membro_id': tiMembroId,
       });
     }
