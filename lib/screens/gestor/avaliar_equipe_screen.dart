@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import '../../widgets/seletor_nota_widget.dart';
 
-const _labelsNivel = ['Baixo', 'Médio', 'Alto'];
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
 
 /// "Avaliar Equipe" — o gestor avalia cada colaborador do seu setor no
@@ -68,33 +68,6 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
     }
   }
 
-  Widget _seletorNivel(int valor, ValueChanged<int> onChanged) {
-    return Row(
-      children: List.generate(3, (i) {
-        final n = i + 1;
-        final sel = valor == n;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(n),
-            child: Container(
-              margin: const EdgeInsets.only(right: 6),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: sel ? AppColors.laranja : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(_labelsNivel[i],
-                  style: AppTextStyles.corpoMinimo.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: sel ? Colors.white : AppColors.dark)),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
   Future<void> _abrirAvaliacao(Map<String, dynamic> avaliacao) async {
     final colab = avaliacao['colaboradores'] as Map?;
     final funcao = colab?['cargo'] as String? ?? '';
@@ -105,6 +78,16 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         content: Text('Nenhuma pergunta cadastrada para a função "$funcao".'),
       ));
       return;
+    }
+
+    // O web só libera as perguntas pro colaborador/colegas depois que o
+    // gestor escolhe um template (ou "usar perguntas padrão") ao abrir a
+    // avaliação pela 1ª vez. Este app não tem tela de templates, então o
+    // próprio ato do gestor abrir a avaliação aqui já equivale a "usar
+    // perguntas padrão" — libera direto, se ainda não estiver liberada.
+    final jaLiberada = avaliacao['perguntas_liberadas'] as bool? ?? false;
+    if (!jaLiberada) {
+      await _api.liberarPerguntasAvaliacao(avaliacao['id'] as int);
     }
 
     final respostasAtuais = await _api.listarRespostasAvaliacao(avaliacao['id'] as int);
@@ -118,7 +101,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
     final comentarioCtrls = <int, TextEditingController>{};
     for (final p in perguntas) {
       final pid = p['id'] as int;
-      notas[pid] = ((respostasGestor[pid]?['nota'] as int?) ?? 2).clamp(1, 3);
+      notas[pid] = ((respostasGestor[pid]?['nota'] as int?) ?? 3).clamp(1, 5);
       comentarioCtrls[pid] =
           TextEditingController(text: respostasGestor[pid]?['comentario'] as String? ?? '');
     }
@@ -147,8 +130,8 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        'Autoavaliação: Desempenho ${_labelsNivel[((autoDesempenho as int?) ?? 2) - 1]}, '
-                        'Potencial ${_labelsNivel[((autoPotencial as int?) ?? 2) - 1]}',
+                        'Autoavaliação: Desempenho ${labelNota1a5(autoDesempenho as int?)}, '
+                        'Potencial ${labelNota1a5(autoPotencial as int?)}',
                         style: AppTextStyles.corpoMinimo,
                       ),
                     ),
@@ -181,7 +164,9 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          _seletorNivel(notas[pid]!, (v) => setStateDialog(() => notas[pid] = v)),
+                          SeletorNota1a5(
+                              valor: notas[pid]!,
+                              onChanged: (v) => setStateDialog(() => notas[pid] = v)),
                           const SizedBox(height: 6),
                           TextField(
                             controller: comentarioCtrls[pid],

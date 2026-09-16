@@ -3615,6 +3615,18 @@ class ApiService {
         .maybeSingle();
   }
 
+  /// Libera as perguntas de uma avaliação pra o colaborador (autoavaliação)
+  /// e os colegas (equipe/360) responderem. No web isso acontece quando o
+  /// gestor escolhe um template (ou "usar perguntas padrão") em
+  /// `definirTemplateDaAvaliacao`; este app não tem tela de templates, então
+  /// o gestor libera implicitamente ao abrir a avaliação em
+  /// [AvaliarEquipeScreen] (equivalente a "usar perguntas padrão").
+  Future<void> liberarPerguntasAvaliacao(int avaliacaoId) async {
+    await _client
+        .from('avaliacoes')
+        .update({'perguntas_liberadas': true}).eq('id', avaliacaoId);
+  }
+
   /// Perguntas ativas cadastradas para a função (cargo) informada.
   Future<List<Map<String, dynamic>>> listarPerguntasFuncao(
     String funcao,
@@ -3636,6 +3648,285 @@ class ApiService {
         .select()
         .eq('avaliacao_id', avaliacaoId);
     return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Avaliações de período de experiência do colaborador informado — porta
+  /// de `listarPeriodoExperienciaColaborador` do gentepole_admin. Diferente
+  /// do ciclo de Desempenho (por setor, em lote), é criada individualmente
+  /// pelo RH e não tem `ciclo_id`.
+  Future<List<Map<String, dynamic>>> listarPeriodoExperienciaColaborador(
+    int colaboradorId,
+  ) async {
+    final data = await _client
+        .from('avaliacoes')
+        .select(
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)',
+        )
+        .eq('tipo', 'periodo_experiencia')
+        .eq('colaborador_id', colaboradorId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Perguntas aplicáveis a uma avaliação — porta de `perguntasDaAvaliacao`
+  /// do gentepole_admin. NOTA/SUPOSIÇÃO: o schema deste app não tem tabela de
+  /// templates de avaliação (`template_id` em `avaliacoes`), então aqui
+  /// sempre cai para as perguntas por função (`listarPerguntasFuncao`),
+  /// ignorando `setor` (que também não é usado na consulta atual deste app).
+  /// Validar com o time se templates de avaliação também devem existir aqui.
+  Future<List<Map<String, dynamic>>> perguntasDaAvaliacao(
+    Map<String, dynamic> avaliacao, {
+    required String funcao,
+    String? setor,
+  }) async {
+    return listarPerguntasFuncao(funcao);
+  }
+
+  /// Todas as avaliações de período de experiência dos colaboradores dos
+  /// setores informados — usado pelo gestor pra ver quem tem avaliação
+  /// pendente na sua equipe. Porta de `listarPeriodoExperienciaGestor`.
+  Future<List<Map<String, dynamic>>> listarPeriodoExperienciaGestor(
+    List<String> setores,
+  ) async {
+    if (setores.isEmpty) return [];
+    final data = await _client
+        .from('avaliacoes')
+        .select(
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)',
+        )
+        .eq('tipo', 'periodo_experiencia')
+        .order('criado_em', ascending: false);
+    final lista = List<Map<String, dynamic>>.from(data as List);
+    return lista.where((a) {
+      final setorColab = (a['colaboradores'] as Map?)?['setor'] as String?;
+      return setorColab != null && setores.contains(setorColab);
+    }).toList();
+  }
+
+  /// Mesmas respostas de [listarRespostasAvaliacao], mas já com o texto e a
+  /// dimensão da pergunta embutidos — usado para calcular a nota final
+  /// ponderada de Período de Experiência.
+  Future<List<Map<String, dynamic>>> listarRespostasAvaliacaoComPergunta(
+    int avaliacaoId,
+  ) async {
+    final data = await _client
+        .from('avaliacao_respostas')
+        .select(
+          '*, avaliacao_perguntas!avaliacao_respostas_pergunta_id_fkey(pergunta, dimensao, ordem)',
+        )
+        .eq('avaliacao_id', avaliacaoId);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Nota final ponderada da avaliação do GESTOR de uma avaliação de
+  /// Período de Experiência: sum(nota_i * peso_i) / sum(peso_i), arredondada
+  /// pra 1 casa decimal. Cada pergunta tem um peso (`avaliacao_perguntas.peso`,
+  /// padrão 1 = peso igual entre todas). Retorna null se o gestor ainda não
+  /// respondeu nenhuma pergunta.
+  Future<double?> calcularNotaFinalPeriodoExperiencia(int avaliacaoId) async {
+    final respostas = await listarRespostasAvaliacaoComPergunta(avaliacaoId);
+    final doGestor = respostas.where((r) => r['origem'] == 'gestor');
+    var somaPesos = 0;
+    var somaValores = 0;
+    for (final r in doGestor) {
+      final nota = r['nota'] as int?;
+      if (nota == null) continue;
+      final peso = (r['avaliacao_perguntas'] as Map?)?['peso'] as int? ?? 1;
+      somaValores += nota * peso;
+      somaPesos += peso;
+    }
+    if (somaPesos == 0) return null;
+    return double.parse((somaValores / somaPesos).toStringAsFixed(1));
+  }
+
+  // ─── Banco de Talentos — indicação sem cadastro ─────────────────────────
+  // Porta de `eu_crio_oportunidades_colab_screen.dart` (Indicar um currículo)
+  // do gentepole_admin. Mesmo bucket `curriculos-indicacoes` e mesma tabela
+  // `banco_talentos`; `indicadoPorId` aqui é `int` (id de `colaboradores`
+  // neste app), diferente do web que usa `String`.
+
+  /// Upload do currículo anexado numa indicação sem cadastro (fluxo
+  /// "Indicar um currículo" dentro de "Eu Crio Oportunidades"). Mesmo padrão
+  /// de [uploadAnexoSolicitacao], bucket próprio `curriculos-indicacoes`.
+  Future<String> uploadCurriculoIndicacao(
+      Uint8List bytes, String nomeArquivo) async {
+    final path = '${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
+    await _client.storage
+        .from('curriculos-indicacoes')
+        .uploadBinary(path, bytes);
+    return _client.storage.from('curriculos-indicacoes').getPublicUrl(path);
+  }
+
+  /// Indica alguém para o Banco de Talentos sem que essa pessoa tenha se
+  /// cadastrado no portal e sem precisar de vaga aberta — cai direto no
+  /// Banco de Talentos (sem `candidato_id`), com nome, tag e currículo
+  /// anexado.
+  Future<void> indicarSemCadastro({
+    required String nomeIndicado,
+    required String tag,
+    required String curriculoUrl,
+    required String curriculoNome,
+    required int indicadoPorId,
+    required String indicadoPorNome,
+    String? vagaOrigemTitulo,
+  }) async {
+    await _client.from('banco_talentos').insert({
+      'candidato_id': null,
+      'nome_indicado': nomeIndicado,
+      'tag': tag,
+      'curriculo_url': curriculoUrl,
+      'curriculo_nome': curriculoNome,
+      // Coluna `indicado_por_id` é `text` no Supabase (mesma tabela do web,
+      // que usa String/uuid para colaborador.id) — este app usa `int`, então
+      // convertemos explicitamente pra não depender de cast implícito.
+      'indicado_por_id': indicadoPorId.toString(),
+      'indicado_por_nome': indicadoPorNome,
+      'vaga_origem': vagaOrigemTitulo,
+      'area': '',
+      'areas': <String>[],
+      'motivo': 'Indicação via Eu Crio Oportunidades (sem cadastro no portal)',
+      'observacoes': '',
+    });
+  }
+
+  // ─── Solicitações ───────────────────────────────────────────────────────
+  // Porta de `solicitacoes_colab_screen.dart` / `solicitacoes_colab_formularios.dart`
+  // / `solicitacoes_gestor_screen.dart` do gentepole_admin. Mesma tabela
+  // `solicitacoes` do Supabase, mesmo fluxo de status; adaptado apenas para
+  // ids `int` (colaboradores/gestor), já que este app usa `int` em vez de
+  // `String` para `colaboradores.id`.
+
+  /// Setor que trata cada tipo depois de aberta — usado pra cada fila (DP,
+  /// Endomarketing, Performance, RH) só ver o que é da conta dela.
+  static const Map<String, String> areaResponsavelPorTipoSolicitacao = {
+    'adesao_beneficio': 'dp',
+    'incentivo_educacional': 'dp',
+    'cracha': 'dp',
+    'adiantamento_13': 'dp',
+    'swile': 'dp',
+    'comunicado_interno': 'endomkt',
+    'treinamento': 'performance',
+    'moveis_administrativos': 'rh',
+    'rota': 'rh',
+    'uber': 'rh',
+  };
+
+  Future<String> uploadAnexoSolicitacao(
+      Uint8List bytes, String nomeArquivo) async {
+    final path = '${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
+    await _client.storage.from('solicitacoes-anexos').uploadBinary(path, bytes);
+    return _client.storage.from('solicitacoes-anexos').getPublicUrl(path);
+  }
+
+  Future<void> criarSolicitacao({
+    required String tipo,
+    required Map<String, dynamic> payload,
+    required int abertoPorId,
+    required String abertoPorNome,
+    required String abertoPorPapel,
+    String? setor,
+    bool requerAprovacaoGestor = false,
+    int? gestorId,
+    String? gestorNome,
+  }) async {
+    await _client.from('solicitacoes').insert({
+      'tipo': tipo,
+      'payload': payload,
+      'aberto_por_id': abertoPorId,
+      'aberto_por_nome': abertoPorNome,
+      'aberto_por_papel': abertoPorPapel,
+      'setor': setor,
+      'area_responsavel': areaResponsavelPorTipoSolicitacao[tipo] ?? 'rh',
+      'requer_aprovacao_gestor': requerAprovacaoGestor,
+      'gestor_id': gestorId,
+      'gestor_nome': gestorNome,
+      'status': requerAprovacaoGestor ? 'pendente_gestor' : 'pendente',
+    });
+  }
+
+  /// Lista solicitações. Sem filtros, traz tudo. Use [status], [tipo],
+  /// [abertoPorId], [gestorId] ou [areaResponsavel] para restringir (fila
+  /// do gestor, "minhas solicitações" do colaborador, fila de um setor
+  /// específico do RH etc.).
+  Future<List<Map<String, dynamic>>> listarSolicitacoes({
+    String? status,
+    String? tipo,
+    int? abertoPorId,
+    int? gestorId,
+    String? areaResponsavel,
+  }) async {
+    var query = _client.from('solicitacoes').select();
+    if (status != null) query = query.eq('status', status);
+    if (tipo != null) query = query.eq('tipo', tipo);
+    if (abertoPorId != null) query = query.eq('aberto_por_id', abertoPorId);
+    if (gestorId != null) query = query.eq('gestor_id', gestorId);
+    if (areaResponsavel != null) {
+      query = query.eq('area_responsavel', areaResponsavel);
+    }
+    final res = await query.order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> atualizarSolicitacao({
+    required int id,
+    String? status,
+    int? responsavelId,
+    String? responsavelNome,
+  }) async {
+    await _client.from('solicitacoes').update({
+      if (status != null) 'status': status,
+      if (responsavelId != null) 'responsavel_id': responsavelId,
+      if (responsavelNome != null) 'responsavel_nome': responsavelNome,
+      'atualizado_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// Gestor aprova: solicitação sai de 'pendente_gestor' e entra na fila
+  /// do RH como 'pendente'.
+  Future<void> aprovarSolicitacaoGestor(int id) async {
+    await _client.from('solicitacoes').update({
+      'status': 'pendente',
+      'atualizado_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// Gestor recusa: encerra sem passar pelo RH, registrando o motivo.
+  Future<void> recusarSolicitacaoGestor(int id, {String? motivo}) async {
+    await _client.from('solicitacoes').update({
+      'status': 'recusado_gestor',
+      'motivo_recusa_gestor': motivo,
+      'atualizado_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  Future<Map<int, List<Map<String, dynamic>>>> listarNotasSolicitacoes(
+      List<int> solicitacaoIds) async {
+    if (solicitacaoIds.isEmpty) return {};
+    final res = await _client
+        .from('solicitacoes_notas')
+        .select()
+        .inFilter('solicitacao_id', solicitacaoIds)
+        .order('criado_em');
+    final porSolicitacao = <int, List<Map<String, dynamic>>>{};
+    for (final n in res as List) {
+      final map = n as Map<String, dynamic>;
+      porSolicitacao
+          .putIfAbsent(map['solicitacao_id'] as int, () => [])
+          .add(map);
+    }
+    return porSolicitacao;
+  }
+
+  Future<void> adicionarNotaSolicitacao({
+    required int solicitacaoId,
+    required String texto,
+    String? autorNome,
+  }) async {
+    await _client.from('solicitacoes_notas').insert({
+      'solicitacao_id': solicitacaoId,
+      'texto': texto,
+      if (autorNome != null) 'autor_nome': autorNome,
+    });
   }
 
   /// Salva as respostas (nota 1-3 + comentário) de uma origem
@@ -3674,8 +3965,8 @@ class ApiService {
     }
 
     int media(Iterable<int> notas) {
-      if (notas.isEmpty) return 2;
-      return (notas.reduce((a, b) => a + b) / notas.length).round().clamp(1, 3);
+      if (notas.isEmpty) return 3;
+      return (notas.reduce((a, b) => a + b) / notas.length).round().clamp(1, 5);
     }
 
     if (origem == 'colaborador') {
@@ -3796,7 +4087,67 @@ class ApiService {
     return resultado;
   }
 
+  /// Verificação leve pra tela de Serviços: true se existe autoavaliação de
+  /// Desempenho pendente pro colaborador responder — mesma condição usada em
+  /// [AvaliacaoScreen] (ciclo aberto pro setor, tipo de avaliação diferente
+  /// de 'gestor', perguntas já liberadas pelo gestor e com pelo menos uma
+  /// pergunta cadastrada para a função).
+  Future<bool> existeAutoavaliacaoDesempenhoPendente({
+    required int colaboradorId,
+    required String setor,
+    required String funcao,
+  }) async {
+    final ciclo = await buscarCicloAbertoParaSetor(setor);
+    if (ciclo == null) return false;
+    if ((ciclo['tipo_avaliacao'] as String? ?? 'gestor') == 'gestor') {
+      return false;
+    }
+    final avaliacao = await buscarOuCriarAvaliacao(
+      cicloId: ciclo['id'] as int,
+      colaboradorId: colaboradorId,
+    );
+    final liberadas = avaliacao?['perguntas_liberadas'] as bool? ?? false;
+    if (avaliacao == null || !liberadas) return false;
+    final perguntas = await listarPerguntasFuncao(funcao);
+    return perguntas.isNotEmpty;
+  }
+
+  /// Verificação leve pra tela de Serviços: true se existe ao menos uma
+  /// avaliação de colega (360) pendente pro colaborador avaliar, já com as
+  /// perguntas liberadas pelo gestor — mesma condição usada em
+  /// [AvaliarColegasScreen].
+  Future<bool> existeAvaliacaoColegaPendente(int avaliadorId) async {
+    final todas = await listarAvaliacoesEquipeParaAvaliar(avaliadorId);
+    return todas.any((item) =>
+        (item['avaliacoes'] as Map?)?['perguntas_liberadas'] as bool? ??
+        false);
+  }
+
+  /// Verificação leve pra tela de Serviços: true se existe ao menos uma
+  /// avaliação de período de experiência criada pro colaborador — mesma
+  /// condição usada em [PeriodoExperienciaScreen].
+  Future<bool> existePeriodoExperienciaPendente(int colaboradorId) async {
+    final data = await _client
+        .from('avaliacoes')
+        .select('id')
+        .eq('tipo', 'periodo_experiencia')
+        .eq('colaborador_id', colaboradorId)
+        .limit(1);
+    return (data as List).isNotEmpty;
+  }
+
   // ─── Performance: PDI (Plano de Desenvolvimento Individual) ─────────────
+
+  /// Verificação leve pra tela de Serviços: true se existe ao menos um plano
+  /// de PDI criado pro colaborador — mesma condição usada em [PdiScreen].
+  Future<bool> existePdiAtivoPara(int colaboradorId) async {
+    final data = await _client
+        .from('pdi_planos')
+        .select('id')
+        .eq('colaborador_id', colaboradorId)
+        .limit(1);
+    return (data as List).isNotEmpty;
+  }
 
   Future<List<Map<String, dynamic>>> listarPdiPlanos(int colaboradorId) async {
     final data = await _client
@@ -4392,6 +4743,186 @@ class ApiService {
 
     itens.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
     return itens;
+  }
+
+  // ─── Chamados de TI (Azure DevOps) ───────────────────────────────────────
+  // Mesmo backend do app admin (gentepole_admin) — tabelas e edge functions
+  // compartilham o mesmo projeto Supabase.
+
+  Future<List<Map<String, dynamic>>> listarTiMembros({bool apenasAtivos = true}) async {
+    var query = _client.from('ti_membros').select();
+    if (apenasAtivos) query = query.eq('ativo', true);
+    final res = await query.order('nome');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Opções dos dropdowns do formulário — configuráveis pela tela TI >
+  /// Configurações no app admin. [campo] é 'tipo_solicitacao' |
+  /// 'departamento' | 'nivel_urgencia'.
+  Future<List<Map<String, dynamic>>> listarTiChamadoOpcoes(String campo) async {
+    final res = await _client
+        .from('ti_chamado_opcoes')
+        .select()
+        .eq('campo', campo)
+        .eq('ativo', true)
+        .order('ordem');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> abrirChamadoAzureTI({
+    required String titulo,
+    required String descricao,
+    required String tipoSolicitacao,
+    required String departamento,
+    required String nivelUrgencia,
+    required String atribuidoPara, // e-mail/login do Azure DevOps
+    int? tiMembroId,
+    required String solicitanteEmail,
+    Uint8List? anexoBytes,
+    String? anexoNomeArquivo,
+  }) async {
+    final colab = colaboradorAtual;
+    if (colab == null) throw Exception('Colaborador não identificado.');
+
+    String? anexoUrl;
+    if (anexoBytes != null && anexoNomeArquivo != null) {
+      final path = '${DateTime.now().millisecondsSinceEpoch}_$anexoNomeArquivo';
+      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, anexoBytes);
+      anexoUrl = _client.storage.from('ti-chamados-anexos').getPublicUrl(path);
+    }
+
+    final res = await _client.functions.invoke(
+      'criar-chamado-azure',
+      body: {
+        'titulo': titulo.trim(),
+        'descricao': descricao.trim(),
+        'tipoSolicitacao': tipoSolicitacao,
+        'departamento': departamento,
+        'nivelUrgencia': nivelUrgencia,
+        'atribuidoPara': atribuidoPara,
+        'solicitanteNome': colab.nome,
+        'solicitanteMatricula': colab.matricula,
+        'solicitanteEmail': solicitanteEmail,
+        if (anexoUrl != null) 'anexoUrl': anexoUrl,
+      },
+    );
+    final data = res.data as Map<String, dynamic>?;
+    if (data == null || data['ok'] != true) {
+      throw Exception(data?['error'] ?? 'Erro ao abrir chamado no Azure DevOps');
+    }
+
+    final workItemId = data['id'] as int?;
+    if (workItemId != null) {
+      await _client.from('ti_chamados_colab').insert({
+        'colaborador_id': colab.id,
+        'matricula': colab.matricula,
+        'titulo': titulo.trim(),
+        'descricao': descricao.trim(),
+        'tipo_solicitacao': tipoSolicitacao,
+        'departamento': departamento,
+        'nivel_urgencia': nivelUrgencia,
+        'azure_work_item_id': workItemId,
+        'azure_url': data['url'],
+        'atribuido_para': atribuidoPara,
+        if (tiMembroId != null) 'ti_membro_id': tiMembroId,
+      });
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listarMeusChamadosTI() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final res = await _client
+        .from('ti_chamados_colab')
+        .select()
+        .eq('colaborador_id', colab.id)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Marca o chamado como visto — some a bolinha de "tem novidade" no
+  /// card. Chamado quando o colaborador abre o detalhe do chamado.
+  Future<void> marcarChamadoTIVisto(int workItemId) async {
+    await _client
+        .from('ti_chamados_colab')
+        .update({'notificacao_pendente': false})
+        .eq('azure_work_item_id', workItemId);
+  }
+
+  Future<Map<String, dynamic>> buscarStatusChamadosAzure(List<int> workItemIds) async {
+    if (workItemIds.isEmpty) return {};
+    final res = await _client.functions.invoke('status-chamados-azure', body: {'ids': workItemIds});
+    final data = res.data as Map<String, dynamic>?;
+    if (data == null || data['ok'] != true) return {};
+    return Map<String, dynamic>.from(data['status'] as Map);
+  }
+
+  /// Retorna a URL pública do anexo (se algum foi enviado).
+  Future<String?> comentarChamadoAzureTI({
+    required int workItemId,
+    required String texto,
+    Uint8List? anexoBytes,
+    String? anexoNomeArquivo,
+  }) async {
+    final colab = colaboradorAtual;
+    final autorNome = colab?.nome ?? 'Colaborador';
+
+    String? anexoUrl;
+    if (anexoBytes != null && anexoNomeArquivo != null) {
+      final path = '${DateTime.now().millisecondsSinceEpoch}_$anexoNomeArquivo';
+      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, anexoBytes);
+      anexoUrl = _client.storage.from('ti-chamados-anexos').getPublicUrl(path);
+    }
+
+    final res = await _client.functions.invoke(
+      'comentar-chamado-azure',
+      body: {
+        'workItemId': workItemId,
+        'texto': texto.trim(),
+        'autorNome': autorNome,
+        if (anexoUrl != null) 'anexoUrl': anexoUrl,
+        if (anexoNomeArquivo != null) 'anexoNomeArquivo': anexoNomeArquivo,
+      },
+    );
+    final data = res.data as Map<String, dynamic>?;
+    if (data == null || data['ok'] != true) {
+      throw Exception(data?['error'] ?? 'Erro ao comentar no chamado');
+    }
+    return anexoUrl;
+  }
+
+  /// Ids (Azure work item) dos chamados já avaliados — usado pra saber
+  /// quais chamados concluídos ainda faltam pedir avaliação.
+  Future<Set<int>> listarChamadosTIAvaliados(List<int> workItemIds) async {
+    if (workItemIds.isEmpty) return {};
+    final res = await _client
+        .from('ti_chamados_avaliacoes')
+        .select('azure_work_item_id')
+        .inFilter('azure_work_item_id', workItemIds);
+    return List<Map<String, dynamic>>.from(res).map((r) => r['azure_work_item_id'] as int).toSet();
+  }
+
+  /// Colaborador avalia o atendimento de um chamado já concluído.
+  Future<void> avaliarChamadoTI({
+    required int workItemId,
+    required int nota,
+    String? comentario,
+  }) async {
+    final colab = colaboradorAtual;
+    if (colab == null) throw Exception('Colaborador não identificado.');
+    final res = await _client.functions.invoke(
+      'avaliar-chamado-azure',
+      body: {
+        'workItemId': workItemId,
+        'colaboradorId': colab.id,
+        'nota': nota,
+        if (comentario != null && comentario.trim().isNotEmpty) 'comentario': comentario.trim(),
+      },
+    );
+    final data = res.data as Map<String, dynamic>?;
+    if (data == null || data['ok'] != true) {
+      throw Exception(data?['error'] ?? 'Erro ao enviar avaliação');
+    }
   }
 }
 

@@ -5,23 +5,24 @@ import '../../widgets/seletor_nota_widget.dart';
 
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
 
-/// "Minha Avaliação" — autoavaliação 9-box do colaborador logado.
-/// Porta a tela `avaliacao_colab_screen.dart` do app admin.
-class AvaliacaoScreen extends StatefulWidget {
-  const AvaliacaoScreen({super.key});
+/// "Período de Experiência" — autoavaliação do colaborador logado.
+/// Porta `periodo_experiencia_colab_screen.dart` do app admin: igual à
+/// autoavaliação de Desempenho, mas sem depender de um ciclo por setor — a
+/// avaliação é criada individualmente pelo RH quando decide iniciar uma.
+class PeriodoExperienciaScreen extends StatefulWidget {
+  const PeriodoExperienciaScreen({super.key});
 
   @override
-  State<AvaliacaoScreen> createState() => _AvaliacaoScreenState();
+  State<PeriodoExperienciaScreen> createState() =>
+      _PeriodoExperienciaScreenState();
 }
 
-class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
+class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
   final _api = ApiService();
   bool _loading = true;
   bool _salvando = false;
   String? _erro;
-  Map<String, dynamic>? _cicloAberto;
   Map<String, dynamic>? _avaliacao;
-  String _tipoAvaliacao = 'gestor';
   List<Map<String, dynamic>> _perguntas = [];
 
   final Map<int, int> _notas = {};
@@ -55,36 +56,25 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
         });
         return;
       }
-      if (col.setor == null || col.setor!.isEmpty) {
-        setState(() {
-          _cicloAberto = null;
-          _loading = false;
-        });
-        return;
-      }
-      final ciclo = await _api.buscarCicloAbertoParaSetor(col.setor!);
+      final avaliacoes =
+          await _api.listarPeriodoExperienciaColaborador(col.id);
       if (!mounted) return;
-      if (ciclo == null) {
+      if (avaliacoes.isEmpty) {
         setState(() {
-          _cicloAberto = null;
+          _avaliacao = null;
           _loading = false;
         });
         return;
       }
-      final avaliacao = await _api.buscarOuCriarAvaliacao(
-        cicloId: ciclo['id'] as int,
-        colaboradorId: col.id,
-      );
-      final perguntasLiberadas =
-          avaliacao?['perguntas_liberadas'] as bool? ?? false;
-      // Só busca as perguntas depois que o gestor liberar a avaliação —
-      // antes disso não há o que responder ainda (mesma regra do web).
-      final perguntas = (avaliacao == null || !perguntasLiberadas)
-          ? <Map<String, dynamic>>[]
-          : await _api.listarPerguntasFuncao(col.cargo ?? '');
-      final respostas = avaliacao == null
-          ? <Map<String, dynamic>>[]
-          : await _api.listarRespostasAvaliacao(avaliacao['id'] as int);
+      // Pega a mais recente ainda não respondida pelo colaborador; se todas
+      // já foram, mostra a mais recente (pra ele conferir/ajustar).
+      final avaliacao = avaliacoes.firstWhere(
+          (a) => a['autoavaliacao_em'] == null,
+          orElse: () => avaliacoes.first);
+      final perguntas = await _api.perguntasDaAvaliacao(avaliacao,
+          funcao: col.cargo ?? '', setor: col.setor);
+      final respostas =
+          await _api.listarRespostasAvaliacao(avaliacao['id'] as int);
       final respostasColab = {
         for (final r in respostas.where((r) => r['origem'] == 'colaborador'))
           r['pergunta_id'] as int: r
@@ -104,9 +94,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
       if (!mounted) return;
       setState(() {
-        _cicloAberto = ciclo;
         _avaliacao = avaliacao;
-        _tipoAvaliacao = ciclo['tipo_avaliacao'] as String? ?? 'gestor';
         _perguntas = perguntas;
         _loading = false;
       });
@@ -121,8 +109,17 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
   Future<void> _salvar() async {
     if (_avaliacao == null) return;
-    setState(() => _salvando = true);
-    final respostasParaSalvar = _perguntas
+    final semComentario = _perguntas
+        .any((p) => _comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
+    if (semComentario) {
+      setState(() => _erro = 'Preencha o comentário de todas as perguntas.');
+      return;
+    }
+    setState(() {
+      _erro = null;
+      _salvando = true;
+    });
+    final respostas = _perguntas
         .map((p) => {
               'perguntaId': p['id'],
               'dimensao': p['dimensao'],
@@ -137,7 +134,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
       await _api.salvarRespostasAvaliacao(
         avaliacaoId: _avaliacao!['id'] as int,
         origem: 'colaborador',
-        respostas: respostasParaSalvar,
+        respostas: respostas,
         avaliadorId: _avaliacao!['colaborador_id'] as int,
       );
       if (!mounted) return;
@@ -150,7 +147,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao enviar autoavaliação: $e'),
+        content: Text('Erro ao salvar: $e'),
         backgroundColor: AppColors.erro,
         behavior: SnackBarBehavior.floating,
       ));
@@ -166,14 +163,16 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
         children: [
           Container(
             height: 200,
-            decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
+            decoration:
+                const BoxDecoration(gradient: AppColors.gradientePrincipal),
           ),
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                   child: Row(
                     children: [
                       GestureDetector(
@@ -185,10 +184,12 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('📊 Minha Avaliação',
-                              style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
-                          Text('Sua autoavaliação de desempenho',
-                              style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),
+                          Text('🧭 Período de Experiência',
+                              style: AppTextStyles.tituloGrande
+                                  .copyWith(color: Colors.white)),
+                          Text('Sua autoavaliação de período de experiência',
+                              style: AppTextStyles.corpoBranco
+                                  .copyWith(color: AppColors.brancoOp80)),
                         ],
                       ),
                     ],
@@ -214,44 +215,28 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.laranja));
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.laranja));
     }
     if (_erro != null) {
       return Center(child: Text(_erro!, style: AppTextStyles.corpoCinza));
     }
-    if (_cicloAberto == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Nenhum ciclo de avaliação ativo no momento.',
-              textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
-        ),
-      );
-    }
-
-    if (_tipoAvaliacao == 'gestor') {
+    if (_avaliacao == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-              'Sua função é avaliada apenas pelo gestor neste ciclo. '
-              'Não é necessário preencher uma autoavaliação.',
+              'Nenhuma avaliação de período de experiência disponível no momento.',
               textAlign: TextAlign.center,
               style: AppTextStyles.corpoCinza),
         ),
       );
     }
-
     if (_perguntas.isEmpty) {
-      final aindaNaoLiberada =
-          (_avaliacao?['perguntas_liberadas'] as bool? ?? false) == false;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-              aindaNaoLiberada
-                  ? 'Seu gestor ainda não liberou as perguntas desta avaliação.'
-                  : 'Ainda não há perguntas cadastradas para a sua função.',
+          child: Text('Aguardando as perguntas serem cadastradas.',
               textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
         ),
       );
@@ -264,12 +249,13 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Autoavaliação · ${_cicloAberto!['nome']}', style: AppTextStyles.tituloPequeno),
+          Text('Autoavaliação · Período de Experiência',
+              style: AppTextStyles.tituloPequeno),
           const SizedBox(height: 4),
           Text(
             jaEnviada
                 ? 'Você já enviou sua autoavaliação. Pode ajustar até o gestor avaliar.'
-                : 'Responda as perguntas abaixo sobre seu desempenho e potencial neste ciclo.',
+                : 'Responda as perguntas abaixo sobre seu desempenho e potencial.',
             style: AppTextStyles.corpoCinza,
           ),
           const SizedBox(height: 20),
@@ -298,17 +284,20 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                     children: [
                       Expanded(
                         child: Text(p['pergunta'] as String? ?? '',
-                            style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
+                            style: AppTextStyles.corpoMedio
+                                .copyWith(fontWeight: FontWeight.w600)),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: AppColors.laranja.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(_dimensoes[dimensao] ?? dimensao,
                             style: AppTextStyles.corpoMinimo.copyWith(
-                                fontWeight: FontWeight.w600, color: AppColors.laranja)),
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.laranja)),
                       ),
                     ],
                   ),
@@ -320,7 +309,8 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   TextField(
                     controller: _comentarioCtrls[pid],
                     maxLines: 2,
-                    decoration: const InputDecoration(hintText: 'Comentário (opcional)'),
+                    decoration:
+                        const InputDecoration(hintText: 'Comentário'),
                   ),
                 ],
               ),
@@ -334,15 +324,19 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.laranja,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: _salvando
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
                   : Text(
-                      jaEnviada ? 'Atualizar autoavaliação' : 'Enviar autoavaliação',
+                      jaEnviada
+                          ? 'Atualizar autoavaliação'
+                          : 'Enviar autoavaliação',
                       style: AppTextStyles.botaoPrimario),
             ),
           ),

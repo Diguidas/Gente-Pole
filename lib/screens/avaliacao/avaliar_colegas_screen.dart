@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import '../../widgets/seletor_nota_widget.dart';
 
-const _labelsNivel = ['Baixo', 'Médio', 'Alto'];
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
 
 /// "Avaliar Colegas" — quem foi convidado a avaliar um colega como "equipe"
@@ -41,7 +41,16 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
         });
         return;
       }
-      final pendentes = await _api.listarAvaliacoesEquipeParaAvaliar(col.id);
+      final todas = await _api.listarAvaliacoesEquipeParaAvaliar(col.id);
+      // Só aparece pra avaliar depois que o gestor liberar as perguntas
+      // daquele colaborador — antes disso não há o que responder ainda
+      // (mesma regra do web).
+      final pendentes = todas
+          .where((item) =>
+              (item['avaliacoes'] as Map?)?['perguntas_liberadas']
+                  as bool? ??
+              false)
+          .toList();
       if (!mounted) return;
       setState(() {
         _pendentes = pendentes;
@@ -54,33 +63,6 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
         _loading = false;
       });
     }
-  }
-
-  Widget _seletorNivel(int valor, ValueChanged<int> onChanged) {
-    return Row(
-      children: List.generate(3, (i) {
-        final n = i + 1;
-        final sel = valor == n;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(n),
-            child: Container(
-              margin: const EdgeInsets.only(right: 6),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: sel ? AppColors.laranja : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(_labelsNivel[i],
-                  style: AppTextStyles.corpoMinimo.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: sel ? Colors.white : AppColors.dark)),
-            ),
-          ),
-        );
-      }),
-    );
   }
 
   Future<void> _abrirAvaliacao(Map<String, dynamic> item) async {
@@ -100,7 +82,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
     final comentarioCtrls = <int, TextEditingController>{};
     for (final p in perguntas) {
       final pid = p['id'] as int;
-      notas[pid] = 2;
+      notas[pid] = 3;
       comentarioCtrls[pid] = TextEditingController();
     }
 
@@ -145,7 +127,9 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        _seletorNivel(notas[pid]!, (v) => setStateDialog(() => notas[pid] = v)),
+                        SeletorNota1a5(
+                            valor: notas[pid]!,
+                            onChanged: (v) => setStateDialog(() => notas[pid] = v)),
                         const SizedBox(height: 6),
                         TextField(
                           controller: comentarioCtrls[pid],

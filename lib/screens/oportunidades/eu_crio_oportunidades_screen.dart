@@ -1,8 +1,27 @@
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../models/vaga_model.dart';
 import '../../services/api_service.dart';
+
+/// Tags fixas usadas para indicações sem cadastro ("Eu Crio Oportunidades"
+/// → "Indicar um currículo"). Mesmo mapa de
+/// `gentepole_admin/lib/core/models/banco_taleto.dart`.
+const Map<String, String> _labelTagIndicacao = {
+  'administrativo': 'Administrativo',
+  'marketing': 'Marketing',
+  'servicos_gerais': 'Serviços Gerais',
+  'refeitorio': 'Refeitório',
+  'comercial': 'Comercial',
+  'producao': 'Produção',
+  'qualidade': 'Qualidade',
+  'almoxarifado': 'Almoxarifado',
+  'manutencao': 'Manutenção',
+  'jovem_aprendiz': 'Jovem Aprendiz',
+  'estagiario': 'Estagiário',
+};
 
 class EuCrioOportunidadesScreen extends StatefulWidget {
   const EuCrioOportunidadesScreen({super.key});
@@ -98,6 +117,28 @@ class _EuCrioOportunidadesScreenState
         api: _api,
       ),
     );
+  }
+
+  void _abrirIndicarCurriculo() {
+    final colaborador = _api.colaboradorAtual;
+    if (colaborador == null) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _IndicarCurriculoSheet(api: _api),
+    ).then((sucesso) {
+      if (sucesso == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Indicação registrada no Banco de Talentos! O RH vai avaliar o currículo.'),
+          backgroundColor: Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12))),
+        ));
+      }
+    });
   }
 
   @override
@@ -211,6 +252,11 @@ class _EuCrioOportunidadesScreenState
                                 const Divider(height: 1),
                                 const SizedBox(height: 20),
                               ],
+
+                              // ── Indicar um currículo (sem vaga aberta) ──
+                              _CardIndicarCurriculo(
+                                  onTap: _abrirIndicarCurriculo),
+                              const SizedBox(height: 20),
 
                               // ── Vagas ────────────────────────────────
                               if (_vagas.isEmpty)
@@ -1390,6 +1436,277 @@ class _IndicarSheetState extends State<_IndicarSheet> {
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+}
+
+// ─── Card: Indicar um currículo (sem vaga aberta) ─────────────────────────
+
+class _CardIndicarCurriculo extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CardIndicarCurriculo({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withOpacity(0.06),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF10B981).withOpacity(0.25)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.badge_outlined,
+                  color: Color(0xFF10B981), size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Indicar um currículo',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: Colors.black87)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Conhece alguém pra Pole? Indique o nome, a área e o currículo — a qualquer momento, sem precisar de vaga aberta.',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded,
+                color: Color(0xFF10B981), size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Sheet: Indicar um currículo (sem vaga aberta) ────────────────────────
+
+class _IndicarCurriculoSheet extends StatefulWidget {
+  final ApiService api;
+  const _IndicarCurriculoSheet({required this.api});
+
+  @override
+  State<_IndicarCurriculoSheet> createState() =>
+      _IndicarCurriculoSheetState();
+}
+
+class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
+  final _nomeIndicadoCtrl = TextEditingController();
+  String? _tagSelecionada;
+  PlatformFile? _curriculoSelecionado;
+  String? _erro;
+  bool _enviando = false;
+
+  @override
+  void dispose() {
+    _nomeIndicadoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _escolherCurriculo() async {
+    final resultado = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx'],
+    );
+    if (resultado == null || resultado.files.isEmpty) return;
+    setState(() {
+      _curriculoSelecionado = resultado.files.first;
+      _erro = null;
+    });
+  }
+
+  Future<void> _enviar() async {
+    final colaborador = widget.api.colaboradorAtual;
+    if (colaborador == null) return;
+    if (_nomeIndicadoCtrl.text.trim().isEmpty) {
+      setState(() => _erro = 'Informe o nome da pessoa indicada.');
+      return;
+    }
+    if (_tagSelecionada == null) {
+      setState(() => _erro = 'Selecione uma área/tag.');
+      return;
+    }
+    if (_curriculoSelecionado == null || _curriculoSelecionado!.bytes == null) {
+      setState(() => _erro = 'Anexe o currículo (PDF ou Word).');
+      return;
+    }
+    setState(() {
+      _enviando = true;
+      _erro = null;
+    });
+    try {
+      final curriculoUrl = await widget.api.uploadCurriculoIndicacao(
+        _curriculoSelecionado!.bytes!,
+        _curriculoSelecionado!.name,
+      );
+      await widget.api.indicarSemCadastro(
+        nomeIndicado: _nomeIndicadoCtrl.text.trim(),
+        tag: _tagSelecionada!,
+        curriculoUrl: curriculoUrl,
+        curriculoNome: _curriculoSelecionado!.name,
+        indicadoPorId: colaborador.id,
+        indicadoPorNome: colaborador.nome,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _erro = 'Não foi possível enviar a indicação: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text('Indicar um currículo',
+                  style: GoogleFonts.poppins(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87)),
+              const SizedBox(height: 6),
+              Text(
+                  'Indique alguém que você conhece — o currículo cai direto no Banco de Talentos do RH.',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12.5, color: Colors.grey.shade600)),
+              const SizedBox(height: 18),
+              TextField(
+                controller: _nomeIndicadoCtrl,
+                style: GoogleFonts.poppins(fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: 'Nome da pessoa indicada',
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text('Área/tag',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _labelTagIndicacao.entries.map((e) {
+                  final selecionado = _tagSelecionada == e.key;
+                  return ChoiceChip(
+                    label:
+                        Text(e.value, style: GoogleFonts.poppins(fontSize: 12)),
+                    selected: selecionado,
+                    selectedColor: const Color(0xFF10B981).withOpacity(.18),
+                    onSelected: (_) => setState(() => _tagSelecionada = e.key),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              InkWell(
+                onTap: _escolherCurriculo,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.attach_file_rounded,
+                        color: Color(0xFF10B981)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                          _curriculoSelecionado?.name ??
+                              'Anexar currículo (PDF ou Word)',
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, color: Colors.black87)),
+                    ),
+                  ]),
+                ),
+              ),
+              if (_erro != null) ...[
+                const SizedBox(height: 10),
+                Text(_erro!,
+                    style: GoogleFonts.poppins(
+                        fontSize: 12.5, color: Colors.red.shade700)),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _enviando ? null : _enviar,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _enviando
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : Text('Enviar indicação',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

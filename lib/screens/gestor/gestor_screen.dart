@@ -5,6 +5,8 @@ import '../../services/api_service.dart';
 import 'vagas_gestor_screen.dart';
 import 'minha_equipe_screen.dart';
 import 'avaliar_equipe_screen.dart';
+import 'avaliar_periodo_experiencia_gestor_screen.dart';
+import 'solicitacoes_gestor_screen.dart';
 import 'feedback_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
 
@@ -168,6 +170,39 @@ class GestorScreen extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const AvaliarEquipeScreen(),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Botão: Avaliar Período de Experiência ─────
+                        _BotaoGestor(
+                          icone: Icons.explore_outlined,
+                          titulo: 'Avaliar Período de Experiência',
+                          subtitulo: 'Avalie novos colaboradores da equipe',
+                          cor: const Color(0xFF6366F1),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const AvaliarPeriodoExperienciaGestorScreen(),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Botão: Solicitações ────────────────────────
+                        _BotaoGestor(
+                          icone: Icons.assignment_outlined,
+                          titulo: 'Solicitações',
+                          subtitulo: 'Abra e aprove pedidos da equipe',
+                          cor: const Color(0xFF7C3AED),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SolicitacoesGestorScreen(),
                             ),
                           ),
                         ),

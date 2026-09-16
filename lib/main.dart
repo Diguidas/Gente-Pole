@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/core/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/app_navigator.dart';
 import 'core/app_theme.dart';
 import 'core/error_reporter.dart';
 import 'screens/login_screen.dart';
@@ -48,6 +49,7 @@ class GentePoleApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Gente Pole',
       theme: AppTheme.theme,
+      navigatorKey: AppNavigator.navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
       home: sessaoAtiva ? const MainLayout() : const LoginScreen(),
     );

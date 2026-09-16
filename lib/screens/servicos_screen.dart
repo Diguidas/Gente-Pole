@@ -12,6 +12,8 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pdi/pdi_screen.dart';
 import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
 import 'package:gentepole/screens/avaliacao/avaliar_colegas_screen.dart';
+import 'package:gentepole/screens/avaliacao/periodo_experiencia_screen.dart';
+import 'package:gentepole/screens/solicitacoes/solicitacoes_screen.dart';
 import 'package:gentepole/screens/fisioterapia/fisioterapia_screen.dart';
 import 'plantao_psicologico_screen.dart';
 import 'feedback/elogiar_screen.dart';
@@ -22,6 +24,7 @@ import 'gamificacao/gamificacao_screen.dart';
 import 'integracao/integracao_screen.dart';
 import 'documentos/documentos_institucionais_screen.dart';
 import 'acesso_rapido/acesso_rapido_screen.dart';
+import 'ti/chamados_ti_screen.dart';
 
 class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
@@ -36,6 +39,10 @@ class _ServicosScreenState extends State<ServicosScreen> {
   bool _ehIntegracao = false;
   bool _massoterapiaDisponivel = false;
   bool _nutricaoDisponivel = false;
+  bool _pdiDisponivel = false;
+  bool _avaliacaoDisponivel = false;
+  bool _avaliarColegasDisponivel = false;
+  bool _periodoExperienciaDisponivel = false;
   bool _loadingPerfis = true;
 
   @override
@@ -46,18 +53,39 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
   Future<void> _verificarPerfis() async {
     final filial = _api.colaboradorAtual?.filialEfetiva;
+    final col = _api.colaboradorAtual;
     final resultados = await Future.wait([
       _api.verificarSeEhGestor(),
       _api.verificarSeEhIntegracao(),
       _api.filialTemMassoterapiaConfigurada(filial),
       _api.filialTemNutricaoConfigurada(filial),
+      col == null
+          ? Future.value(false)
+          : _api.existePdiAtivoPara(col.id),
+      (col == null || col.setor == null || col.setor!.isEmpty)
+          ? Future.value(false)
+          : _api.existeAutoavaliacaoDesempenhoPendente(
+              colaboradorId: col.id,
+              setor: col.setor!,
+              funcao: col.cargo ?? '',
+            ),
+      col == null
+          ? Future.value(false)
+          : _api.existeAvaliacaoColegaPendente(col.id),
+      col == null
+          ? Future.value(false)
+          : _api.existePeriodoExperienciaPendente(col.id),
     ]);
     if (mounted) {
       setState(() {
-        _ehGestor = resultados[0] as bool;
-        _ehIntegracao = resultados[1] as bool;
-        _massoterapiaDisponivel = resultados[2] as bool;
-        _nutricaoDisponivel = resultados[3] as bool;
+        _ehGestor = resultados[0];
+        _ehIntegracao = resultados[1];
+        _massoterapiaDisponivel = resultados[2];
+        _nutricaoDisponivel = resultados[3];
+        _pdiDisponivel = resultados[4];
+        _avaliacaoDisponivel = resultados[5];
+        _avaliarColegasDisponivel = resultados[6];
+        _periodoExperienciaDisponivel = resultados[7];
         _loadingPerfis = false;
       });
     }
@@ -463,50 +491,124 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           const SizedBox(height: 28),
 
                           // ── Meu Desenvolvimento ───────────────────────────
-                          _sectionLabel(
-                            'Meu Desenvolvimento',
-                            const Color(0xFF6366F1),
-                          ),
+                          if (!_loadingPerfis &&
+                              (_pdiDisponivel ||
+                                  _avaliacaoDisponivel ||
+                                  _avaliarColegasDisponivel ||
+                                  _periodoExperienciaDisponivel)) ...[
+                            _sectionLabel(
+                              'Meu Desenvolvimento',
+                              const Color(0xFF6366F1),
+                            ),
+                            const SizedBox(height: 10),
+
+                            if (_pdiDisponivel) ...[
+                              _botaoServico(
+                                context,
+                                icone: Icons.flag_outlined,
+                                titulo: 'Meu PDI',
+                                subtitulo:
+                                    'Acompanhe seu plano de desenvolvimento',
+                                cor: const Color(0xFF6366F1),
+                                emBreve: false,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const PdiScreen()),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
+                            if (_avaliacaoDisponivel) ...[
+                              _botaoServico(
+                                context,
+                                icone: Icons.assessment_outlined,
+                                titulo: 'Minha Avaliação',
+                                subtitulo:
+                                    'Responda sua autoavaliação de desempenho',
+                                cor: const Color(0xFF6366F1),
+                                emBreve: false,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const AvaliacaoScreen()),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
+                            if (_avaliarColegasDisponivel) ...[
+                              _botaoServico(
+                                context,
+                                icone: Icons.groups_outlined,
+                                titulo: 'Avaliar Colegas',
+                                subtitulo: 'Avaliações de ciclo 360 pendentes',
+                                cor: const Color(0xFF6366F1),
+                                emBreve: false,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AvaliarColegasScreen()),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
+                            if (_periodoExperienciaDisponivel)
+                              _botaoServico(
+                                context,
+                                icone: Icons.explore_outlined,
+                                titulo: 'Período de Experiência',
+                                subtitulo:
+                                    'Autoavaliação do seu período de experiência',
+                                cor: const Color(0xFF6366F1),
+                                emBreve: false,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const PeriodoExperienciaScreen()),
+                                ),
+                              ),
+
+                            const SizedBox(height: 28),
+                          ],
+
+                          // ── Solicitações ──────────────────────────────────
+                          _sectionLabel('Solicitações', const Color(0xFF7C3AED)),
                           const SizedBox(height: 10),
 
                           _botaoServico(
                             context,
-                            icone: Icons.flag_outlined,
-                            titulo: 'Meu PDI',
-                            subtitulo: 'Acompanhe seu plano de desenvolvimento',
-                            cor: const Color(0xFF6366F1),
+                            icone: Icons.assignment_outlined,
+                            titulo: 'Solicitações',
+                            subtitulo: 'Abra pedidos e acompanhe o andamento',
+                            cor: const Color(0xFF7C3AED),
                             emBreve: false,
                             onTap: () => Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const PdiScreen()),
+                              MaterialPageRoute(builder: (_) => const SolicitacoesScreen()),
                             ),
                           ),
-                          const SizedBox(height: 14),
+
+                          const SizedBox(height: 28),
+
+                          // ── Chamados de TI ────────────────────────────────
+                          _sectionLabel('Suporte de TI', const Color(0xFFE64A19)),
+                          const SizedBox(height: 10),
 
                           _botaoServico(
                             context,
-                            icone: Icons.assessment_outlined,
-                            titulo: 'Minha Avaliação',
-                            subtitulo: 'Responda sua autoavaliação de desempenho',
-                            cor: const Color(0xFF6366F1),
+                            icone: Icons.build_outlined,
+                            titulo: 'Chamados de TI',
+                            subtitulo: 'Abra e acompanhe chamados no Azure Boards',
+                            cor: const Color(0xFFE64A19),
                             emBreve: false,
                             onTap: () => Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const AvaliacaoScreen()),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.groups_outlined,
-                            titulo: 'Avaliar Colegas',
-                            subtitulo: 'Avaliações de ciclo 360 pendentes',
-                            cor: const Color(0xFF6366F1),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const AvaliarColegasScreen()),
+                              MaterialPageRoute(builder: (_) => const ChamadosTiScreen()),
                             ),
                           ),
 

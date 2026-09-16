@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/app_navigator.dart';
+import '../screens/ti/chamados_ti_screen.dart';
 import 'api_service.dart';
 
 // Handler de background — deve ser função top-level (fora de qualquer classe)
@@ -106,6 +108,18 @@ class NotificationService {
         AppNavigator.goToTab(2);
       case 'perfil':
         AppNavigator.goToTab(3);
+      case 'chamado_ti_novo':
+      case 'chamado_ti_comentario':
+      case 'chamado_ti_comentario_resposta':
+      case 'chamado_ti_atualizado':
+        AppNavigator.goToTab(2);
+        // Abre a tela de Chamados de TI por cima — não dá pra saber qual
+        // card exato a partir só do 'route' (a notificação genérica não
+        // carrega o work item id), então abre a lista, onde o card com
+        // novidade já aparece com a bolinha de pendente.
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const ChamadosTiScreen()),
+        );
       default: // 'feed' ou qualquer outra coisa
         AppNavigator.goToTab(0);
     }
