@@ -545,9 +545,17 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  /// Níveis da hierarquia de setor (ver Administração de Setor no painel web)
+  /// que dão acesso ao módulo Gestor — líder fica de fora, é só um registro
+  /// organizacional que não abre o painel. Mesmo valor de
+  /// `ApiService.niveisComAcessoDeGestor` no gentepole_admin.
+  static const _niveisComAcessoDeGestor = ['gestor', 'coordenador', 'supervisor'];
+
   /// Setores que o gestor logado efetivamente enxerga: o setor do próprio
   /// cadastro dele SEMPRE conta, somado aos setores extras associados
-  /// manualmente em `gestor_setores` (gestor de mais de um setor).
+  /// manualmente em `gestor_setores` (gestor de mais de um setor) e aos
+  /// setores onde ele está atribuído como gestor/coordenador/supervisor na
+  /// Administração de Setor (`setor_hierarquia`) — mesma regra do painel web.
   Future<List<String>> buscarSetoresEfetivosDoGestor() async {
     final colab = colaboradorAtual;
     if (colab == null) return [];
@@ -564,7 +572,105 @@ class ApiService {
     if (colab.setor != null && colab.setor!.isNotEmpty) {
       setores.add(colab.setor!);
     }
+    final hierarquia = await _client
+        .from('setor_hierarquia')
+        .select('setor')
+        .eq('colaborador_id', colab.id)
+        .inFilter('nivel', _niveisComAcessoDeGestor);
+    for (final h in (hierarquia as List)) {
+      final s = h['setor'] as String?;
+      if (s != null && s.isNotEmpty) setores.add(s);
+    }
     return setores.toList();
+  }
+
+  /// Equipe do gestor logado, já respeitando a Administração de Setor: quem
+  /// está atribuído como supervisor de um grupo específico de liderados
+  /// (`colaboradores_alvo`) só vê essas pessoas; gestor/coordenador (que
+  /// cobrem o setor inteiro) veem todo mundo do setor. Setor sem hierarquia
+  /// configurada continua mostrando todo mundo, como sempre foi — mantém
+  /// compatibilidade com quem só está em `gestor_setores` (legado).
+  Future<List<Map<String, dynamic>>> buscarEquipeGestorMultiSetor(
+      List<String> setores, {int? responsavelId}) async {
+    if (setores.isEmpty) return [];
+
+    if (responsavelId == null) {
+      final data = await _client
+          .from('colaboradores')
+          .select()
+          .inFilter('setor', setores)
+          .order('nome');
+      return List<Map<String, dynamic>>.from(data as List);
+    }
+
+    final hierarquia = await _client
+        .from('colaborador_hierarquia')
+        .select('setor, colaborador_id, responsavel_id')
+        .inFilter('setor', setores);
+
+    final setoresComHierarquia = <String>{};
+    final idsPermitidos = <int>{};
+    for (final h in (hierarquia as List)) {
+      final setor = h['setor'] as String;
+      setoresComHierarquia.add(setor);
+      if (h['responsavel_id'] == responsavelId) {
+        idsPermitidos.add(h['colaborador_id'] as int);
+      }
+    }
+    final setoresSemHierarquia =
+        setores.where((s) => !setoresComHierarquia.contains(s)).toList();
+
+    final resultados = <int, Map<String, dynamic>>{};
+
+    if (idsPermitidos.isNotEmpty) {
+      final data = await _client
+          .from('colaboradores')
+          .select()
+          .inFilter('id', idsPermitidos.toList());
+      for (final c in (data as List)) {
+        resultados[c['id'] as int] = c as Map<String, dynamic>;
+      }
+    }
+    if (setoresSemHierarquia.isNotEmpty) {
+      final data = await _client
+          .from('colaboradores')
+          .select()
+          .inFilter('setor', setoresSemHierarquia);
+      for (final c in (data as List)) {
+        resultados[c['id'] as int] = c as Map<String, dynamic>;
+      }
+    }
+
+    final lista = resultados.values.toList()
+      ..sort((a, b) =>
+          (a['nome'] as String? ?? '').compareTo(b['nome'] as String? ?? ''));
+    return lista;
+  }
+
+  /// Funcionalidades do módulo Gestor — mesmos 7 itens e ids do painel web
+  /// (`ApiService.funcionalidadesGestor` em gentepole_admin), pra bloqueio
+  /// individual por pessoa (`gestor_permissoes`) valer igual nos dois apps.
+  static const funcionalidadesGestor = [
+    {'id': 'minha_equipe_gestor', 'label': 'Minha Equipe'},
+    {'id': 'vagas_gestor', 'label': 'Vagas'},
+    {'id': 'avaliar_equipe_gestor', 'label': 'Avaliar Equipe'},
+    {'id': 'avaliar_periodo_experiencia_gestor', 'label': 'Período de Experiência'},
+    {'id': 'feedback_gestor', 'label': 'Feedback'},
+    {'id': 'exames_gestor', 'label': 'Exames'},
+    {'id': 'solicitacoes_gestor', 'label': 'Solicitações'},
+  ];
+
+  /// Funcionalidades do módulo Gestor bloqueadas pro colaborador logado —
+  /// sem nenhum registro em `gestor_permissoes`, tudo fica liberado (mesmo
+  /// comportamento do painel web).
+  Future<Set<String>> listarFuncionalidadesGestorBloqueadas() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return {};
+    final data = await _client
+        .from('gestor_permissoes')
+        .select('funcionalidade')
+        .eq('colaborador_id', colab.id);
+    return {for (final r in (data as List)) r['funcionalidade'] as String};
   }
 
   Future<String?> uploadDocAprovacaoDiretoria({
@@ -1225,25 +1331,34 @@ class ApiService {
     }
   }
 
-  /// Retorna true se o colaborador logado tem o perfil "gestor" — o mesmo
-  /// perfil marcado pelo admin no sistema web (colaboradores.eh_gestor,
-  /// mantido em sincronia com usuarios_admin.roles).
+  /// Retorna true se o colaborador logado tem o perfil "gestor" — tanto pelo
+  /// jeito antigo (colaboradores.eh_gestor, mantido em sincronia com
+  /// usuarios_admin.roles) quanto por estar atribuído como
+  /// gestor/coordenador/supervisor de algum setor na Administração de Setor
+  /// do painel web (`setor_hierarquia`). Os dois coexistem, igual no painel.
   Future<bool> verificarSeEhGestor() async {
-    return colaboradorAtual?.ehGestor ?? false;
+    if (colaboradorAtual?.ehGestor ?? false) return true;
+    final colab = colaboradorAtual;
+    if (colab == null) return false;
+    final data = await _client
+        .from('setor_hierarquia')
+        .select('id')
+        .eq('colaborador_id', colab.id)
+        .inFilter('nivel', _niveisComAcessoDeGestor)
+        .limit(1);
+    return (data as List).isNotEmpty;
   }
 
-  /// Busca todos os colaboradores do mesmo setor do usuário logado.
+  /// Busca a equipe do gestor logado — respeitando a Administração de Setor
+  /// (supervisor com liderados específicos só vê essas pessoas).
   Future<List<ColaboradorModel>> buscarMinhaEquipe() async {
     final setores = await buscarSetoresEfetivosDoGestor();
     if (setores.isEmpty) return [];
-    final res = await _client
-        .from('colaboradores')
-        .select()
-        .inFilter('setor', setores)
-        .order('nome');
-    return (res as List)
-        .map((e) => ColaboradorModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final res = await buscarEquipeGestorMultiSetor(
+      setores,
+      responsavelId: colaboradorAtual?.id,
+    );
+    return res.map((e) => ColaboradorModel.fromJson(e)).toList();
   }
 
   /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando
@@ -3452,14 +3567,35 @@ class ApiService {
     return List<Map<String, dynamic>>.from(data as List);
   }
 
-  /// Gestor do mesmo setor — usado pra "Pedir feedback ao meu gestor".
-  ///
-  /// APROXIMAÇÃO: o app admin resolve isso via `usuarios_admin.roles`
-  /// contendo 'gestor' (tabela que não existe neste projeto). Aqui usamos o
-  /// mesmo sinal já usado por [verificarSeEhGestor] — `colaboradores.eh_gestor`
-  /// — que é o equivalente mais simples disponível neste schema.
+  /// Gestor de um colaborador — usado pra "Pedir feedback ao meu gestor" e
+  /// nas Solicitações. Prioriza a hierarquia resolvida pela Administração de
+  /// Setor do painel web (`colaborador_hierarquia`, quando [colaboradorId] é
+  /// passado): gestor > coordenador > supervisor, na ordem de quem está mais
+  /// perto da pessoa. Sem hierarquia configurada pra ela, cai pro sinal
+  /// antigo (`colaboradores.eh_gestor` do primeiro gestor achado no setor).
   Future<ColaboradorModel?> buscarGestorDoSetor(
-      String setor, String empresa) async {
+      String setor, String empresa, {int? colaboradorId}) async {
+    if (colaboradorId != null) {
+      final hierarquia = await _client
+          .from('colaborador_hierarquia')
+          .select('nivel, responsavel_id')
+          .eq('colaborador_id', colaboradorId);
+      final porNivel = {
+        for (final h in (hierarquia as List))
+          h['nivel'] as String: h['responsavel_id'] as int,
+      };
+      for (final nivel in _niveisComAcessoDeGestor) {
+        final responsavelId = porNivel[nivel];
+        if (responsavelId == null) continue;
+        final data = await _client
+            .from('colaboradores')
+            .select()
+            .eq('id', responsavelId)
+            .maybeSingle();
+        if (data != null) return ColaboradorModel.fromJson(data);
+      }
+    }
+
     final data = await _client
         .from('colaboradores')
         .select()

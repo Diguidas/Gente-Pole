@@ -1109,7 +1109,9 @@ class _DialogRotaState extends State<_DialogRota> {
       _erro = null;
     });
     try {
-      final gestor = await widget.api.buscarGestorDoSetor(widget.colab.setor!, widget.colab.empresa ?? '');
+      final gestor = await widget.api.buscarGestorDoSetor(
+          widget.colab.setor!, widget.colab.empresa ?? '',
+          colaboradorId: widget.colab.id);
       if (gestor == null) {
         setState(() {
           _enviando = false;
@@ -1284,7 +1286,9 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
     });
 
     try {
-      final gestor = await widget.api.buscarGestorDoSetor(widget.colab.setor!, widget.colab.empresa ?? '');
+      final gestor = await widget.api.buscarGestorDoSetor(
+          widget.colab.setor!, widget.colab.empresa ?? '',
+          colaboradorId: widget.colab.id);
       if (gestor == null) {
         setState(() {
           _enviando = false;

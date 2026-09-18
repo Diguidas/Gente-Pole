@@ -10,14 +10,37 @@ import 'solicitacoes_gestor_screen.dart';
 import 'feedback_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
 
-class GestorScreen extends StatelessWidget {
+class GestorScreen extends StatefulWidget {
   const GestorScreen({super.key});
 
   @override
+  State<GestorScreen> createState() => _GestorScreenState();
+}
+
+class _GestorScreenState extends State<GestorScreen> {
+  final _api = ApiService();
+  bool _loading = true;
+  Set<String> _bloqueadas = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final bloqueadas = await _api.listarFuncionalidadesGestorBloqueadas();
+    if (!mounted) return;
+    setState(() {
+      _bloqueadas = bloqueadas;
+      _loading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final api = ApiService();
-    final nome = api.colaboradorAtual?.primeiroNome ?? 'Gestor';
-    final setor = api.colaboradorAtual?.setor ?? '';
+    final nome = _api.colaboradorAtual?.primeiroNome ?? 'Gestor';
+    final setor = _api.colaboradorAtual?.setor ?? '';
 
     return Scaffold(
       body: Stack(
@@ -115,131 +138,144 @@ class GestorScreen extends StatelessWidget {
                       borderRadius:
                           BorderRadius.vertical(top: Radius.circular(28)),
                     ),
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 32, 20, 40),
-                      children: [
-                        Text(
-                          'O que deseja fazer?',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.cinzaTexto,
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(20, 32, 20, 40),
+                            children: [
+                              Text(
+                                'O que deseja fazer?',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.cinzaTexto,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              if (!_bloqueadas.contains('vagas_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.work_outline_rounded,
+                                  titulo: 'Aumento de Quadro',
+                                  subtitulo:
+                                      'Solicite vagas e acompanhe candidatos',
+                                  cor: AppColors.laranja,
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const VagasGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas
+                                  .contains('minha_equipe_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.group_outlined,
+                                  titulo: 'Minha Equipe',
+                                  subtitulo:
+                                      'Veja os colaboradores do seu setor',
+                                  cor: const Color(0xFF6366F1),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const MinhaEquipeScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas
+                                  .contains('avaliar_equipe_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.leaderboard_outlined,
+                                  titulo: 'Avaliar Equipe',
+                                  subtitulo:
+                                      'Avaliação 9-box dos colaboradores do setor',
+                                  cor: AppColors.laranja,
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const AvaliarEquipeScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas.contains(
+                                  'avaliar_periodo_experiencia_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.explore_outlined,
+                                  titulo: 'Avaliar Período de Experiência',
+                                  subtitulo:
+                                      'Avalie novos colaboradores da equipe',
+                                  cor: const Color(0xFF6366F1),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AvaliarPeriodoExperienciaGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas
+                                  .contains('solicitacoes_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.assignment_outlined,
+                                  titulo: 'Solicitações',
+                                  subtitulo: 'Abra e aprove pedidos da equipe',
+                                  cor: const Color(0xFF7C3AED),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const SolicitacoesGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas.contains('feedback_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.rate_review_outlined,
+                                  titulo: 'Feedback',
+                                  subtitulo:
+                                      'Dê feedback à equipe e responda pedidos',
+                                  cor: const Color(0xFFE91E8C),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const FeedbackGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas.contains('exames_gestor'))
+                                _BotaoGestor(
+                                  icone: Icons.medical_information_outlined,
+                                  titulo: 'Exames',
+                                  subtitulo:
+                                      'Confirme os exames marcados pelo SESMT',
+                                  cor: const Color(0xFF16A34A),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const ExamesGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // ── Botão: Aumento de Quadro ──────────────────
-                        _BotaoGestor(
-                          icone: Icons.work_outline_rounded,
-                          titulo: 'Aumento de Quadro',
-                          subtitulo: 'Solicite vagas e acompanhe candidatos',
-                          cor: AppColors.laranja,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const VagasGestorScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Minha Equipe ───────────────────────
-                        _BotaoGestor(
-                          icone: Icons.group_outlined,
-                          titulo: 'Minha Equipe',
-                          subtitulo: 'Veja os colaboradores do seu setor',
-                          cor: const Color(0xFF6366F1),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MinhaEquipeScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Avaliar Equipe ─────────────────────
-                        _BotaoGestor(
-                          icone: Icons.leaderboard_outlined,
-                          titulo: 'Avaliar Equipe',
-                          subtitulo: 'Avaliação 9-box dos colaboradores do setor',
-                          cor: AppColors.laranja,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AvaliarEquipeScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Avaliar Período de Experiência ─────
-                        _BotaoGestor(
-                          icone: Icons.explore_outlined,
-                          titulo: 'Avaliar Período de Experiência',
-                          subtitulo: 'Avalie novos colaboradores da equipe',
-                          cor: const Color(0xFF6366F1),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  const AvaliarPeriodoExperienciaGestorScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Solicitações ────────────────────────
-                        _BotaoGestor(
-                          icone: Icons.assignment_outlined,
-                          titulo: 'Solicitações',
-                          subtitulo: 'Abra e aprove pedidos da equipe',
-                          cor: const Color(0xFF7C3AED),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SolicitacoesGestorScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Feedback ───────────────────────────
-                        _BotaoGestor(
-                          icone: Icons.rate_review_outlined,
-                          titulo: 'Feedback',
-                          subtitulo: 'Dê feedback à equipe e responda pedidos',
-                          cor: const Color(0xFFE91E8C),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const FeedbackGestorScreen(),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Botão: Exames ──────────────────────────────
-                        _BotaoGestor(
-                          icone: Icons.medical_information_outlined,
-                          titulo: 'Exames',
-                          subtitulo: 'Confirme os exames marcados pelo SESMT',
-                          cor: const Color(0xFF16A34A),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ExamesGestorScreen(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               ],
