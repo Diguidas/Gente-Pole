@@ -911,6 +911,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildAniversariantesCard() {
     final hoje = _aniversariantesHoje;
+    final meuSetor = _api.colaboradorAtual?.setor;
     return _CardAniversarioMes(
       titulo: '🎂 Aniversariantes de hoje',
       itens: hoje
@@ -921,6 +922,9 @@ class _FeedScreenState extends State<FeedScreen> {
               fotoUrl: a.colaborador.fotoUrl,
               cor: AppColors.magenta,
               mensagem: 'Feliz aniversário! 🎉',
+              destaqueMeuSetor: meuSetor != null &&
+                  meuSetor.isNotEmpty &&
+                  a.colaborador.setor == meuSetor,
             ),
           )
           .toList(),
@@ -2956,6 +2960,7 @@ class _LinhaAniversario extends StatelessWidget {
   final Color cor;
   final String mensagem;
   final NivelTempoCasa? nivel;
+  final bool destaqueMeuSetor;
 
   const _LinhaAniversario({
     required this.nome,
@@ -2964,6 +2969,7 @@ class _LinhaAniversario extends StatelessWidget {
     required this.cor,
     required this.mensagem,
     this.nivel,
+    this.destaqueMeuSetor = false,
   });
 
   @override
@@ -2978,7 +2984,10 @@ class _LinhaAniversario extends StatelessWidget {
       decoration: BoxDecoration(
         color: cor.withOpacity(0.05),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cor.withOpacity(0.15)),
+        border: Border.all(
+          color: destaqueMeuSetor ? cor.withOpacity(0.6) : cor.withOpacity(0.15),
+          width: destaqueMeuSetor ? 1.5 : 1,
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -3016,14 +3025,31 @@ class _LinhaAniversario extends StatelessWidget {
                   ),
                 ),
                 if (setor != null && setor!.isNotEmpty && setor != '—')
-                  Text(
-                    setor!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: AppColors.cinzaTexto,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          setor!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppColors.cinzaTexto,
+                          ),
+                        ),
+                      ),
+                      if (destaqueMeuSetor) ...[
+                        const SizedBox(width: 5),
+                        Text(
+                          '· seu setor',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: cor,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 const SizedBox(height: 4),
                 Text(

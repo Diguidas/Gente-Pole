@@ -565,6 +565,7 @@ class _DialogSolicitacaoGestorState extends State<_DialogSolicitacaoGestor> {
                     style: GoogleFonts.poppins(
                         fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
                 const SizedBox(height: 16),
+                if (widget.tipo == 'swile') const _RegrasPrazoSwile(),
                 if (_tiposComColabUnico.contains(widget.tipo)) ...[
                   Text('Colaborador',
                       style: GoogleFonts.poppins(
@@ -670,6 +671,67 @@ class _DialogSolicitacaoGestorState extends State<_DialogSolicitacaoGestor> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Aviso de prazo de envio/crédito exibido na abertura da solicitação —
+/// o gestor precisa saber disso antes de mandar, já que solicitação feita
+/// depois do dia 20 só vira crédito no mês seguinte ao esperado.
+class _RegrasPrazoSwile extends StatelessWidget {
+  const _RegrasPrazoSwile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFECDD3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Text('📌', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 6),
+            Text('Regras de Prazos de Envio',
+                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark)),
+          ]),
+          const SizedBox(height: 8),
+          _itemRegra('Combustível'),
+          const SizedBox(height: 6),
+          _itemRegra('Alimentação'),
+        ],
+      ),
+    );
+  }
+
+  Widget _itemRegra(String beneficio) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 5, right: 8),
+          child: Container(width: 4, height: 4, decoration: const BoxDecoration(color: AppColors.dark, shape: BoxShape.circle)),
+        ),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.dark, height: 1.4),
+              children: [
+                TextSpan(text: '$beneficio\n', style: const TextStyle(fontWeight: FontWeight.w700)),
+                const TextSpan(text: 'Envio até o dia '),
+                const TextSpan(text: '20 de cada mês', style: TextStyle(fontWeight: FontWeight.w700)),
+                const TextSpan(text: ' → Crédito disponível em '),
+                const TextSpan(text: '01 do mês seguinte', style: TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

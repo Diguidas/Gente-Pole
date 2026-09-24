@@ -474,6 +474,8 @@ class _CardItem extends StatelessWidget {
                   ? Image.network(
                       p.fotoUrl!,
                       fit: BoxFit.cover,
+                      cacheWidth: 160,
+                      gaplessPlayback: true,
                       errorBuilder: (_, __, ___) => _semFoto(),
                     )
                   : _semFoto(),

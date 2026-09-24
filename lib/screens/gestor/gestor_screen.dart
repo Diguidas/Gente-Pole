@@ -69,7 +69,7 @@ class _GestorScreenState extends State<GestorScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Painel do Gestor',
+                              'Gestão de Equipe',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 20,

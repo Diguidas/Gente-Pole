@@ -32,13 +32,41 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
 
   List<ColaboradorModel> _filtrar(List<ColaboradorModel> equipe) {
     final q = _busca.trim().toLowerCase();
-    if (q.isEmpty) return equipe;
-    return equipe.where((c) {
-      final nome = c.nome.toLowerCase();
-      final cargo = (c.cargo ?? '').toLowerCase();
-      final matricula = c.matricula.toLowerCase();
-      return nome.contains(q) || cargo.contains(q) || matricula.contains(q);
-    }).toList();
+    var lista = equipe;
+    if (q.isNotEmpty) {
+      lista = lista.where((c) {
+        final nome = c.nome.toLowerCase();
+        final cargo = (c.cargo ?? '').toLowerCase();
+        final matricula = c.matricula.toLowerCase();
+        return nome.contains(q) || cargo.contains(q) || matricula.contains(q);
+      }).toList();
+    }
+    final ordenada = [...lista];
+    ordenada.sort((a, b) {
+      final diasA = _diasParaAniversario(a.dataNascimento);
+      final diasB = _diasParaAniversario(b.dataNascimento);
+      // Quem ainda vai fazer aniversário (dias >= 0) vem primeiro, do mais
+      // próximo pro mais distante; quem já passou fica depois, em ordem
+      // alfabética.
+      if (diasA != null && diasB != null) return diasA.compareTo(diasB);
+      if (diasA != null) return -1;
+      if (diasB != null) return 1;
+      return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+    });
+    return ordenada;
+  }
+
+  /// Dias até o próximo aniversário, ou `null` se já passou este ano
+  /// (aniversariante de hoje conta como 0).
+  int? _diasParaAniversario(String? dataNascimento) {
+    if (dataNascimento == null) return null;
+    final nasc = DateTime.tryParse(dataNascimento);
+    if (nasc == null) return null;
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    var proximo = DateTime(hoje.year, nasc.month, nasc.day);
+    if (proximo.isBefore(hojeSemHora)) return null;
+    return proximo.difference(hojeSemHora).inDays;
   }
 
   @override
@@ -220,6 +248,12 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
     );
   }
 
+  String _textoAniversario(int dias) {
+    if (dias == 0) return '🎂 Aniversário hoje!';
+    if (dias == 1) return '🎂 Aniversário amanhã';
+    return '🎂 Faltam $dias dias p/ aniversário';
+  }
+
   Widget _cardColaborador(ColaboradorModel c) {
     final iniciais = c.nome
         .trim()
@@ -228,6 +262,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
         .take(2)
         .map((p) => p[0].toUpperCase())
         .join();
+    final dias = _diasParaAniversario(c.dataNascimento);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -277,6 +312,15 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                     c.cargo!,
                     style: GoogleFonts.poppins(
                         fontSize: 12, color: AppColors.cinzaTexto),
+                  ),
+                if (dias != null)
+                  Text(
+                    _textoAniversario(dias),
+                    style: GoogleFonts.poppins(
+                      fontSize: 11.5,
+                      fontWeight: dias == 0 ? FontWeight.w700 : FontWeight.w500,
+                      color: dias == 0 ? AppColors.laranja : AppColors.magenta,
+                    ),
                   ),
               ],
             ),

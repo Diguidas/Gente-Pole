@@ -581,7 +581,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
           // ── FAB carrinho ─────────────────────────────────────────────
           if (_totalItens > 0 && !_enviando)
             Positioned(
-              bottom: 24,
+              bottom: 24 + MediaQuery.of(context).padding.bottom,
               left: 20,
               right: 20,
               child: GestureDetector(
@@ -812,6 +812,8 @@ class _CardProduto extends StatelessWidget {
                         child: Image.network(
                           produto.fotoUrl!,
                           fit: BoxFit.cover,
+                          cacheWidth: 300,
+                          gaplessPlayback: true,
                           errorBuilder: (_, __, ___) => Center(
                             child: Icon(
                               Icons.inventory_2_outlined,
@@ -1047,7 +1049,9 @@ class _CarrinhoSheet extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom +
+            24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1120,6 +1124,8 @@ class _CarrinhoSheet extends StatelessWidget {
                                 width: 44,
                                 height: 44,
                                 fit: BoxFit.cover,
+                                cacheWidth: 90,
+                                gaplessPlayback: true,
                                 errorBuilder: (_, __, ___) => Container(
                                   width: 44,
                                   height: 44,

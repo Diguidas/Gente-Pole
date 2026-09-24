@@ -1043,7 +1043,8 @@ class _ModalParabensState extends State<_ModalParabens> {
 
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom: MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom,
       ),
       child: Container(
         decoration: const BoxDecoration(
@@ -1221,7 +1222,10 @@ class _ModalRespostaState extends State<_ModalResposta> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom,
+      ),
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,

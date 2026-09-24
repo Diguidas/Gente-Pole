@@ -151,7 +151,12 @@ class _ExamesGestorScreenState extends State<ExamesGestorScreen> {
                       onRefresh: _carregar,
                       color: AppColors.magenta,
                       child: ListView.separated(
-                        padding: const EdgeInsets.all(20),
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          20,
+                          20,
+                          20 + MediaQuery.of(context).padding.bottom,
+                        ),
                         itemCount: _exames.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (_, i) {

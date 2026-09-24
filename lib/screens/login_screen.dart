@@ -556,6 +556,22 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'desenvolvido por ',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    color: const Color(0xFF7A5230),
+                                  ),
+                                ),
+                                Image.asset('assets/poletech.png', height: 14),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),

@@ -315,6 +315,19 @@ class _PessoasScreenState extends State<PessoasScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'desenvolvido por ',
+                          style: AppTextStyles.corpoMinimo,
+                        ),
+                        Image.asset('assets/poletech.png', height: 14),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -337,8 +350,10 @@ class _PessoasScreenState extends State<PessoasScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => Padding(
-          padding:
-              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                MediaQuery.of(ctx).padding.bottom,
+          ),
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,

@@ -38,9 +38,19 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   // Campos da vaga
   final _centroCustoCtrl = TextEditingController();
-  final _liderancaMatriculaCtrl = TextEditingController();
   List<Map<String, dynamic>> _filiais = [];
   String? _filialSelecionada;
+
+  // Liderança da vaga (aumento de quadro): um colaborador por nível da
+  // hierarquia do setor. Vaga de substituição não usa isso — o novo
+  // colaborador herda a hierarquia do substituído automaticamente quando o
+  // TOTVS confirma a admissão (sync-colaboradores/migrarHierarquiaDeSubstituicao).
+  Map<String, Map<String, dynamic>?> _liderancaSelecionada = {
+    'gestor': null,
+    'supervisor': null,
+    'coordenador': null,
+    'lider': null,
+  };
 
   // Etapa 3: chamado de TI. null = ainda não respondido (obrigatório
   // responder Sim/Não em cada pergunta antes de poder enviar).
@@ -63,7 +73,6 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   void dispose() {
     _motivoCtrl.dispose();
     _centroCustoCtrl.dispose();
-    _liderancaMatriculaCtrl.dispose();
     _observacaoTICtrl.dispose();
     super.dispose();
   }
@@ -123,6 +132,12 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _horarioSaida = null;
       _docAprovacao = null;
       _filialSelecionada = null;
+      _liderancaSelecionada = {
+        'gestor': null,
+        'supervisor': null,
+        'coordenador': null,
+        'lider': null,
+      };
       _mostrarEtapa3 = false;
       _abrirChamadoTI = null;
       _precisaUsuarioRede = null;
@@ -153,6 +168,124 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     if (_precisaOffice365 == null) return false;
     if (_precisaMaquina == null) return false;
     return true;
+  }
+
+  String _rotuloNivel(String nivel) => switch (nivel) {
+        'gestor' => 'Gestor',
+        'supervisor' => 'Supervisor',
+        'coordenador' => 'Coordenador',
+        'lider' => 'Líder',
+        _ => nivel,
+      };
+
+  Future<void> _abrirSeletorLideranca() async {
+    final setor = _templateSelecionado?['departamento'] as String?;
+    if (setor == null || setor.isEmpty) return;
+    final hierarquia = await _api.listarHierarquiaDoSetor(setor);
+    final porNivel = <String, List<Map<String, dynamic>>>{
+      'gestor': [],
+      'supervisor': [],
+      'coordenador': [],
+      'lider': [],
+    };
+    for (final linha in hierarquia) {
+      final nivel = linha['nivel'] as String?;
+      final colaborador = linha['colaboradores'] as Map<String, dynamic>?;
+      if (nivel == null || colaborador == null || !porNivel.containsKey(nivel)) {
+        continue;
+      }
+      if (porNivel[nivel]!.any((c) => c['id'] == colaborador['id'])) continue;
+      porNivel[nivel]!.add(colaborador);
+    }
+    if (!mounted) return;
+
+    var selecaoTemp =
+        Map<String, Map<String, dynamic>?>.from(_liderancaSelecionada);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setStateDialog) {
+        return AlertDialog(
+          title: Text('Escolher liderança da vaga',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
+          content: SizedBox(
+            width: 380,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final nivel in const [
+                    'gestor',
+                    'supervisor',
+                    'coordenador',
+                    'lider'
+                  ]) ...[
+                    Text(_rotuloNivel(nivel),
+                        style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.dark)),
+                    const SizedBox(height: 6),
+                    if (porNivel[nivel]!.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: Text('Nenhum $nivel configurado neste setor.',
+                            style: GoogleFonts.poppins(
+                                fontSize: 11, color: AppColors.cinzaTexto)),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: selecaoTemp[nivel]?['id'] as int?,
+                              hint: Text('Selecione...',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 13, color: AppColors.cinzaTexto)),
+                              isExpanded: true,
+                              items: porNivel[nivel]!.map((c) {
+                                return DropdownMenuItem<int>(
+                                  value: c['id'] as int,
+                                  child: Text('${c['nome']} – ${c['cargo'] ?? ''}',
+                                      style: GoogleFonts.poppins(fontSize: 13)),
+                                );
+                              }).toList(),
+                              onChanged: (id) => setStateDialog(() {
+                                selecaoTemp[nivel] = id == null
+                                    ? null
+                                    : porNivel[nivel]!
+                                        .firstWhere((c) => c['id'] == id);
+                              }),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                setState(() => _liderancaSelecionada = selecaoTemp);
+                Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.magenta),
+              child:
+                  Text('Concluir', style: GoogleFonts.poppins(color: Colors.white)),
+            ),
+          ],
+        );
+      }),
+    );
   }
 
   String _timeStr(TimeOfDay t) =>
@@ -202,9 +335,12 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       horarioSaida: _horarioSaida != null ? _timeStr(_horarioSaida!) : null,
       docAprovacaoUrl: docUrl,
       centroCusto: _centroCustoCtrl.text.trim().isEmpty ? null : _centroCustoCtrl.text.trim(),
-      liderancaDiretaMatricula: _liderancaMatriculaCtrl.text.trim().isEmpty ? null : _liderancaMatriculaCtrl.text.trim(),
       filial: _filialSelecionada,
       colaboradorSubstituidoId: _ehSubstituicao ? _colaboradorSubstituido?.id : null,
+      vagaGestorId: _ehSubstituicao ? null : _liderancaSelecionada['gestor']?['id'] as int?,
+      vagaSupervisorId: _ehSubstituicao ? null : _liderancaSelecionada['supervisor']?['id'] as int?,
+      vagaCoordenadorId: _ehSubstituicao ? null : _liderancaSelecionada['coordenador']?['id'] as int?,
+      vagaLiderId: _ehSubstituicao ? null : _liderancaSelecionada['lider']?['id'] as int?,
     );
 
     final vagaId = await _api.solicitarVaga(vaga);
@@ -748,12 +884,45 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           label: 'Centro de custo',
           icone: Icons.account_balance_outlined,
         ),
-        const SizedBox(height: 10),
-        _campoTexto(
-          ctrl: _liderancaMatriculaCtrl,
-          label: 'Matrícula da liderança direta',
-          icone: Icons.badge_outlined,
-        ),
+        if (!_ehSubstituicao) ...[
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: _abrirSeletorLideranca,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _liderancaSelecionada.values.every((v) => v == null)
+                      ? const Color(0xFFE5E7EB)
+                      : AppColors.laranja,
+                  width: _liderancaSelecionada.values.every((v) => v == null) ? 1 : 1.5,
+                ),
+              ),
+              child: Row(children: [
+                Icon(Icons.groups_outlined, size: 18, color: AppColors.cinzaTexto),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _liderancaSelecionada.values.every((v) => v == null)
+                      ? Text('Escolher líderes...',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, color: AppColors.cinzaTexto))
+                      : Text(
+                          _liderancaSelecionada.entries
+                              .where((e) => e.value != null)
+                              .map((e) => '${_rotuloNivel(e.key)}: ${e.value!['nome']}')
+                              .join(' · '),
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(fontSize: 13, color: AppColors.dark),
+                        ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.cinzaTexto),
+              ]),
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         _dropdownFilial(),
         const SizedBox(height: 20),
@@ -796,7 +965,8 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     _horarioEntrada == null ||
                     _horarioSaida == null ||
                     _centroCustoCtrl.text.trim().isEmpty ||
-                    _liderancaMatriculaCtrl.text.trim().isEmpty ||
+                    (!_ehSubstituicao &&
+                        _liderancaSelecionada.values.every((v) => v == null)) ||
                     _filialSelecionada == null
                 ? null
                 : () => setState(() => _mostrarEtapa3 = true),

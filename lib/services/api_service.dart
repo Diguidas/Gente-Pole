@@ -9,6 +9,7 @@ import 'package:gentepole/models/lojinha_model.dart';
 import 'package:gentepole/models/fisioterapia_model.dart';
 import 'package:gentepole/models/massoterapia_model.dart';
 import 'package:gentepole/models/vaga_model.dart';
+import 'package:gentepole/models/veiculo_model.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -546,10 +547,16 @@ class ApiService {
   }
 
   /// Níveis da hierarquia de setor (ver Administração de Setor no painel web)
-  /// que dão acesso ao módulo Gestor — líder fica de fora, é só um registro
-  /// organizacional que não abre o painel. Mesmo valor de
-  /// `ApiService.niveisComAcessoDeGestor` no gentepole_admin.
-  static const _niveisComAcessoDeGestor = ['gestor', 'coordenador', 'supervisor'];
+  /// que dão acesso ao módulo Gestão de Equipe. Mesmo valor de
+  /// `ApiService.niveisComAcessoDeGestor` no gentepole_admin (lá a ordem é
+  /// só de exibição; aqui, além disso, define prioridade de "mais próximo").
+  static const _niveisComAcessoDeGestor = [
+    'lider',
+    'gestor',
+    'coordenador',
+    'supervisor',
+    'gerente_geral'
+  ];
 
   /// Setores que o gestor logado efetivamente enxerga: o setor do próprio
   /// cadastro dele SEMPRE conta, somado aos setores extras associados
@@ -647,7 +654,20 @@ class ApiService {
     return lista;
   }
 
-  /// Funcionalidades do módulo Gestor — mesmos 7 itens e ids do painel web
+  /// Todas as atribuições de um setor (gestor/coordenador/supervisor/líder),
+  /// com o colaborador responsável embutido — usado para o gestor escolher a
+  /// liderança de uma vaga nova (aumento de quadro). Mesmo formato de
+  /// `ApiService.listarHierarquiaDoSetor` no gentepole_admin.
+  Future<List<Map<String, dynamic>>> listarHierarquiaDoSetor(String setor) async {
+    final res = await _client
+        .from('setor_hierarquia')
+        .select('id, setor, empresa, nivel, turno, colaborador_id, colaboradores_alvo, '
+            'colaboradores(id, nome, matricula, cargo)')
+        .eq('setor', setor);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Funcionalidades do módulo Gestão de Equipe — mesmos 7 itens e ids do painel web
   /// (`ApiService.funcionalidadesGestor` em gentepole_admin), pra bloqueio
   /// individual por pessoa (`gestor_permissoes`) valer igual nos dois apps.
   static const funcionalidadesGestor = [
@@ -660,7 +680,7 @@ class ApiService {
     {'id': 'solicitacoes_gestor', 'label': 'Solicitações'},
   ];
 
-  /// Funcionalidades do módulo Gestor bloqueadas pro colaborador logado —
+  /// Funcionalidades do módulo Gestão de Equipe bloqueadas pro colaborador logado —
   /// sem nenhum registro em `gestor_permissoes`, tudo fica liberado (mesmo
   /// comportamento do painel web).
   Future<Set<String>> listarFuncionalidadesGestorBloqueadas() async {
@@ -1333,9 +1353,10 @@ class ApiService {
 
   /// Retorna true se o colaborador logado tem o perfil "gestor" — tanto pelo
   /// jeito antigo (colaboradores.eh_gestor, mantido em sincronia com
-  /// usuarios_admin.roles) quanto por estar atribuído como
-  /// gestor/coordenador/supervisor de algum setor na Administração de Setor
-  /// do painel web (`setor_hierarquia`). Os dois coexistem, igual no painel.
+  /// usuarios_admin.roles) quanto por estar atribuído em algum nível com
+  /// acesso ao módulo (`_niveisComAcessoDeGestor`) de algum setor na
+  /// Administração de Setor do painel web (`setor_hierarquia`). Os dois
+  /// coexistem, igual no painel.
   Future<bool> verificarSeEhGestor() async {
     if (colaboradorAtual?.ehGestor ?? false) return true;
     final colab = colaboradorAtual;
@@ -1474,6 +1495,50 @@ class ApiService {
       m['periodo_limite'] = null;
       return LojinhaProdutoModel.fromJson(m);
     }).toList();
+  }
+
+  /// A Lojinha só libera compra pra filiais explicitamente cobertas por uma
+  /// regra do tipo 'geral' — sem isso, fica só consulta (ver histórico),
+  /// sem catálogo pra comprar. [branch] é `ColaboradorModel.branch`. Regra
+  /// 'geral' também respeita dia/horário, igual as de exclusivo.
+  Future<bool> lojinhaLiberadaParaFilial(String? branch) async {
+    if (branch == null || branch.isEmpty) return false;
+    final data = await _client
+        .from('lojinha_regras')
+        .select('filiais, dias_semana, hora_inicio, hora_fim, horarios_dia')
+        .eq('tipo', 'geral');
+    final agora = DateTime.now();
+    for (final r in data as List) {
+      final filiais = (r['filiais'] as List?)?.cast<String>() ?? [];
+      if (filiais.isNotEmpty && !filiais.contains(branch)) continue;
+      if (_regraGeralDisponivelAgora(r as Map<String, dynamic>, agora)) return true;
+    }
+    return false;
+  }
+
+  bool _regraGeralDisponivelAgora(Map<String, dynamic> regra, DateTime agora) {
+    final diasSemana = (regra['dias_semana'] as List?)?.cast<int>();
+    final diaAtivo = diasSemana == null || diasSemana.isEmpty;
+    if (!diaAtivo && !diasSemana!.contains(agora.weekday)) return false;
+
+    final horaAgora =
+        '${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}:00';
+
+    if (!diaAtivo) {
+      final horariosDia = regra['horarios_dia'] as Map<String, dynamic>?;
+      if (horariosDia == null) return true;
+      final intervalo = horariosDia[agora.weekday.toString()] as Map?;
+      if (intervalo == null) return true;
+      final ini = intervalo['inicio'] as String?;
+      final fim = intervalo['fim'] as String?;
+      if (ini == null || fim == null) return true;
+      return horaAgora.compareTo(ini) >= 0 && horaAgora.compareTo(fim) <= 0;
+    }
+
+    final horaInicio = regra['hora_inicio'] as String?;
+    final horaFim = regra['hora_fim'] as String?;
+    if (horaInicio == null || horaFim == null) return true;
+    return horaAgora.compareTo(horaInicio) >= 0 && horaAgora.compareTo(horaFim) <= 0;
   }
 
   Future<Map<String, dynamic>> buscarConfigLojinha() async {
@@ -3570,9 +3635,10 @@ class ApiService {
   /// Gestor de um colaborador — usado pra "Pedir feedback ao meu gestor" e
   /// nas Solicitações. Prioriza a hierarquia resolvida pela Administração de
   /// Setor do painel web (`colaborador_hierarquia`, quando [colaboradorId] é
-  /// passado): gestor > coordenador > supervisor, na ordem de quem está mais
-  /// perto da pessoa. Sem hierarquia configurada pra ela, cai pro sinal
-  /// antigo (`colaboradores.eh_gestor` do primeiro gestor achado no setor).
+  /// passado): gestor > coordenador > supervisor > gerente geral, na ordem de
+  /// quem está mais perto da pessoa. Sem hierarquia configurada pra ela, cai
+  /// pro sinal antigo (`colaboradores.eh_gestor` do primeiro gestor achado no
+  /// setor).
   Future<ColaboradorModel?> buscarGestorDoSetor(
       String setor, String empresa, {int? colaboradorId}) async {
     if (colaboradorId != null) {
@@ -4468,7 +4534,7 @@ class ApiService {
 
   /// Solicitações de feedback recebidas pelo colaborador (pendentes ou
   /// todas, conforme [apenasPendentes]) — usado na tela "Feedback" do
-  /// módulo Gestor pra mostrar os pedidos da equipe.
+  /// módulo Gestão de Equipe pra mostrar os pedidos da equipe.
   Future<List<Map<String, dynamic>>> listarSolicitacoesFeedbackRecebidas(
     int colaboradorId, {
     bool apenasPendentes = false,
@@ -5072,6 +5138,41 @@ class ApiService {
     if (data == null || data['ok'] != true) {
       throw Exception(data?['error'] ?? 'Erro ao enviar avaliação');
     }
+  }
+
+  // ─── Meus Veículos ──────────────────────────────────────────────────────
+  // Mesma tabela `veiculos` da Portaria no painel web — aqui o colaborador
+  // só vê e mexe nos próprios.
+
+  Future<List<VeiculoModel>> listarMeusVeiculos(int colaboradorId) async {
+    final res = await _client
+        .from('veiculos')
+        .select()
+        .eq('colaborador_id', colaboradorId)
+        .order('placa');
+    return (res as List).map((e) => VeiculoModel.fromJson(e)).toList();
+  }
+
+  Future<void> criarVeiculo({
+    required String placa,
+    String tipo = 'carro',
+    String? tipoOutro,
+    String? modelo,
+    String? cor,
+    required int colaboradorId,
+  }) async {
+    await _client.from('veiculos').insert({
+      'placa': placa.trim().toUpperCase(),
+      'tipo': tipo,
+      'tipo_outro': tipo == 'outro' ? tipoOutro : null,
+      'modelo': modelo,
+      'cor': cor,
+      'colaborador_id': colaboradorId,
+    });
+  }
+
+  Future<void> excluirVeiculo(int id) async {
+    await _client.from('veiculos').delete().eq('id', id);
   }
 }
 

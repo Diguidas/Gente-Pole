@@ -3,7 +3,7 @@ import '../../core/app_theme.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 
-/// Tela "Dar Feedback" do módulo Gestor — feedback estruturado e avaliado
+/// Tela "Dar Feedback" do módulo Gestão de Equipe — feedback estruturado e avaliado
 /// por estrelas que o gestor dá a um colaborador da equipe. Diferente da
 /// tela "Elogiar" (reconhecimento livre, sem notas, entre quaisquer
 /// colegas): aqui sempre há itens da empresa avaliados de 1 a 5 estrelas,

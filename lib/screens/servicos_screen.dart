@@ -25,6 +25,7 @@ import 'integracao/integracao_screen.dart';
 import 'documentos/documentos_institucionais_screen.dart';
 import 'acesso_rapido/acesso_rapido_screen.dart';
 import 'ti/chamados_ti_screen.dart';
+import 'veiculos/meus_veiculos_screen.dart';
 
 class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
@@ -181,17 +182,17 @@ class _ServicosScreenState extends State<ServicosScreen> {
                         children: [
                           if (_loadingPerfis) const SizedBox.shrink(),
 
-                          // ── Painel do Gestor ──────────────────────────────
+                          // ── Gestão de Equipe ──────────────────────────────
                           if (!_loadingPerfis && _ehGestor) ...[
                             _sectionLabel(
-                              'Painel do Gestor',
+                              'Gestão de Equipe',
                               AppColors.laranja,
                             ),
                             const SizedBox(height: 10),
                             _botaoServico(
                               context,
                               icone: Icons.work_outline_rounded,
-                              titulo: 'Painel do Gestor',
+                              titulo: 'Gestão de Equipe',
                               subtitulo:
                                   'Solicite vagas e acompanhe candidatos',
                               cor: AppColors.laranja,
@@ -249,6 +250,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const LojinhaHomeScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.directions_car_outlined,
+                            titulo: 'Meus Veículos',
+                            subtitulo: 'Cadastre seu carro ou moto',
+                            cor: AppColors.laranja,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MeusVeiculosScreen(),
                               ),
                             ),
                           ),

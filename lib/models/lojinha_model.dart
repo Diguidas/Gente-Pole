@@ -296,23 +296,16 @@ class LojinhaPedidoResumoModel {
     return d.add(Duration(days: diasMap[d.weekday]!));
   }
 
-  /// Tag de entrega a exibir nos pedidos ativos. Retorna null se não aplicável.
+  /// Só mostra a tag de entrega pra pedidos feitos na semana vigente (que
+  /// chegam nessa sexta) — pedido de semana que já passou fica sem tag.
   String? get labelEntrega {
-    if (!isVigente && !isFuturo) return null;
     final entrega = DateTime(dataEntrega.year, dataEntrega.month, dataEntrega.day);
     final hoje = DateTime.now();
     final hojeDate = DateTime(hoje.year, hoje.month, hoje.day);
-    if (entrega.isBefore(hojeDate)) return null;
-
-    // Próxima sexta a partir de hoje (mesma lógica)
     const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
     final proximaSexta = hojeDate.add(Duration(days: diasMap[hojeDate.weekday]!));
-
     if (entrega == proximaSexta) return 'Chega nessa sexta';
-    if (entrega == proximaSexta.add(const Duration(days: 7))) return 'Chega na próxima sexta';
-    final dia = entrega.day.toString().padLeft(2, '0');
-    final mes = entrega.month.toString().padLeft(2, '0');
-    return 'Chega em $dia/$mes';
+    return null;
   }
 
   factory LojinhaPedidoResumoModel.fromJson(Map<String, dynamic> j) =>

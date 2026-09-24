@@ -23,10 +23,22 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
   int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
       b.dataOrdenacao.compareTo(a.dataOrdenacao);
 
+  // Pedido feito na semana vigente (entrega cai nessa sexta) fica em
+  // destaque no topo, separado dos grupos normais — assim que a sexta
+  // passa, ele deixa de contar como "atual" e desce pro grupo certo
+  // (vigente/futuro/histórico), sem precisar de nenhum estado guardado.
+  List<LojinhaPedidoResumoModel> get _atuais =>
+      widget.pedidos.where((p) => p.labelEntrega != null).toList()..sort(_desc);
+
+  List<LojinhaPedidoResumoModel> _semAtuais(Iterable<LojinhaPedidoResumoModel> lista) {
+    final atuaisSet = _atuais.toSet();
+    return lista.where((p) => !atuaisSet.contains(p)).toList();
+  }
+
   List<LojinhaPedidoResumoModel> get _vigentes =>
-      widget.pedidos.where((p) => p.isVigente).toList()..sort(_desc);
+      _semAtuais(widget.pedidos.where((p) => p.isVigente))..sort(_desc);
   List<LojinhaPedidoResumoModel> get _futuros =>
-      widget.pedidos.where((p) => p.isFuturo).toList()..sort(_desc);
+      _semAtuais(widget.pedidos.where((p) => p.isFuturo))..sort(_desc);
   List<LojinhaPedidoResumoModel> get _historico =>
       widget.pedidos.where((p) => !p.isVigente && !p.isFuturo).toList()..sort(_desc);
 
@@ -45,6 +57,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
     final mostrarHistorico = _ativos.contains(_Filtro.historico);
 
     final visiveis = [
+      ..._atuais,
       if (mostrarVigentes)  ..._vigentes,
       if (mostrarFuturos)   ..._futuros,
       if (mostrarHistorico) ..._historico,
@@ -142,6 +155,17 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                         : ListView(
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                             children: [
+                              if (_atuais.isNotEmpty) ...[
+                                _GrupoHeader(
+                                  icone: Icons.local_shipping_outlined,
+                                  label: 'Pedidos atuais',
+                                  cor: AppColors.laranja,
+                                  descricao: 'Feitos essa semana — chegam nessa sexta.',
+                                ),
+                                const SizedBox(height: 10),
+                                ..._atuais.map((p) => _CardPedido(pedido: p, destacarDesconto: true)),
+                                const SizedBox(height: 24),
+                              ],
                               if (mostrarVigentes && _vigentes.isNotEmpty) ...[
                                 _GrupoHeader(
                                   icone: Icons.radio_button_checked_rounded,
@@ -315,7 +339,10 @@ class _GrupoHeader extends StatelessWidget {
 
 class _CardPedido extends StatefulWidget {
   final LojinhaPedidoResumoModel pedido;
-  const _CardPedido({required this.pedido});
+  /// Mostra a tag "Desconto atual"/"Próximo desconto" — só usado no grupo
+  /// "Pedidos atuais", pra explicar em qual folha esse pedido vai cair.
+  final bool destacarDesconto;
+  const _CardPedido({required this.pedido, this.destacarDesconto = false});
 
   @override
   State<_CardPedido> createState() => _CardPedidoState();
@@ -331,12 +358,6 @@ class _CardPedidoState extends State<_CardPedido> {
     if (pedido.isVigente) return Colors.green.shade600;
     if (pedido.isFuturo)  return Colors.blue.shade600;
     return Colors.grey.shade500;
-  }
-
-  Color get _corFundoSituacao {
-    if (pedido.isVigente) return Colors.green.shade50;
-    if (pedido.isFuturo)  return Colors.blue.shade50;
-    return Colors.grey.shade100;
   }
 
   Future<void> _baixarNotaFiscal() async {
@@ -443,27 +464,28 @@ class _CardPedidoState extends State<_CardPedido> {
               ),
 
               // ── Tags ─────────────────────────────────────────────
-              if (pedido.status.isNotEmpty ||
-                  labelEntrega != null ||
+              if (labelEntrega != null ||
                   pedido.isRefaturado ||
-                  pedido.isExclusivo) ...[
+                  pedido.isExclusivo ||
+                  widget.destacarDesconto) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
+                    if (widget.destacarDesconto)
+                      _Tag(
+                        label: pedido.isVigente ? 'Desconto atual' : 'Próximo desconto',
+                        icone: Icons.payments_outlined,
+                        cor: pedido.isVigente ? Colors.green.shade600 : Colors.blue.shade600,
+                        fundo: pedido.isVigente ? Colors.green.shade50 : Colors.blue.shade50,
+                      ),
                     if (pedido.isExclusivo)
                       _Tag(
                         label: 'Exclusivo',
                         icone: Icons.storefront_outlined,
                         cor: Colors.teal.shade600,
                         fundo: Colors.teal.shade50,
-                      ),
-                    if (pedido.status.isNotEmpty)
-                      _Tag(
-                        label: pedido.status,
-                        cor: _corSituacao,
-                        fundo: _corFundoSituacao,
                       ),
                     if (labelEntrega != null)
                       _Tag(

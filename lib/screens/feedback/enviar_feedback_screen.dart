@@ -66,7 +66,8 @@ class _EnviarFeedbackScreenState extends State<EnviarFeedbackScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModal) => Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                MediaQuery.of(ctx).padding.bottom,
           ),
           child: Container(
             decoration: const BoxDecoration(

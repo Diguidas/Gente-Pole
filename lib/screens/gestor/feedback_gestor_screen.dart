@@ -6,7 +6,7 @@ import 'dar_feedback_screen.dart';
 
 const _labelsEstrela = ['1', '2', '3', '4', '5'];
 
-/// Tela "Feedback" do módulo Gestor: solicitações de feedback recebidas da
+/// Tela "Feedback" do módulo Gestão de Equipe: solicitações de feedback recebidas da
 /// equipe (Atender/Recusar), botão para dar um novo feedback estruturado e
 /// o histórico do que o gestor já deu. Diferente da tela "Elogiar" (módulo
 /// "Para Você"), que é reconhecimento livre entre colegas sem notas.

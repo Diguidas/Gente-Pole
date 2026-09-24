@@ -23,6 +23,10 @@ class VagaModel {
   final String? liderancaDiretaMatricula;
   final String? filial;
   final int? colaboradorSubstituidoId;
+  final int? vagaGestorId;
+  final int? vagaSupervisorId;
+  final int? vagaCoordenadorId;
+  final int? vagaLiderId;
 
   VagaModel({
     required this.id,
@@ -49,6 +53,10 @@ class VagaModel {
     this.liderancaDiretaMatricula,
     this.filial,
     this.colaboradorSubstituidoId,
+    this.vagaGestorId,
+    this.vagaSupervisorId,
+    this.vagaCoordenadorId,
+    this.vagaLiderId,
   });
 
   factory VagaModel.fromJson(Map<String, dynamic> json) {
@@ -76,6 +84,10 @@ class VagaModel {
       liderancaDiretaMatricula: json['lideranca_direta_matricula'] as String?,
       filial: json['filial'] as String?,
       colaboradorSubstituidoId: json['colaborador_substituido_id'] as int?,
+      vagaGestorId: json['vaga_gestor_id'] as int?,
+      vagaSupervisorId: json['vaga_supervisor_id'] as int?,
+      vagaCoordenadorId: json['vaga_coordenador_id'] as int?,
+      vagaLiderId: json['vaga_lider_id'] as int?,
       createdAt: DateTime.parse(
         (json['created_at'] ?? json['criado_em']) as String,
       ),
@@ -107,6 +119,10 @@ class VagaModel {
       if (filial != null) 'filial': filial,
       if (colaboradorSubstituidoId != null)
         'colaborador_substituido_id': colaboradorSubstituidoId,
+      if (vagaGestorId != null) 'vaga_gestor_id': vagaGestorId,
+      if (vagaSupervisorId != null) 'vaga_supervisor_id': vagaSupervisorId,
+      if (vagaCoordenadorId != null) 'vaga_coordenador_id': vagaCoordenadorId,
+      if (vagaLiderId != null) 'vaga_lider_id': vagaLiderId,
     };
   }
 }

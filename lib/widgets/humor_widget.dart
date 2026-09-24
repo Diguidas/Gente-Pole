@@ -104,7 +104,10 @@ class _HumorWidgetState extends State<HumorWidget> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom +
+              MediaQuery.of(ctx).padding.bottom,
+        ),
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.white,

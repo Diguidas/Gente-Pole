@@ -19,6 +19,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   LojinhaFuncionarioModel? _dados;
   bool _carregando = true;
   bool _recalculando = false;
+  /// Se a filial do colaborador não tiver uma regra 'geral' liberando,
+  /// a Lojinha fica só-consulta (sem catálogo, sem novo pedido).
+  bool _liberadaParaCompra = true;
 
   @override
   void initState() {
@@ -29,8 +32,14 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   Future<void> _carregar() async {
     setState(() => _carregando = true);
     _dados = await _api.buscarDadosFuncionarioLojinha();
+    final liberada = await _api.lojinhaLiberadaParaFilial(
+      _api.colaboradorAtual?.branch,
+    );
     if (!mounted) return;
-    setState(() => _carregando = false);
+    setState(() {
+      _carregando = false;
+      _liberadaParaCompra = liberada;
+    });
     await _retentarSeValorZerado();
   }
 
@@ -147,6 +156,29 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (!_liberadaParaCompra) ...[
+                            _avisoSoConsulta(),
+                            const SizedBox(height: 16),
+                            _botaoMenu(
+                              context,
+                              icone: Icons.receipt_long_rounded,
+                              titulo: 'Meus Pedidos',
+                              subtitulo:
+                                  '${dados?.pedidos.length ?? 0} pedido${(dados?.pedidos.length ?? 0) != 1 ? 's' : ''} realizados',
+                              cor: AppColors.magenta,
+                              bloqueado: false,
+                              onTap: dados == null
+                                  ? null
+                                  : () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => LojinhaPedidosScreen(
+                                            pedidos: dados.pedidos,
+                                          ),
+                                        ),
+                                      ),
+                            ),
+                          ] else ...[
                           // ── Alerta de bloqueio ───────────────────────
                           if (dados != null && dados.bloqueado)
                             _alertaBloqueio(),
@@ -236,6 +268,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                 ],
                               );
                             }),
+                          ],
                           ],
                         ],
                       ),
@@ -335,6 +368,39 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
               onTap: _carregar,
               child: Icon(Icons.refresh_rounded, color: AppColors.laranja),
             ),
+          ],
+        ),
+      );
+
+  Widget _avisoSoConsulta() => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.storefront_outlined, size: 20, color: AppColors.cinzaTexto),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Lojinha não disponível para compra, só consulta',
+                      style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.dark)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+                'A Lojinha ainda não foi liberada pra compra na sua filial. '
+                'Você pode consultar seus pedidos anteriores em "Meus Pedidos".',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, color: AppColors.cinzaTexto, height: 1.4)),
           ],
         ),
       );
@@ -512,22 +578,6 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                     color: AppColors.cinzaTexto, size: 18),
               ],
             ),
-            if (p.status.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: cor.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: cor.withOpacity(0.2)),
-                ),
-                child: Text(p.status,
-                    style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: cor)),
-              ),
-            ],
           ],
         ),
       ),
