@@ -2523,12 +2523,25 @@ class ApiService {
   /// Busca todos os colaboradores para a lista de destinatários.
   Future<List<Map<String, dynamic>>> buscarTodosColaboradores() async {
     final meuId = colaboradorAtual?.id;
-    final res = await _client
-        .from('colaboradores')
-        .select('id, nome, setor, cargo')
-        .neq('id', meuId ?? 0)
-        .order('nome', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
+    // Sem paginar, o Supabase corta em 1000 linhas por padrão — com mais de
+    // 2000 colaboradores cadastrados, isso fazia a busca de "Elogiar" nunca
+    // encontrar quem tivesse nome ordenado depois do corte alfabético.
+    final todos = <dynamic>[];
+    int from = 0;
+    const pageSize = 1000;
+    while (true) {
+      final res = await _client
+          .from('colaboradores')
+          .select('id, nome, setor, cargo')
+          .neq('id', meuId ?? 0)
+          .order('nome', ascending: true)
+          .range(from, from + pageSize - 1);
+      final page = res as List;
+      todos.addAll(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+    return List<Map<String, dynamic>>.from(todos);
   }
 
   /// Lista pesquisas disponíveis para o colaborador (via `pesquisa_envios`),
@@ -3679,15 +3692,27 @@ class ApiService {
 
   /// Lista os setores distintos cadastrados, para o seletor de "Para: Por setor".
   Future<List<String>> listarSetoresDistintos() async {
-    final res = await _client
-        .from('colaboradores')
-        .select('setor')
-        .not('setor', 'is', null);
-    return (res as List)
-        .map((e) => e['setor'] as String?)
-        .whereType<String>()
-        .toSet()
-        .toList();
+    // Sem paginar, o Supabase corta em 1000 linhas por padrão — com mais de
+    // 2000 colaboradores cadastrados, setores só usados por gente cujo nome
+    // (ordem física da tabela) cai depois do corte podiam nunca aparecer.
+    final setores = <String>{};
+    int from = 0;
+    const pageSize = 1000;
+    while (true) {
+      final res = await _client
+          .from('colaboradores')
+          .select('setor')
+          .not('setor', 'is', null)
+          .range(from, from + pageSize - 1);
+      final page = res as List;
+      for (final e in page) {
+        final s = e['setor'] as String?;
+        if (s != null) setores.add(s);
+      }
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+    return setores.toList();
   }
 
   /// Busca colaboradores pelo nome, para o seletor de "Para: Individual".
@@ -3710,18 +3735,8 @@ class ApiService {
   Future<List<Map<String, String>>> buscarSugestoesMencao(String query) async {
     final q = query.toLowerCase();
 
-    // Busca setores distintos
-    final setoresRaw = await _client
-        .from('colaboradores')
-        .select('setor')
-        .not('setor', 'is', null)
-        .then((r) => r as List);
-
-    final todosSetores = setoresRaw
-        .map((e) => e['setor'] as String?)
-        .whereType<String>()
-        .toSet()
-        .toList();
+    // Busca setores distintos (já paginado — ver listarSetoresDistintos).
+    final todosSetores = await listarSetoresDistintos();
 
     // Query vazia: mostra "Todos" + todos os setores (sem busca de colaborador)
     if (q.isEmpty) {
