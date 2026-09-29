@@ -91,7 +91,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '🎂 Aniversariantes',
+                              'Aniversariantes',
                               style: AppTextStyles.tituloBranco,
                             ),
                             Text(_mesAtual(), style: AppTextStyles.corpoBranco),
@@ -223,7 +223,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     ),
                     child: Row(
                       children: [
-                        const Text('🎂', style: TextStyle(fontSize: 40)),
+                        const Icon(Icons.cake_outlined, color: Colors.white, size: 40),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
@@ -236,7 +236,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                                 ),
                               ),
                               Text(
-                                '${_api.colaboradorAtual?.primeiroNome ?? 'Polevalente'}! 🎉',
+                                '${_api.colaboradorAtual?.primeiroNome ?? 'Polevalente'}!',
                                 style: AppTextStyles.tituloGrande.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
@@ -244,7 +244,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Que este novo ciclo seja incrível! ✨',
+                                'Que este novo ciclo seja incrível!',
                                 style: AppTextStyles.corpoMenor.copyWith(
                                   color: AppColors.brancoOp80,
                                   fontStyle: FontStyle.italic,
@@ -264,7 +264,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                    child: Text('Hoje 🎉', style: AppTextStyles.labelSecao),
+                    child: Text('Hoje', style: AppTextStyles.labelSecao),
                   ),
                 ),
                 SliverList(
@@ -367,7 +367,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                         border: Border.all(color: AppColors.magentaOp18),
                       ),
                       child: Text(
-                        'As mensagens dos seus colegas aparecerão aqui ao longo do dia. 🎂',
+                        'As mensagens dos seus colegas aparecerão aqui ao longo do dia.',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.corpoMenor.copyWith(
                           color: AppColors.magenta,
@@ -431,7 +431,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
-                  child: Text('🧡', style: TextStyle(fontSize: 18)),
+                  child: Icon(Icons.favorite, color: AppColors.laranja, size: 18),
                 ),
               ),
               const SizedBox(width: 10),
@@ -532,7 +532,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('✨ Sua resposta',
+                        Text('Sua resposta',
                             style: AppTextStyles.corpoMinimo.copyWith(
                                 fontWeight: FontWeight.w700, color: _douradoResposta)),
                         const SizedBox(height: 4),
@@ -608,7 +608,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 shape: BoxShape.circle,
               ),
               child: const Center(
-                child: Text('🎁', style: TextStyle(fontSize: 36)),
+                child: Icon(Icons.card_giftcard_outlined, color: AppColors.magenta, size: 36),
               ),
             ),
             const SizedBox(height: 20),
@@ -616,7 +616,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             const SizedBox(height: 8),
             Text(
               dataFormatada.isNotEmpty
-                  ? 'Seu aniversário é dia $dataFormatada.\nQuando chegar, você verá as mensagens aqui! 🎂'
+                  ? 'Seu aniversário é dia $dataFormatada.\nQuando chegar, você verá as mensagens aqui!'
                   : 'No seu aniversário, as mensagens dos seus colegas aparecerão aqui.',
               textAlign: TextAlign.center,
               style: AppTextStyles.corpoCinza.copyWith(height: 1.5),
@@ -675,7 +675,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                     ),
                   const SizedBox(height: 4),
                   Text(
-                    'Hoje é dia de celebrar! 🎊',
+                    'Hoje é dia de celebrar!',
                     style: AppTextStyles.corpoMenor.copyWith(
                       color: AppColors.laranja,
                       fontStyle: FontStyle.italic,
@@ -710,7 +710,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  jaParabenisei ? '✓ Enviado' : '🎉 Parabenizar',
+                  jaParabenisei ? 'Enviado' : 'Parabenizar',
                   style: AppTextStyles.corpoMenor.copyWith(
                     fontWeight: FontWeight.w700,
                     color: jaParabenisei ? AppColors.cinzaTexto : Colors.white,
@@ -827,7 +827,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   void _abrirModalParabens(AniversarianteModel a) {
     final controller = TextEditingController(
       text:
-          'Feliz aniversário, ${a.colaborador.primeiroNome}! 🎉 Que seu dia seja incrível!',
+          'Feliz aniversário, ${a.colaborador.primeiroNome}! Que seu dia seja incrível!',
     );
 
     showModalBottomSheet(
@@ -848,7 +848,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Parabéns enviado para ${a.colaborador.primeiroNome}! 🎊',
+                  'Parabéns enviado para ${a.colaborador.primeiroNome}!',
                   style: AppTextStyles.corpoNormal.copyWith(
                     color: Colors.white,
                   ),
@@ -906,7 +906,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
             });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Resposta enviada para $remetenteNome! 🎉',
+                content: Text('Resposta enviada para $remetenteNome!',
                     style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
                 backgroundColor: _douradoResposta,
                 behavior: SnackBarBehavior.floating,
@@ -1002,7 +1002,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text('🎂', style: TextStyle(fontSize: 48)),
+        const Icon(Icons.cake_outlined, color: Color(0xFFCBD5E1), size: 48),
         const SizedBox(height: 12),
         Text('Nenhum aniversariante este mês', style: AppTextStyles.corpoCinza),
       ],
@@ -1031,10 +1031,10 @@ class _ModalParabensState extends State<_ModalParabens> {
   bool _enviando = false;
 
   static const _sugestoes = [
-    '🎂 Feliz aniversário! Muitas felicidades!',
-    '🥳 Parabéns! Que venham muitas conquistas!',
-    '🎊 Feliz aniversário! Que seu dia seja especial!',
-    '✨ Mais um ano de vida e conquistas. Parabéns!',
+    'Feliz aniversário! Muitas felicidades!',
+    'Parabéns! Que venham muitas conquistas!',
+    'Feliz aniversário! Que seu dia seja especial!',
+    'Mais um ano de vida e conquistas. Parabéns!',
   ];
 
   @override
@@ -1178,7 +1178,7 @@ class _ModalParabensState extends State<_ModalParabens> {
                         ),
                       )
                     : Text(
-                        '🎉 Enviar parabéns',
+                        'Enviar parabéns',
                         style: AppTextStyles.botaoPrimario,
                       ),
               ),
@@ -1294,7 +1294,7 @@ class _ModalRespostaState extends State<_ModalResposta> {
                         height: 20,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                       )
-                    : Text('✨ Enviar resposta', style: AppTextStyles.botaoPrimario),
+                    : Text('Enviar resposta', style: AppTextStyles.botaoPrimario),
               ),
             ),
           ],

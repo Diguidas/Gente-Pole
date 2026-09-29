@@ -195,7 +195,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('📊 Minha Avaliação',
+                          Text('Minha Avaliação',
                               style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                           Text('Sua autoavaliação de desempenho',
                               style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),

@@ -74,7 +74,11 @@ class _AcessoRapidoScreenState extends State<AcessoRapidoScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Acesso Rápido', style: AppTextStyles.tituloGrande),
+        backgroundColor: AppColors.laranja,
+        foregroundColor: Colors.white,
+        title: Text('Acesso Rápido',
+            style: GoogleFonts.poppins(
+                fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
         centerTitle: false,
       ),
       body: _carregando

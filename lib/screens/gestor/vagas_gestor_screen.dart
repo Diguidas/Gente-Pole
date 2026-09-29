@@ -7,7 +7,11 @@ import 'solicitar_vaga_screen.dart';
 import 'kanban_gestor_screen.dart';
 
 class VagasGestorScreen extends StatefulWidget {
-  const VagasGestorScreen({super.key});
+  /// Vaga id vindo de uma notificação push (deep link) — se presente,
+  /// assim que a lista carregar já abre o kanban dessa vaga direto.
+  final int? vagaIdParaAbrir;
+
+  const VagasGestorScreen({super.key, this.vagaIdParaAbrir});
 
   @override
   State<VagasGestorScreen> createState() => _VagasGestorScreenState();
@@ -17,6 +21,7 @@ class _VagasGestorScreenState extends State<VagasGestorScreen> {
   final _api = ApiService();
   late Future<List<VagaModel>> _futureVagas;
   Map<int, int> _aprovadosPorVaga = {};
+  bool _jaAbriuDeepLink = false;
 
   @override
   void initState() {
@@ -37,6 +42,30 @@ class _VagasGestorScreenState extends State<VagasGestorScreen> {
           .toList();
       final contagem = await _api.contarAprovadosPorVaga(aprovadasIds);
       if (mounted) setState(() => _aprovadosPorVaga = contagem);
+
+      final idParaAbrir = widget.vagaIdParaAbrir;
+      if (idParaAbrir != null && !_jaAbriuDeepLink) {
+        VagaModel? vaga;
+        try {
+          vaga = vagas.firstWhere((v) => v.id == idParaAbrir);
+        } catch (_) {
+          vaga = null;
+        }
+        final podeVerCandidatos = vaga != null &&
+            vaga.statusRequisicao == 'APROVADA' &&
+            (vaga.status == 'ABERTA' || vaga.status == 'ENCERRADA');
+        if (podeVerCandidatos) {
+          _jaAbriuDeepLink = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => KanbanGestorScreen(vaga: vaga!)),
+              );
+            }
+          });
+        }
+      }
     });
   }
 

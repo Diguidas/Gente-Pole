@@ -276,7 +276,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('📈 Avaliar Equipe',
+                          Text('Avaliar Equipe',
                               style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                           Text('Avaliação 9-box do seu time',
                               style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),

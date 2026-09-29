@@ -76,7 +76,7 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
     if (!mounted) return;
     setState(() => _salvandoVol = false);
     if (ok) {
-      _snack('Inscrição enviada! Em breve entraremos em contato. 💚');
+      _snack('Inscrição enviada! Em breve entraremos em contato.');
       _whatsappCtrl.clear();
       setState(() => _tamanhoSelecionado = null);
     } else {
@@ -94,7 +94,7 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
     if (!mounted) return;
     setState(() => _salvandoInst = false);
     if (ok) {
-      _snack('Instituição indicada com sucesso! 🙏');
+      _snack('Instituição indicada com sucesso!');
       _nomeInstCtrl.clear();
       _telefoneInstCtrl.clear();
     } else {

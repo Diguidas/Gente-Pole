@@ -23,6 +23,8 @@ import 'gestor/gestor_screen.dart';
 import 'gamificacao/gamificacao_screen.dart';
 import 'integracao/integracao_screen.dart';
 import 'documentos/documentos_institucionais_screen.dart';
+import 'manual_uso/manual_uso_screen.dart';
+import 'contracheque/contracheque_screen.dart';
 import 'acesso_rapido/acesso_rapido_screen.dart';
 import 'ti/chamados_ti_screen.dart';
 import 'veiculos/meus_veiculos_screen.dart';
@@ -37,13 +39,13 @@ class ServicosScreen extends StatefulWidget {
 class _ServicosScreenState extends State<ServicosScreen> {
   final _api = ApiService();
   bool _ehGestor = false;
+  bool _liderAutorizado = false;
+  bool _ehRequisitanteVaga = false;
   bool _ehIntegracao = false;
+  bool _polecoinAtivo = true;
+  bool _contrachequeAtivo = true;
   bool _massoterapiaDisponivel = false;
   bool _nutricaoDisponivel = false;
-  bool _pdiDisponivel = false;
-  bool _avaliacaoDisponivel = false;
-  bool _avaliarColegasDisponivel = false;
-  bool _periodoExperienciaDisponivel = false;
   bool _loadingPerfis = true;
 
   @override
@@ -54,39 +56,26 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
   Future<void> _verificarPerfis() async {
     final filial = _api.colaboradorAtual?.filialEfetiva;
-    final col = _api.colaboradorAtual;
     final resultados = await Future.wait([
       _api.verificarSeEhGestor(),
+      _api.colaboradorEhLiderAutorizado(),
       _api.verificarSeEhIntegracao(),
+      _api.gamificacaoAtiva(),
       _api.filialTemMassoterapiaConfigurada(filial),
       _api.filialTemNutricaoConfigurada(filial),
-      col == null
-          ? Future.value(false)
-          : _api.existePdiAtivoPara(col.id),
-      (col == null || col.setor == null || col.setor!.isEmpty)
-          ? Future.value(false)
-          : _api.existeAutoavaliacaoDesempenhoPendente(
-              colaboradorId: col.id,
-              setor: col.setor!,
-              funcao: col.cargo ?? '',
-            ),
-      col == null
-          ? Future.value(false)
-          : _api.existeAvaliacaoColegaPendente(col.id),
-      col == null
-          ? Future.value(false)
-          : _api.existePeriodoExperienciaPendente(col.id),
+      _api.folhaContrachequeAtiva(),
+      _api.verificarSeEhRequisitanteDeVaga(),
     ]);
     if (mounted) {
       setState(() {
         _ehGestor = resultados[0];
-        _ehIntegracao = resultados[1];
-        _massoterapiaDisponivel = resultados[2];
-        _nutricaoDisponivel = resultados[3];
-        _pdiDisponivel = resultados[4];
-        _avaliacaoDisponivel = resultados[5];
-        _avaliarColegasDisponivel = resultados[6];
-        _periodoExperienciaDisponivel = resultados[7];
+        _liderAutorizado = resultados[1];
+        _ehIntegracao = resultados[2];
+        _polecoinAtivo = resultados[3];
+        _massoterapiaDisponivel = resultados[4];
+        _nutricaoDisponivel = resultados[5];
+        _contrachequeAtivo = resultados[6];
+        _ehRequisitanteVaga = resultados[7];
         _loadingPerfis = false;
       });
     }
@@ -183,7 +172,15 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           if (_loadingPerfis) const SizedBox.shrink(),
 
                           // ── Gestão de Equipe ──────────────────────────────
-                          if (!_loadingPerfis && _ehGestor) ...[
+                          // Aparece pra quem lidera alguém de verdade
+                          // (colaborador_hierarquia) — ter o cadastro
+                          // eh_gestor/nível de gestão sozinho não basta mais —
+                          // ou pra quem é só requisitante de vaga, mas nesse
+                          // caso a tela abre restrita só à aba Vagas (mesma
+                          // regra do painel web: requisitante nunca ganha as
+                          // demais telas de gestor).
+                          if (!_loadingPerfis &&
+                              ((_ehGestor && _liderAutorizado) || _ehRequisitanteVaga)) ...[
                             _sectionLabel(
                               'Gestão de Equipe',
                               AppColors.laranja,
@@ -200,7 +197,9 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => const GestorScreen(),
+                                  builder: (_) => GestorScreen(
+                                    apenasVagas: !(_ehGestor && _liderAutorizado),
+                                  ),
                                 ),
                               ),
                             ),
@@ -271,21 +270,23 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           ),
                           const SizedBox(height: 14),
 
-                          _botaoServico(
-                            context,
-                            icone: Icons.emoji_events_outlined,
-                            titulo: 'Polecoin',
-                            subtitulo: 'Seus pontos e o ranking da sua filial',
-                            cor: AppColors.magenta,
-                            emBreve: false,
-                            onTap: () => Navigator.push(
+                          if (!_loadingPerfis && _polecoinAtivo) ...[
+                            _botaoServico(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const GamificacaoScreen(),
+                              icone: Icons.emoji_events_outlined,
+                              titulo: 'Polecoin',
+                              subtitulo: 'Seus pontos e o ranking da sua filial',
+                              cor: AppColors.magenta,
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const GamificacaoScreen(),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
+                          ],
 
                           // Mude para true para exibir nas demonstrações
                           if (false) ...[
@@ -508,90 +509,79 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           const SizedBox(height: 28),
 
                           // ── Meu Desenvolvimento ───────────────────────────
-                          if (!_loadingPerfis &&
-                              (_pdiDisponivel ||
-                                  _avaliacaoDisponivel ||
-                                  _avaliarColegasDisponivel ||
-                                  _periodoExperienciaDisponivel)) ...[
-                            _sectionLabel(
-                              'Meu Desenvolvimento',
-                              const Color(0xFF6366F1),
+                          // Os 4 itens aparecem sempre — cada tela de destino
+                          // já trata sozinha o caso de não ter nada
+                          // pendente/aberto no momento (mensagem própria).
+                          _sectionLabel(
+                            'Meu Desenvolvimento',
+                            const Color(0xFF6366F1),
+                          ),
+                          const SizedBox(height: 10),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.flag_outlined,
+                            titulo: 'Meu PDI',
+                            subtitulo:
+                                'Acompanhe seu plano de desenvolvimento',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const PdiScreen()),
                             ),
-                            const SizedBox(height: 10),
+                          ),
+                          const SizedBox(height: 14),
 
-                            if (_pdiDisponivel) ...[
-                              _botaoServico(
-                                context,
-                                icone: Icons.flag_outlined,
-                                titulo: 'Meu PDI',
-                                subtitulo:
-                                    'Acompanhe seu plano de desenvolvimento',
-                                cor: const Color(0xFF6366F1),
-                                emBreve: false,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const PdiScreen()),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                            ],
+                          _botaoServico(
+                            context,
+                            icone: Icons.assessment_outlined,
+                            titulo: 'Minha Avaliação',
+                            subtitulo:
+                                'Responda sua autoavaliação de desempenho',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const AvaliacaoScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
 
-                            if (_avaliacaoDisponivel) ...[
-                              _botaoServico(
-                                context,
-                                icone: Icons.assessment_outlined,
-                                titulo: 'Minha Avaliação',
-                                subtitulo:
-                                    'Responda sua autoavaliação de desempenho',
-                                cor: const Color(0xFF6366F1),
-                                emBreve: false,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const AvaliacaoScreen()),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                            ],
+                          _botaoServico(
+                            context,
+                            icone: Icons.groups_outlined,
+                            titulo: 'Avaliar Colegas',
+                            subtitulo: 'Avaliações de ciclo 360 pendentes',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const AvaliarColegasScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
 
-                            if (_avaliarColegasDisponivel) ...[
-                              _botaoServico(
-                                context,
-                                icone: Icons.groups_outlined,
-                                titulo: 'Avaliar Colegas',
-                                subtitulo: 'Avaliações de ciclo 360 pendentes',
-                                cor: const Color(0xFF6366F1),
-                                emBreve: false,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          const AvaliarColegasScreen()),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                            ],
-
-                            if (_periodoExperienciaDisponivel)
-                              _botaoServico(
-                                context,
-                                icone: Icons.explore_outlined,
-                                titulo: 'Período de Experiência',
-                                subtitulo:
-                                    'Autoavaliação do seu período de experiência',
-                                cor: const Color(0xFF6366F1),
-                                emBreve: false,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          const PeriodoExperienciaScreen()),
-                                ),
-                              ),
-
-                            const SizedBox(height: 28),
-                          ],
+                          _botaoServico(
+                            context,
+                            icone: Icons.explore_outlined,
+                            titulo: 'Período de Experiência',
+                            subtitulo:
+                                'Autoavaliação do seu período de experiência',
+                            cor: const Color(0xFF6366F1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const PeriodoExperienciaScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 28),
 
                           // ── Solicitações ──────────────────────────────────
                           _sectionLabel('Solicitações', const Color(0xFF7C3AED)),
@@ -631,6 +621,28 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
                           const SizedBox(height: 28),
 
+                          if (!_loadingPerfis && _contrachequeAtivo) ...[
+                            // ── Financeiro ───────────────────────────────
+                            _sectionLabel('Financeiro', const Color(0xFF0F766E)),
+                            const SizedBox(height: 10),
+
+                            _botaoServico(
+                              context,
+                              icone: Icons.receipt_long_outlined,
+                              titulo: 'Contracheque',
+                              subtitulo: 'Consulte seus proventos e descontos',
+                              cor: const Color(0xFF0F766E),
+                              emBreve: false,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const ContrachequeScreen(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                          ],
+
                           // ── Institucional ─────────────────────────────────
                           _sectionLabel('Institucional', AppColors.laranja),
                           const SizedBox(height: 10),
@@ -646,6 +658,22 @@ class _ServicosScreenState extends State<ServicosScreen> {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const DocumentosInstitucionaisScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.video_library_outlined,
+                            titulo: 'Manual de Uso',
+                            subtitulo: 'Vídeos e PDFs de como usar o app',
+                            cor: AppColors.laranja,
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ManualUsoScreen(),
                               ),
                             ),
                           ),
@@ -707,7 +735,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  '$titulo estará disponível em breve! 🚀',
+                  '$titulo estará disponível em breve!',
                   style: AppTextStyles.corpoNormal.copyWith(
                     color: Colors.white,
                   ),

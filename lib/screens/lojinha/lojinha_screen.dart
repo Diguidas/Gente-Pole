@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -212,7 +213,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
             const SizedBox(height: 8),
             Text(
               ok
-                  ? 'Pedido nº ${numeroPedido ?? ""} enviado!\nRetirar na lojinha. 🎉'
+                  ? 'Pedido nº ${numeroPedido ?? ""} enviado!\nRetirar na lojinha.'
                   : retorno,
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
@@ -299,7 +300,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '🛒 Lojinha',
+                              'Lojinha',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 22,
@@ -809,12 +810,22 @@ class _CardProduto extends StatelessWidget {
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(20),
                         ),
-                        child: Image.network(
-                          produto.fotoUrl!,
+                        child: CachedNetworkImage(
+                          imageUrl: produto.fotoUrl!,
                           fit: BoxFit.cover,
-                          cacheWidth: 300,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => Center(
+                          memCacheWidth: 300,
+                          fadeInDuration: const Duration(milliseconds: 150),
+                          placeholder: (_, __) => Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.laranja,
+                              ),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => Center(
                             child: Icon(
                               Icons.inventory_2_outlined,
                               size: 44,
@@ -1119,14 +1130,19 @@ class _CarrinhoSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         child: item.produto.fotoUrl != null &&
                                 item.produto.fotoUrl!.isNotEmpty
-                            ? Image.network(
-                                item.produto.fotoUrl!,
+                            ? CachedNetworkImage(
+                                imageUrl: item.produto.fotoUrl!,
                                 width: 44,
                                 height: 44,
                                 fit: BoxFit.cover,
-                                cacheWidth: 90,
-                                gaplessPlayback: true,
-                                errorBuilder: (_, __, ___) => Container(
+                                memCacheWidth: 90,
+                                fadeInDuration: const Duration(milliseconds: 150),
+                                placeholder: (_, __) => Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: AppColors.laranja.withOpacity(0.1),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
                                   width: 44,
                                   height: 44,
                                   color: AppColors.laranja.withOpacity(0.1),

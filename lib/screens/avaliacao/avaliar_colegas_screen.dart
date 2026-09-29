@@ -221,7 +221,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('🤝 Avaliar Colegas',
+                          Text('Avaliar Colegas',
                               style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                           Text('Avaliações de ciclo 360 pendentes',
                               style: AppTextStyles.corpoBranco.copyWith(color: AppColors.brancoOp80)),

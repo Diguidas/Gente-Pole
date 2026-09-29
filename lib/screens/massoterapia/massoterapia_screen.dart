@@ -518,7 +518,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
               _buildSemMassoterapiaHoje()
             else ...[
               // Seletor de data
-              _buildSectionLabel('📅 Escolha o dia'),
+              _buildSectionLabel('Escolha o dia'),
               const SizedBox(height: 10),
               _buildSeletorDatas(),
               const SizedBox(height: 24),
@@ -532,7 +532,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                   _meuAgendamento!.status == 'CANCELADO') ...[
                 if (_statusCiclo != null) _buildContadorCiclo(),
                 if (_statusCiclo != null) const SizedBox(height: 16),
-                _buildSectionLabel('🕐 Escolha o horário'),
+                _buildSectionLabel('Escolha o horário'),
                 const SizedBox(height: 10),
                 _buildGradeHorarios(),
                 const SizedBox(height: 24),
@@ -541,7 +541,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
               ],
 
               // Lista de quem agendou no dia
-              _buildSectionLabel('👥 Quem vai hoje'),
+              _buildSectionLabel('Quem vai hoje'),
               const SizedBox(height: 10),
               _buildListaAgendados(),
             ],
@@ -1211,7 +1211,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                               border: Border.all(color: Colors.green.shade200),
                             ),
                             child: Text(
-                              '✓ atendido',
+                              'atendido',
                               style: GoogleFonts.poppins(
                                 fontSize: 10,
                                 color: Colors.green.shade700,
@@ -1233,7 +1233,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                               border: Border.all(color: Colors.red.shade200),
                             ),
                             child: Text(
-                              '✗ faltou',
+                              'faltou',
                               style: GoogleFonts.poppins(
                                 fontSize: 10,
                                 color: Colors.red.shade700,

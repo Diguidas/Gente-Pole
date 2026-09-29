@@ -137,7 +137,7 @@ class _AdminNutricionistaScreenState
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Presença confirmada e assinatura salva! ✅'),
+          content: Text('Presença confirmada e assinatura salva!'),
           backgroundColor: AppColors.sucesso,
         ));
       }
@@ -334,8 +334,8 @@ class _CardAgendamento extends StatelessWidget {
   Widget build(BuildContext context) {
     final ag = agendamento;
     final (statusColor, statusLabel) = switch (ag.status) {
-      'VEIO' => (AppColors.sucesso, 'Presente ✅'),
-      'NAO_VEIO' => (AppColors.erro, 'Faltou ❌'),
+      'VEIO' => (AppColors.sucesso, 'Presente'),
+      'NAO_VEIO' => (AppColors.erro, 'Faltou'),
       'CANCELADO' => (AppColors.cinzaTexto, 'Cancelado'),
       _ => (const Color(0xFF06B6D4), 'Pendente'),
     };

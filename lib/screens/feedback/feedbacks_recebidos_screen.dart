@@ -64,7 +64,7 @@ class _FeedbacksRecebidosScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '📥 Feedbacks Recebidos',
+                            'Feedbacks Recebidos',
                             style: AppTextStyles.tituloGrande
                                 .copyWith(color: Colors.white),
                           ),

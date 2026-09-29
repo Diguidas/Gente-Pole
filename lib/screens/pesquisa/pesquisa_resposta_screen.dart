@@ -150,7 +150,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Respostas enviadas com sucesso! 🎉',
+            'Respostas enviadas com sucesso!',
             style: AppTextStyles.corpoNormal.copyWith(color: Colors.white),
           ),
           backgroundColor: AppColors.magenta,
@@ -219,7 +219,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
                             ),
                             if (widget.anonima)
                               Text(
-                                '🛡️ Pesquisa anônima',
+                                'Pesquisa anônima',
                                 style: AppTextStyles.corpoBranco
                                     .copyWith(color: AppColors.brancoOp80),
                               ),
@@ -776,7 +776,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
               ),
               child: Center(
                 child: Text(
-                  '✓  Sim',
+                  'Sim',
                   style: AppTextStyles.corpoNormal.copyWith(
                     color: atual == true ? Colors.white : Colors.green[700],
                     fontWeight: FontWeight.w600,
@@ -805,7 +805,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
               ),
               child: Center(
                 child: Text(
-                  '✕  Não',
+                  'Não',
                   style: AppTextStyles.corpoNormal.copyWith(
                     color: atual == false ? Colors.white : Colors.red[700],
                     fontWeight: FontWeight.w600,

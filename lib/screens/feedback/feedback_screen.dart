@@ -62,7 +62,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '💬 Feedback',
+                            'Feedback',
                             style: AppTextStyles.tituloGrande
                                 .copyWith(color: Colors.white),
                           ),

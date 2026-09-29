@@ -379,8 +379,8 @@ class _SessaoCard extends StatelessWidget {
       };
 
   String get _statusLabel => switch (sessao.status) {
-        'VEIO' => 'Presente ✅',
-        'NAO_VEIO' => 'Faltou ❌',
+        'VEIO' => 'Presente',
+        'NAO_VEIO' => 'Faltou',
         _ => 'Pendente',
       };
 

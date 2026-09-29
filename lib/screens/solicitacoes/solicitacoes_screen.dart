@@ -26,6 +26,17 @@ const Map<String, IconData> _iconeTipoSolicitacao = {
   'rota': Icons.alt_route_outlined,
 };
 
+// Tipos que aparecem no grid de "novo pedido" — 'rota' foi ocultado a
+// pedido, mas continua em _labelTipoSolicitacao/_iconeTipoSolicitacao pra
+// exibir corretamente quem já tem pedido antigo no histórico.
+const List<String> _tiposAbriveis = [
+  'adesao_beneficio',
+  'comunicado_interno',
+  'incentivo_educacional',
+  'cracha',
+  'treinamento',
+];
+
 /// Mostra o payload de uma solicitação de forma legível (usado tanto na
 /// tela do colaborador quanto na do gestor).
 class PayloadSolicitacaoView extends StatelessWidget {
@@ -315,7 +326,7 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('📋 Solicitações',
+                          Text('Solicitações',
                               style: AppTextStyles.tituloGrande
                                   .copyWith(color: Colors.white)),
                           Text('Abra um pedido e acompanhe o andamento',
@@ -393,9 +404,9 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
-      itemCount: _labelTipoSolicitacao.length,
+      itemCount: _tiposAbriveis.length,
       itemBuilder: (_, i) {
-        final tipo = _labelTipoSolicitacao.keys.elementAt(i);
+        final tipo = _tiposAbriveis[i];
         final label = _labelTipoSolicitacao[tipo]!;
         final icone = _iconeTipoSolicitacao[tipo]!;
         return GestureDetector(

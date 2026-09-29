@@ -375,7 +375,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('🔒 Alterar senha', style: AppTextStyles.tituloMedio),
+                Text('Alterar senha', style: AppTextStyles.tituloMedio),
                 const SizedBox(height: 20),
                 TextField(
                   controller: senhaAtualCtrl,

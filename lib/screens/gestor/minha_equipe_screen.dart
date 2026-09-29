@@ -249,9 +249,9 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   }
 
   String _textoAniversario(int dias) {
-    if (dias == 0) return '🎂 Aniversário hoje!';
-    if (dias == 1) return '🎂 Aniversário amanhã';
-    return '🎂 Faltam $dias dias p/ aniversário';
+    if (dias == 0) return 'Aniversário hoje!';
+    if (dias == 1) return 'Aniversário amanhã';
+    return 'Faltam $dias dias p/ aniversário';
   }
 
   Widget _cardColaborador(ColaboradorModel c) {

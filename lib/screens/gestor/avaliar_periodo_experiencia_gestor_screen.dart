@@ -297,7 +297,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('🧭 Período de Experiência',
+                          Text('Período de Experiência',
                               style: AppTextStyles.tituloGrande
                                   .copyWith(color: Colors.white)),
                           Text('Avalie a equipe em período de experiência',

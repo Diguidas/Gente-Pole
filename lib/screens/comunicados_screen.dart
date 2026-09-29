@@ -51,7 +51,7 @@ class _ComunicadosScreenState extends State<ComunicadosScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '📢 Comunicados',
+                              'Comunicados',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 22,

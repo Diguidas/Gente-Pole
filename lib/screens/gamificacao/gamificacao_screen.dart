@@ -224,8 +224,8 @@ class _CardSaldo extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               faltam > 0
-                  ? 'Faltam $faltam $nomeMoeda para o RH te chamar pro $recompensa 🎉'
-                  : 'Você bateu a meta! O RH vai entrar em contato sobre o $recompensa 🎉',
+                  ? 'Faltam $faltam $nomeMoeda para o RH te chamar pro $recompensa'
+                  : 'Você bateu a meta! O RH vai entrar em contato sobre o $recompensa',
               style: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
             ),
           ],
@@ -283,10 +283,10 @@ class _RankingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final medalha = switch (posicao) {
-      1 => '🥇',
-      2 => '🥈',
-      3 => '🥉',
+    final corMedalha = switch (posicao) {
+      1 => const Color(0xFFD4AF37),
+      2 => const Color(0xFF9AA5B1),
+      3 => const Color(0xFFB08D57),
       _ => null,
     };
     return Container(
@@ -300,8 +300,8 @@ class _RankingTile extends StatelessWidget {
       child: Row(children: [
         SizedBox(
           width: 28,
-          child: medalha != null
-              ? Text(medalha, style: const TextStyle(fontSize: 18))
+          child: corMedalha != null
+              ? Icon(Icons.emoji_events_rounded, size: 20, color: corMedalha)
               : Text('$posicao',
                   style: GoogleFonts.poppins(
                       fontSize: 13,

@@ -5,22 +5,25 @@ import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 import '../solicitacoes/solicitacoes_screen.dart' show PayloadSolicitacaoView;
 
+// Só pra exibir o histórico corretamente — não controla o que pode ser
+// criado (isso é _labelTipoSolicitacaoGestor, o grid de "novo pedido").
 const Map<String, String> _labelTipoSolicitacaoAprovacao = {
   'incentivo_educacional': 'Incentivo Educacional',
   'rota': 'Rota',
+  'moveis_administrativos': 'Móveis Administrativos',
+  'uber': 'Uber',
 };
 
+// 'moveis_administrativos' e 'uber' foram ocultados do grid de "novo
+// pedido" a pedido — os dialogs continuam existindo, só não aparecem
+// mais como opção de criar.
 const Map<String, String> _labelTipoSolicitacaoGestor = {
-  'moveis_administrativos': 'Móveis Administrativos',
   'swile': 'Swile',
-  'uber': 'Uber',
   'adiantamento_13': 'Adiantamento de 13º',
 };
 
 const Map<String, IconData> _iconeTipoSolicitacaoGestor = {
-  'moveis_administrativos': Icons.chair_outlined,
   'swile': Icons.card_giftcard_outlined,
-  'uber': Icons.local_taxi_outlined,
   'adiantamento_13': Icons.payments_outlined,
 };
 
@@ -561,7 +564,10 @@ class _DialogSolicitacaoGestorState extends State<_DialogSolicitacaoGestor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_labelTipoSolicitacaoGestor[widget.tipo] ?? widget.tipo,
+                Text(
+                    _labelTipoSolicitacaoAprovacao[widget.tipo] ??
+                        _labelTipoSolicitacaoGestor[widget.tipo] ??
+                        widget.tipo,
                     style: GoogleFonts.poppins(
                         fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
                 const SizedBox(height: 16),
@@ -695,7 +701,7 @@ class _RegrasPrazoSwile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Text('📌', style: TextStyle(fontSize: 14)),
+            const Icon(Icons.push_pin_outlined, size: 14, color: Color(0xFFE11D48)),
             const SizedBox(width: 6),
             Text('Regras de Prazos de Envio',
                 style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark)),

@@ -130,7 +130,7 @@ class _PdiScreenState extends State<PdiScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('🎯 Meu PDI',
+                          Text('Meu PDI',
                               style: AppTextStyles.tituloGrande
                                   .copyWith(color: Colors.white)),
                           Text('Seu plano de desenvolvimento individual',

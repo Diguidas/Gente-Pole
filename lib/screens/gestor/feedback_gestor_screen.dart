@@ -107,10 +107,10 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
     await _carregar();
   }
 
-  String _nomeItem(int slot) {
-    final item = _itensEmpresa.where((i) => i['slot'] == slot).toList();
-    if (item.isEmpty) return 'Item $slot';
-    return item.first['nome'] as String? ?? 'Item $slot';
+  String _nomeItem(int itemId) {
+    final item = _itensEmpresa.where((i) => i['id'] == itemId).toList();
+    if (item.isEmpty) return 'Item $itemId';
+    return item.first['nome'] as String? ?? 'Item $itemId';
   }
 
   @override
@@ -143,7 +143,7 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('📝 Feedback',
+                            Text('Feedback',
                                 style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                             Text('Avalie sua equipe e responda pedidos',
                                 style: AppTextStyles.corpoBranco
@@ -273,8 +273,7 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
   Widget _cardDado(Map<String, dynamic> f) {
     final colab = _colaboradoresPorId[f['colaborador_id'] as int];
     final presencial = f['presencial'] as bool?;
-    final item1 = f['item1_nota'] as int?;
-    final item2 = f['item2_nota'] as int?;
+    final itensNotas = (f['itens_notas'] as Map?)?.cast<String, dynamic>() ?? {};
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -298,15 +297,19 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
           ),
           const SizedBox(height: 6),
           Text(f['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
-          if (item1 != null || item2 != null) ...[
+          if (itensNotas.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 6,
               children: [
-                if (item1 != null)
-                  _Selo(texto: '${_nomeItem(1)}: ${_labelsEstrela[item1 - 1]}★', cor: AppColors.magenta),
-                if (item2 != null)
-                  _Selo(texto: '${_nomeItem(2)}: ${_labelsEstrela[item2 - 1]}★', cor: AppColors.magenta),
+                for (final entry in itensNotas.entries)
+                  if ((entry.value as num?) != null)
+                    _Selo(
+                      texto:
+                          '${_nomeItem(int.parse(entry.key))}: ${_labelsEstrela[(entry.value as num).toInt() - 1]}★',
+                      cor: AppColors.magenta,
+                    ),
               ],
             ),
           ],

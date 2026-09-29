@@ -16,7 +16,13 @@ class _HumorWidgetState extends State<HumorWidget> {
   bool _loading = true;
   bool _erro = false;
 
-  static const _emojis = ['😢', '😟', '😐', '😊', '😄'];
+  static const _humorIcones = [
+    Icons.sentiment_very_dissatisfied_rounded,
+    Icons.sentiment_dissatisfied_rounded,
+    Icons.sentiment_neutral_rounded,
+    Icons.sentiment_satisfied_rounded,
+    Icons.sentiment_very_satisfied_rounded,
+  ];
   static const _labels = ['Muito ruim', 'Ruim', 'Neutro', 'Bom', 'Ótimo'];
 
   @override
@@ -41,7 +47,7 @@ class _HumorWidgetState extends State<HumorWidget> {
         });
       }
     } catch (e, stack) {
-      debugPrint('❌ HumorWidget erro: $e\n$stack');
+      debugPrint('HumorWidget erro: $e\n$stack');
       if (mounted) setState(() { _loading = false; _erro = true; });
     }
   }
@@ -82,7 +88,7 @@ class _HumorWidgetState extends State<HumorWidget> {
               onTap: () => _abrirBottomSheet(i + 1),
               child: Column(
                 children: [
-                  Text(_emojis[i], style: const TextStyle(fontSize: 28)),
+                  Icon(_humorIcones[i], size: 28, color: AppColors.magenta),
                   const SizedBox(height: 3),
                   Text(
                     _labels[i],
@@ -128,10 +134,11 @@ class _HumorWidgetState extends State<HumorWidget> {
                 ),
               ),
               const SizedBox(height: 20),
-              Text(
-                '${_emojis[nivel - 1]}  ${_labels[nivel - 1]}',
-                style: AppTextStyles.tituloMedio,
-              ),
+              Row(children: [
+                Icon(_humorIcones[nivel - 1], color: AppColors.magenta, size: 22),
+                const SizedBox(width: 8),
+                Text(_labels[nivel - 1], style: AppTextStyles.tituloMedio),
+              ]),
               const SizedBox(height: 8),
               Text('Quer contar o que está sentindo? (opcional)', style: AppTextStyles.corpoCinza),
               const SizedBox(height: 16),
@@ -204,10 +211,16 @@ class _HumorWidgetState extends State<HumorWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text(
-            '${_emojis[nivel - 1]}  $textoPrincipal',
-            style: AppTextStyles.tituloBranco.copyWith(fontSize: 17),
-          ),
+          Row(children: [
+            Icon(_humorIcones[nivel - 1], color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                textoPrincipal,
+                style: AppTextStyles.tituloBranco.copyWith(fontSize: 17),
+              ),
+            ),
+          ]),
           if (textoApoio != null)
             Text(textoApoio, style: AppTextStyles.corpoBrancoOpaco),
         ],

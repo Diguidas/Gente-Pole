@@ -4,7 +4,11 @@ import '../../services/api_service.dart';
 import 'pesquisa_resposta_screen.dart';
 
 class PesquisaListScreen extends StatefulWidget {
-  const PesquisaListScreen({super.key});
+  /// Pesquisa id vindo de uma notificação push (deep link) — se
+  /// presente, assim que a lista carregar já abre essa pesquisa direto.
+  final int? pesquisaIdParaAbrir;
+
+  const PesquisaListScreen({super.key, this.pesquisaIdParaAbrir});
 
   @override
   State<PesquisaListScreen> createState() => _PesquisaListScreenState();
@@ -13,11 +17,39 @@ class PesquisaListScreen extends StatefulWidget {
 class _PesquisaListScreenState extends State<PesquisaListScreen> {
   final _api = ApiService();
   late Future<List<Map<String, dynamic>>> _futurePesquisas;
+  bool _jaAbriuDeepLink = false;
 
   @override
   void initState() {
     super.initState();
     _futurePesquisas = _api.buscarPesquisasDisponiveis();
+    final idParaAbrir = widget.pesquisaIdParaAbrir;
+    if (idParaAbrir != null) {
+      _futurePesquisas.then((lista) {
+        if (!mounted || _jaAbriuDeepLink) return;
+        final p = lista.firstWhere(
+          (x) => x['id'] == idParaAbrir && x['ja_respondeu'] != true,
+          orElse: () => const {},
+        );
+        if (p.isNotEmpty) {
+          _jaAbriuDeepLink = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PesquisaRespostaScreen(
+                  pesquisaId: p['id'] as int,
+                  titulo: p['titulo'] as String? ?? '',
+                  anonima: p['anonima'] as bool? ?? false,
+                  pedirOptIn: p['pedir_opt_in'] as bool? ?? false,
+                ),
+              ),
+            );
+            _recarregar();
+          });
+        }
+      });
+    }
   }
 
   void _recarregar() {
@@ -62,7 +94,7 @@ class _PesquisaListScreenState extends State<PesquisaListScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '📊 Pesquisas',
+                            'Pesquisas',
                             style: AppTextStyles.tituloGrande
                                 .copyWith(color: Colors.white),
                           ),

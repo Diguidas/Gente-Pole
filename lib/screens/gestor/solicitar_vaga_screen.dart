@@ -174,6 +174,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         'gestor' => 'Gestor',
         'supervisor' => 'Supervisor',
         'coordenador' => 'Coordenador',
+        'encarregado' => 'Encarregado',
         'lider' => 'Líder',
         _ => nivel,
       };
@@ -186,6 +187,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       'gestor': [],
       'supervisor': [],
       'coordenador': [],
+      'encarregado': [],
       'lider': [],
     };
     for (final linha in hierarquia) {
@@ -218,6 +220,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     'gestor',
                     'supervisor',
                     'coordenador',
+                    'encarregado',
                     'lider'
                   ]) ...[
                     Text(_rotuloNivel(nivel),
@@ -340,6 +343,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       vagaGestorId: _ehSubstituicao ? null : _liderancaSelecionada['gestor']?['id'] as int?,
       vagaSupervisorId: _ehSubstituicao ? null : _liderancaSelecionada['supervisor']?['id'] as int?,
       vagaCoordenadorId: _ehSubstituicao ? null : _liderancaSelecionada['coordenador']?['id'] as int?,
+      vagaEncarregadoId: _ehSubstituicao ? null : _liderancaSelecionada['encarregado']?['id'] as int?,
       vagaLiderId: _ehSubstituicao ? null : _liderancaSelecionada['lider']?['id'] as int?,
     );
 
@@ -368,7 +372,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
     if (vagaId != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Solicitação enviada! O RH será notificado. ✅',
+        content: Text('Solicitação enviada! O RH será notificado.',
             style: GoogleFonts.poppins()),
         backgroundColor: const Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,

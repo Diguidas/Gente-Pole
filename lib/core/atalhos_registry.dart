@@ -10,6 +10,10 @@ import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
 import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/plantao_psicologico_screen.dart';
+import 'package:gentepole/screens/ti/chamados_ti_screen.dart';
+import 'package:gentepole/screens/contracheque/contracheque_screen.dart';
+import 'package:gentepole/screens/veiculos/meus_veiculos_screen.dart';
+import 'package:gentepole/screens/solicitacoes/solicitacoes_screen.dart';
 import '../services/api_service.dart';
 
 /// Serviços que podem ser marcados como atalho na barra de navegação.
@@ -108,6 +112,34 @@ final List<AtalhoDef> atalhosDisponiveis = [
     icon: Icons.record_voice_over_outlined,
     cor: const Color(0xFF64748B),
     builder: (_) => const OuvidoriaScreen(),
+  ),
+  AtalhoDef(
+    id: 'chamado_ti',
+    label: 'Chamado de TI',
+    icon: Icons.build_outlined,
+    cor: const Color(0xFFE64A19),
+    builder: (_) => const ChamadosTiScreen(),
+  ),
+  AtalhoDef(
+    id: 'contracheque',
+    label: 'Contracheque',
+    icon: Icons.receipt_long_outlined,
+    cor: const Color(0xFF0F766E),
+    builder: (_) => const ContrachequeScreen(),
+  ),
+  AtalhoDef(
+    id: 'meus_veiculos',
+    label: 'Meus Veículos',
+    icon: Icons.directions_car_outlined,
+    cor: const Color(0xFF334155),
+    builder: (_) => const MeusVeiculosScreen(),
+  ),
+  AtalhoDef(
+    id: 'solicitacoes',
+    label: 'Solicitações',
+    icon: Icons.assignment_outlined,
+    cor: const Color(0xFF2563EB),
+    builder: (_) => const SolicitacoesScreen(),
   ),
 ];
 

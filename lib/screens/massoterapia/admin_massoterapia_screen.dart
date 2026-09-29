@@ -158,8 +158,8 @@ class _AdminMassoterapiaScreenState extends State<AdminMassoterapiaScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(substituto != null
-                ? 'Substituição registrada e assinatura salva! ✅'
-                : 'Presença confirmada e assinatura salva! ✅'),
+                ? 'Substituição registrada e assinatura salva!'
+                : 'Presença confirmada e assinatura salva!'),
             backgroundColor: AppColors.sucesso,
           ),
         );
@@ -522,9 +522,9 @@ class _AgendamentoCard extends StatelessWidget {
       };
 
   String get _statusLabel => switch (_status) {
-        'VEIO' => 'Presente ✅',
-        'NAO_VEIO' => 'Faltou ❌',
-        'ALTERADO' => 'Alterado 🔄',
+        'VEIO' => 'Presente',
+        'NAO_VEIO' => 'Faltou',
+        'ALTERADO' => 'Alterado',
         _ => 'Pendente',
       };
 

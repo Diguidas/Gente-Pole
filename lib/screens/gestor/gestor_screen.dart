@@ -9,9 +9,15 @@ import 'avaliar_periodo_experiencia_gestor_screen.dart';
 import 'solicitacoes_gestor_screen.dart';
 import 'feedback_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
+import 'requisitantes_screen.dart';
 
 class GestorScreen extends StatefulWidget {
-  const GestorScreen({super.key});
+  /// true quando quem abriu é só requisitante de vaga (sem ser gestor/líder
+  /// de verdade) — restringe o menu só ao "Aumento de Quadro", ignorando o
+  /// bloqueio granular de [_bloqueadas] (que é pra quem já tem acesso pleno).
+  final bool apenasVagas;
+
+  const GestorScreen({super.key, this.apenasVagas = false});
 
   @override
   State<GestorScreen> createState() => _GestorScreenState();
@@ -170,6 +176,7 @@ class _GestorScreenState extends State<GestorScreen> {
                                 const SizedBox(height: 16),
                               ],
 
+                              if (!widget.apenasVagas) ...[
                               if (!_bloqueadas
                                   .contains('minha_equipe_gestor')) ...[
                                 _BotaoGestor(
@@ -260,7 +267,7 @@ class _GestorScreenState extends State<GestorScreen> {
                                 const SizedBox(height: 16),
                               ],
 
-                              if (!_bloqueadas.contains('exames_gestor'))
+                              if (!_bloqueadas.contains('exames_gestor')) ...[
                                 _BotaoGestor(
                                   icone: Icons.medical_information_outlined,
                                   titulo: 'Exames',
@@ -274,6 +281,25 @@ class _GestorScreenState extends State<GestorScreen> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas
+                                  .contains('requisitantes_gestor'))
+                                _BotaoGestor(
+                                  icone: Icons.person_pin_circle_outlined,
+                                  titulo: 'Requisitantes de Vagas',
+                                  subtitulo:
+                                      'Quem pode abrir vaga por função na sua equipe',
+                                  cor: const Color(0xFF0EA5E9),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const RequisitantesScreen(),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                   ),

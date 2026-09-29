@@ -219,7 +219,7 @@ class _EnviarFeedbackScreenState extends State<EnviarFeedbackScreen> {
                               SnackBar(
                                 content: Text(
                                   ok
-                                      ? 'Feedback enviado com sucesso! 🎉'
+                                      ? 'Feedback enviado com sucesso!'
                                       : 'Erro ao enviar. Tente novamente.',
                                   style: AppTextStyles.corpoNormal
                                       .copyWith(color: Colors.white),
@@ -296,7 +296,7 @@ class _EnviarFeedbackScreenState extends State<EnviarFeedbackScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '💬 Enviar Feedback',
+                            'Enviar Feedback',
                             style: AppTextStyles.tituloGrande
                                 .copyWith(color: Colors.white),
                           ),

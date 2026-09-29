@@ -332,7 +332,7 @@ class _EuCrioOportunidadesScreenState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('🔍', style: TextStyle(fontSize: 48)),
+            const Icon(Icons.search_off_rounded, color: Color(0xFFCBD5E1), size: 48),
             const SizedBox(height: 12),
             Text(
               'Nenhuma vaga aberta\nno momento.',
@@ -1063,7 +1063,7 @@ class _CandidatarMeSheetState extends State<_CandidatarMeSheet> {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 16),
-        const Text('🎉', style: TextStyle(fontSize: 52)),
+        const Icon(Icons.check_circle_rounded, color: AppColors.sucesso, size: 52),
         const SizedBox(height: 16),
         Text('Candidatura enviada!',
             style: GoogleFonts.poppins(
@@ -1414,7 +1414,7 @@ class _IndicarSheetState extends State<_IndicarSheet> {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 16),
-        const Text('🌟', style: TextStyle(fontSize: 52)),
+        const Icon(Icons.check_circle_rounded, color: AppColors.sucesso, size: 52),
         const SizedBox(height: 16),
         Text('Indicação registrada!',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 18)),

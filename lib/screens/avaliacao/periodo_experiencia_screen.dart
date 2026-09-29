@@ -185,7 +185,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('🧭 Período de Experiência',
+                          Text('Período de Experiência',
                               style: AppTextStyles.tituloGrande
                                   .copyWith(color: Colors.white)),
                           Text('Sua autoavaliação de período de experiência',

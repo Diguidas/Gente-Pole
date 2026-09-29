@@ -206,11 +206,11 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
           children: [
             _buildCasoBanner(caso),
             const SizedBox(height: 24),
-            _buildSectionLabel('🏋️ Exercícios prescritos'),
+            _buildSectionLabel('Exercícios prescritos'),
             const SizedBox(height: 10),
             _buildExercicios(),
             const SizedBox(height: 24),
-            _buildSectionLabel('📅 Sessões'),
+            _buildSectionLabel('Sessões'),
             const SizedBox(height: 10),
             _buildSessoes(),
           ],

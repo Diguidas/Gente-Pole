@@ -518,7 +518,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       observacao: parecer.isEmpty ? null : parecer,
     );
     if (ok) _carregarCandidatos();
-    _snack(ok ? 'Candidato avançado para Proposta ✅' : 'Erro ao mover', ok);
+    _snack(ok ? 'Candidato avançado para Proposta' : 'Erro ao mover', ok);
   }
 
   Future<void> _confirmarReprovacao(CandidaturaGestorModel c) async {
@@ -561,7 +561,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       await _api.encerrarVagaSePreenchida(c.vagaId);
       _carregarCandidatos();
     }
-    _snack(ok ? 'Proposta confirmada! 🎉' : 'Erro ao confirmar', ok);
+    _snack(ok ? 'Proposta confirmada!' : 'Erro ao confirmar', ok);
   }
 
   // ── Helpers de UI ────────────────────────────────────────────────────────────

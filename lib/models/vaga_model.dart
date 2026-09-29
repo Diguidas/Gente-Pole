@@ -26,6 +26,7 @@ class VagaModel {
   final int? vagaGestorId;
   final int? vagaSupervisorId;
   final int? vagaCoordenadorId;
+  final int? vagaEncarregadoId;
   final int? vagaLiderId;
 
   VagaModel({
@@ -56,6 +57,7 @@ class VagaModel {
     this.vagaGestorId,
     this.vagaSupervisorId,
     this.vagaCoordenadorId,
+    this.vagaEncarregadoId,
     this.vagaLiderId,
   });
 
@@ -87,6 +89,7 @@ class VagaModel {
       vagaGestorId: json['vaga_gestor_id'] as int?,
       vagaSupervisorId: json['vaga_supervisor_id'] as int?,
       vagaCoordenadorId: json['vaga_coordenador_id'] as int?,
+      vagaEncarregadoId: json['vaga_encarregado_id'] as int?,
       vagaLiderId: json['vaga_lider_id'] as int?,
       createdAt: DateTime.parse(
         (json['created_at'] ?? json['criado_em']) as String,
@@ -122,6 +125,7 @@ class VagaModel {
       if (vagaGestorId != null) 'vaga_gestor_id': vagaGestorId,
       if (vagaSupervisorId != null) 'vaga_supervisor_id': vagaSupervisorId,
       if (vagaCoordenadorId != null) 'vaga_coordenador_id': vagaCoordenadorId,
+      if (vagaEncarregadoId != null) 'vaga_encarregado_id': vagaEncarregadoId,
       if (vagaLiderId != null) 'vaga_lider_id': vagaLiderId,
     };
   }
