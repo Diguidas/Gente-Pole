@@ -1,13 +1,23 @@
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 
 const _corTi = Color(0xFFE64A19);
 
+/// E-mail do responsável pra quem "Erro no Gente Pole" abre automaticamente.
+const _emailResponsavelErroGentePole = 'guilherme.franklin@polealimentos.com.br';
+
+/// Chave usada no SharedPreferences como fallback rápido pro e-mail do
+/// colaborador (o servidor, via [ApiService.buscarUltimoEmailChamadoTI], é
+/// a fonte de verdade — sobrevive a limpar o cache/trocar de aparelho).
+String _chaveEmailSalvo(String matricula) => 'ti_chamado_email_$matricula';
+
 class NovoChamadoTiScreen extends StatefulWidget {
-  const NovoChamadoTiScreen({super.key});
+  final bool erroGentePole;
+  const NovoChamadoTiScreen({super.key, this.erroGentePole = false});
 
   @override
   State<NovoChamadoTiScreen> createState() => _NovoChamadoTiScreenState();
@@ -54,12 +64,31 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
     final tipos = await _api.listarTiChamadoOpcoes('tipo_solicitacao');
     final departamentos = await _api.listarTiChamadoOpcoes('departamento');
     final urgencias = await _api.listarTiChamadoOpcoes('nivel_urgencia');
+    final prefs = await SharedPreferences.getInstance();
+    String? emailSalvo;
+    try {
+      emailSalvo = await _api.buscarUltimoEmailChamadoTI();
+    } catch (_) {
+      emailSalvo = null;
+    }
+    final matricula = _api.colaboradorAtual?.matricula;
+    if (matricula != null) emailSalvo ??= prefs.getString(_chaveEmailSalvo(matricula));
     if (!mounted) return;
     setState(() {
+      if (emailSalvo != null && emailSalvo!.isNotEmpty) _emailCtrl.text = emailSalvo!;
       _membros = membros;
       _tiposSolicitacao = tipos.map((o) => o['valor'] as String).toList();
       _departamentos = departamentos.map((o) => o['valor'] as String).toList();
       _niveisUrgencia = urgencias.map((o) => o['valor'] as String).toList();
+      if (widget.erroGentePole) {
+        final responsavel = _membros.firstWhere(
+          (m) => m['azure_email'] == _emailResponsavelErroGentePole,
+          orElse: () => const {},
+        );
+        _atribuidoPara = responsavel['id']?.toString();
+        _tipoSolicitacao = 'Suporte Gente Pole';
+        _nivelUrgencia = '1 - Crítica';
+      }
       _loading = false;
     });
   }
@@ -108,6 +137,11 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
         anexoBytes: _anexo?.bytes != null ? Uint8List.fromList(_anexo!.bytes!) : null,
         anexoNomeArquivo: _anexo?.name,
       );
+      final matricula = _api.colaboradorAtual?.matricula;
+      if (matricula != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_chaveEmailSalvo(matricula), _emailCtrl.text.trim());
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -138,7 +172,7 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: _corTi,
-        title: const Text('Abrir chamado de TI'),
+        title: Text(widget.erroGentePole ? 'Erro no Gente Pole' : 'Abrir chamado de TI'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _corTi))
@@ -157,7 +191,9 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                     _label('Para quem será'),
                     DropdownButtonFormField<String>(
                       value: _atribuidoPara,
-                      onChanged: (v) => setState(() => _atribuidoPara = v),
+                      onChanged: widget.erroGentePole
+                          ? null
+                          : (v) => setState(() => _atribuidoPara = v),
                       decoration: _decoracao('Selecione o responsável...'),
                       items: _membros
                           .map((m) => DropdownMenuItem(
@@ -180,17 +216,23 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                       },
                     ),
                     const SizedBox(height: 18),
-                    _label('Título'),
+                    _label(widget.erroGentePole ? 'Tela do erro' : 'Título'),
                     TextFormField(
                       controller: _tituloCtrl,
-                      decoration: _decoracao('Resuma o problema em poucas palavras...'),
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Informe o título.' : null,
+                      decoration: _decoracao(widget.erroGentePole
+                          ? 'Em qual tela do app aconteceu o erro?'
+                          : 'Resuma o problema em poucas palavras...'),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? (widget.erroGentePole ? 'Informe a tela do erro.' : 'Informe o título.')
+                          : null,
                     ),
                     const SizedBox(height: 18),
                     _label('Tipo de solicitação'),
                     DropdownButtonFormField<String>(
                       value: _tipoSolicitacao,
-                      onChanged: (v) => setState(() => _tipoSolicitacao = v),
+                      onChanged: widget.erroGentePole
+                          ? null
+                          : (v) => setState(() => _tipoSolicitacao = v),
                       decoration: _decoracao('Selecione...'),
                       items: _tiposSolicitacao.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                     ),
@@ -206,7 +248,9 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                     _label('Nível de urgência'),
                     DropdownButtonFormField<String>(
                       value: _nivelUrgencia,
-                      onChanged: (v) => setState(() => _nivelUrgencia = v),
+                      onChanged: widget.erroGentePole
+                          ? null
+                          : (v) => setState(() => _nivelUrgencia = v),
                       decoration: _decoracao('Selecione...'),
                       items: _niveisUrgencia.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                     ),

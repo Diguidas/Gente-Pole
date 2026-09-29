@@ -21,7 +21,6 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
   bool _loading = true;
   bool _enviando = false;
   bool _pedindoFeedback = false;
-  bool _anonimo = false;
 
   List<Map<String, dynamic>> _todosColaboradores = [];
   List<Map<String, dynamic>> _filtrados = [];
@@ -145,14 +144,13 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
         autorId: _meuId,
         colaboradorId: _colaboradorSelecionado!['id'] as int,
         texto: texto,
-        anonimo: _anonimo,
+        anonimo: false,
       );
       if (!mounted) return;
       _textoCtrl.clear();
       _buscaCtrl.clear();
       setState(() {
         _colaboradorSelecionado = null;
-        _anonimo = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Elogio enviado!',
@@ -211,7 +209,7 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('💛 Elogiar',
+                          Text('Elogiar',
                               style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                           Text('Reconheça e seja reconhecido por colegas',
                               style: AppTextStyles.corpoBranco
@@ -294,43 +292,6 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                                     ),
                                   ),
                                   onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 10),
-
-                                // Toggle anônimo
-                                Container(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('Elogio anônimo',
-                                                style: AppTextStyles.corpoNormal
-                                                    .copyWith(fontWeight: FontWeight.w600)),
-                                            Text(
-                                              _anonimo
-                                                  ? 'Seu nome não será exibido junto do elogio.'
-                                                  : 'Seu nome será exibido junto do elogio.',
-                                              style: AppTextStyles.corpoMenor,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Switch(
-                                        value: _anonimo,
-                                        activeColor: AppColors.magenta,
-                                        onChanged: (v) => setState(() => _anonimo = v),
-                                      ),
-                                    ],
-                                  ),
                                 ),
                                 const SizedBox(height: 14),
 
@@ -489,6 +450,21 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
     );
   }
 
+  Future<void> _confirmarPresencial(int feedbackId, bool confirmado) async {
+    try {
+      await _api.confirmarFeedbackPresencial(feedbackId, confirmado);
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erro ao responder: $e',
+            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+        backgroundColor: AppColors.erro,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
   Widget _cardRecebido(Map<String, dynamic> item) {
     final anonimo = item['anonimo'] == true;
     final ehElogio = item['_tipo'] == 'elogio';
@@ -496,6 +472,10 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
     final nomeAutor = anonimo
         ? 'Anônimo'
         : (ehElogio ? _nomeColaborador(item['autor_id']) : (autor?['nome'] as String? ?? '—'));
+    final presencial = item['presencial'] as bool?;
+    final presencialConfirmado = item['presencial_confirmado'] as bool?;
+    final aguardandoConfirmacao =
+        !ehElogio && presencial == true && presencialConfirmado == null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -519,10 +499,52 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                 texto: ehElogio ? 'Elogio' : 'Feedback do gestor',
                 cor: ehElogio ? AppColors.sucesso : AppColors.magenta,
               ),
+              if (!ehElogio && presencial == true) ...[
+                const SizedBox(width: 6),
+                if (presencialConfirmado == true)
+                  _Selo(texto: 'Presencial confirmado', cor: AppColors.sucesso)
+                else if (presencialConfirmado == false)
+                  _Selo(texto: 'Presencial negado', cor: AppColors.erro)
+                else
+                  const _Selo(texto: 'Presencial · aguardando', cor: Color(0xFFF59E0B)),
+              ],
             ],
           ),
           const SizedBox(height: 6),
           Text(item['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
+          if (aguardandoConfirmacao) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Essa conversa aconteceu presencialmente?',
+                      style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      ElevatedButton(
+                        onPressed: () => _confirmarPresencial(item['id'] as int, true),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.sucesso, foregroundColor: Colors.white),
+                        child: Text('Sim, foi presencial', style: AppTextStyles.corpoMinimo.copyWith(color: Colors.white)),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () => _confirmarPresencial(item['id'] as int, false),
+                        child: Text('Não foi', style: AppTextStyles.corpoMinimo),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

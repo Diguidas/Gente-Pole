@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
@@ -23,10 +24,33 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   /// a Lojinha fica só-consulta (sem catálogo, sem novo pedido).
   bool _liberadaParaCompra = true;
 
+  // Limite de PEDIDOS (não itens) por tipo, configurado no gentepole_admin —
+  // ex: 1 regular (SAP) + 1 exclusivo por semana.
+  bool _sapEsgotado = false;
+  bool _exclusivoEsgotado = false;
+
+  // Olhinho pra ocultar o limite disponível (privacidade quando alguém olha
+  // por cima do ombro) — lembrado entre sessões via SharedPreferences.
+  static const _kValorOcultoKey = 'lojinha_valor_oculto';
+  bool _valorOculto = false;
+
   @override
   void initState() {
     super.initState();
+    _carregarPreferenciaOcultar();
     _carregar();
+  }
+
+  Future<void> _carregarPreferenciaOcultar() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _valorOculto = prefs.getBool(_kValorOcultoKey) ?? false);
+  }
+
+  Future<void> _alternarValorOculto() async {
+    setState(() => _valorOculto = !_valorOculto);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kValorOcultoKey, _valorOculto);
   }
 
   Future<void> _carregar() async {
@@ -35,12 +59,42 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     final liberada = await _api.lojinhaLiberadaParaFilial(
       _api.colaboradorAtual?.branch,
     );
+    await _carregarLimitePedidos();
     if (!mounted) return;
     setState(() {
       _carregando = false;
       _liberadaParaCompra = liberada;
     });
     await _retentarSeValorZerado();
+  }
+
+  /// Se o colaborador já usou o pedido regular e/ou exclusivo do período
+  /// (limite configurado no gentepole_admin), marca aqui pra: (1) bloquear
+  /// "Novo Pedido" de vez quando os dois tipos já foram usados, ou (2) fazer
+  /// o catálogo mostrar só o tipo que ainda tem potencial de compra.
+  Future<void> _carregarLimitePedidos() async {
+    final matricula = _api.colaboradorAtual?.matricula;
+    if (matricula == null) return;
+    try {
+      final config = await _api.buscarConfigLojinha();
+      final limiteSap = config['limite_pedidos_sap'] as int?;
+      final limiteExclusivo = config['limite_pedidos_exclusivo'] as int?;
+      final periodoDiasPedidos = config['periodo_dias_pedidos'] as int?;
+      if ((limiteSap == null && limiteExclusivo == null) ||
+          periodoDiasPedidos == null) {
+        return;
+      }
+      final contagem = await _api.buscarPedidosPorTipoRecentesColab(
+          matricula, periodoDiasPedidos);
+      if (!mounted) return;
+      setState(() {
+        _sapEsgotado = limiteSap != null && contagem.regular >= limiteSap;
+        _exclusivoEsgotado =
+            limiteExclusivo != null && contagem.exclusivo >= limiteExclusivo;
+      });
+    } catch (_) {
+      // Sem limite configurado ou erro ao consultar — não bloqueia nada.
+    }
   }
 
   /// O SAP pode levar um instante para calcular o valor total de um pedido
@@ -188,9 +242,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             context,
                             icone: Icons.add_shopping_cart_rounded,
                             titulo: 'Novo Pedido',
-                            subtitulo: 'Explorar produtos disponíveis',
+                            subtitulo: (_sapEsgotado && _exclusivoEsgotado)
+                                ? 'Você já usou seus pedidos deste período'
+                                : 'Explorar produtos disponíveis',
                             cor: AppColors.laranja,
-                            bloqueado: dados?.bloqueado ?? false,
+                            bloqueado: (dados?.bloqueado ?? false) ||
+                                (_sapEsgotado && _exclusivoEsgotado),
                             onTap: () async {
                               await Navigator.push(
                                 context,
@@ -198,6 +255,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                   builder: (_) => LojinhaProdutosScreen(
                                     dadosFuncionario: dados,
                                     onPedidoCriado: _carregar,
+                                    sapEsgotado: _sapEsgotado,
+                                    exclusivoEsgotado: _exclusivoEsgotado,
                                   ),
                                 ),
                               );
@@ -302,16 +361,32 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Limite disponível',
-                  style: GoogleFonts.poppins(
-                      color: AppColors.cinzaTexto, fontSize: 12)),
-              Text('Total: ${_moeda(d.limiteTotal)}',
+              Row(children: [
+                Text('Limite disponível',
+                    style: GoogleFonts.poppins(
+                        color: AppColors.cinzaTexto, fontSize: 12)),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: _alternarValorOculto,
+                  child: Icon(
+                    _valorOculto
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 16,
+                    color: AppColors.cinzaTexto,
+                  ),
+                ),
+              ]),
+              Text(
+                  _valorOculto
+                      ? 'Total: ••••'
+                      : 'Total: ${_moeda(d.limiteTotal)}',
                   style: GoogleFonts.poppins(
                       color: AppColors.cinzaTexto, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 6),
-          Text(_moeda(d.limiteDisp),
+          Text(_valorOculto ? '••••••' : _moeda(d.limiteDisp),
               style: GoogleFonts.poppins(
                   color: AppColors.laranja,
                   fontSize: 26,
@@ -329,7 +404,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Utilizado: ${_moeda(d.limiteUsado)} de ${_moeda(d.limiteTotal)}',
+            _valorOculto
+                ? 'Utilizado: •••• de ••••'
+                : 'Utilizado: ${_moeda(d.limiteUsado)} de ${_moeda(d.limiteTotal)}',
             style: GoogleFonts.poppins(
                 color: AppColors.cinzaTexto, fontSize: 11),
           ),

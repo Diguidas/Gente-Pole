@@ -33,6 +33,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Desativa o Impeller no Android: em algumas GPUs (comum em
+             aparelhos com Mali/MIUI) ele tem um bug conhecido que some
+             texto/conteúdo durante o scroll. O Skia (motor antigo) não
+             tem esse problema. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

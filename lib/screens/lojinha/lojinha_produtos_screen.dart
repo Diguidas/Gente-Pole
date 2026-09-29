@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
@@ -11,11 +12,18 @@ import 'dart:async';
 class LojinhaProdutosScreen extends StatefulWidget {
   final LojinhaFuncionarioModel? dadosFuncionario;
   final Future<void> Function() onPedidoCriado;
+  /// Já usou o pedido regular (SAP) / exclusivo do período (limite
+  /// configurado no gentepole_admin) — quando true, esse tipo some do
+  /// catálogo (só mostra o que ainda tem potencial de compra).
+  final bool sapEsgotado;
+  final bool exclusivoEsgotado;
 
   const LojinhaProdutosScreen({
     super.key,
     required this.dadosFuncionario,
     required this.onPedidoCriado,
+    this.sapEsgotado = false,
+    this.exclusivoEsgotado = false,
   });
 
   @override
@@ -110,6 +118,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     setState(() {
       _filtrados = _todos.where((p) {
         if (!p.disponivelHoje) return false;
+        if (widget.sapEsgotado && !p.isExclusivo) return false;
+        if (widget.exclusivoEsgotado && p.isExclusivo) return false;
         if (_marcaSel != null && p.marca != _marcaSel) return false;
         if (_categoriaSel != null && p.categoria != _categoriaSel) return false;
         if (_linhaSel != null && p.linha != _linhaSel) return false;
@@ -904,7 +914,10 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          'Nenhum produto encontrado',
+          (widget.sapEsgotado || widget.exclusivoEsgotado) && !_temFiltroAtivo
+              ? 'Você já usou seu pedido deste tipo no período'
+              : 'Nenhum produto encontrado',
+          textAlign: TextAlign.center,
           style: GoogleFonts.poppins(color: AppColors.cinzaTexto, fontSize: 14),
         ),
         if (_temFiltroAtivo)
@@ -1068,7 +1081,7 @@ class _NichoDrawer extends StatelessWidget {
                   children: [
                     // Nível 1 — Marca (sempre visível)
                     _NivelFiltro(
-                      icone: '🏷',
+                      icone: Icons.sell_outlined,
                       titulo: 'Marca',
                       opcoes: marcas,
                       selecionado: marcaSel,
@@ -1082,7 +1095,7 @@ class _NichoDrawer extends StatelessWidget {
                     if (marcaSel != null && categorias.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       _NivelFiltro(
-                        icone: '🐔',
+                        icone: Icons.category_outlined,
                         titulo: 'Categoria',
                         opcoes: categorias,
                         selecionado: categoriaSel,
@@ -1094,7 +1107,7 @@ class _NichoDrawer extends StatelessWidget {
                     if (categoriaSel != null && linhas.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       _NivelFiltro(
-                        icone: '📦',
+                        icone: Icons.inventory_2_outlined,
                         titulo: 'Linha',
                         opcoes: linhas,
                         selecionado: linhaSel,
@@ -1106,7 +1119,7 @@ class _NichoDrawer extends StatelessWidget {
                     if (linhaSel != null && grupos.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       _NivelFiltro(
-                        icone: '🗂',
+                        icone: Icons.folder_outlined,
                         titulo: 'Grupo',
                         opcoes: grupos,
                         selecionado: grupoSel,
@@ -1177,7 +1190,8 @@ class _NichoDrawer extends StatelessWidget {
 // ── Nível de filtro hierárquico ───────────────────────────────────────────────
 
 class _NivelFiltro extends StatelessWidget {
-  final String icone, titulo;
+  final IconData icone;
+  final String titulo;
   final List<String> opcoes;
   final String? selecionado;
   final void Function(String?) onSelect;
@@ -1198,7 +1212,7 @@ class _NivelFiltro extends StatelessWidget {
         const SizedBox(height: 14),
         Row(
           children: [
-            Text(icone, style: const TextStyle(fontSize: 14)),
+            Icon(icone, size: 14, color: AppColors.cinzaTexto),
             const SizedBox(width: 6),
             Text(
               titulo,
@@ -1310,15 +1324,25 @@ class _CardProduto extends StatelessWidget {
                 children: [
                   Center(
                     child: produto.fotoUrl != null
-                        ? Image.network(
-                            produto.fotoUrl!,
+                        ? CachedNetworkImage(
+                            imageUrl: produto.fotoUrl!,
                             fit: BoxFit.contain,
                             // Decodifica num tamanho pequeno em vez da
                             // resolução cheia — sem isso, um grid com muitos
                             // produtos com foto fica pesado pra rolar.
-                            cacheWidth: 300,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) => Icon(
+                            memCacheWidth: 300,
+                            fadeInDuration: const Duration(milliseconds: 150),
+                            placeholder: (_, __) => const Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.laranja,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Icon(
                               Icons.inventory_2_outlined,
                               size: 44,
                               color: AppColors.laranja.withOpacity(0.4),

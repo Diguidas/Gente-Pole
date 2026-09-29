@@ -9,6 +9,7 @@ import 'package:gentepole/core/nivel_tempo_casa.dart';
 import 'package:gentepole/core/pontos_bus.dart';
 import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
+import 'package:gentepole/screens/feedback/elogiar_screen.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
@@ -62,9 +63,11 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
+  List<Map<String, dynamic>> _feedbacksPresenciaisPendentes = [];
 
   // Saldo de Polens (gamificação) — null enquanto carrega, pra não piscar "0"
   int? _meusPontos;
+  bool _polecoinAtivo = true;
 
   RealtimeChannel? _statusChannel;
 
@@ -79,6 +82,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarAniversarios();
     _carregarNovosColaboradoresSemana();
     _carregarPesquisasPendentes();
+    _carregarFeedbacksPresenciaisPendentes();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
     PontosBus.versao.addListener(_carregarPontos);
@@ -127,9 +131,15 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Future<void> _carregarPontos() async {
     try {
-      final pontos = await _api.buscarMeusPontos();
+      final resultados = await Future.wait([
+        _api.buscarMeusPontos(),
+        _api.gamificacaoAtiva(),
+      ]);
       if (!mounted) return;
-      setState(() => _meusPontos = pontos);
+      setState(() {
+        _meusPontos = resultados[0] as int;
+        _polecoinAtivo = resultados[1] as bool;
+      });
     } catch (_) {
       // falha silenciosa — chip só não aparece
     }
@@ -197,6 +207,16 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (_) {}
   }
 
+  Future<void> _carregarFeedbacksPresenciaisPendentes() async {
+    final colaboradorId = _api.colaboradorAtual?.id;
+    if (colaboradorId == null) return;
+    try {
+      final f = await _api.listarFeedbacksPresenciaisPendentes(colaboradorId);
+      if (!mounted) return;
+      setState(() => _feedbacksPresenciaisPendentes = f);
+    } catch (_) {}
+  }
+
   List<AniversarianteModel> get _aniversariantesHoje =>
       _aniversariantes.where((a) => a.ehHoje).toList();
 
@@ -209,9 +229,7 @@ class _FeedScreenState extends State<FeedScreen> {
           .toList();
 
   Future<void> _registrarHumor(int nivel) async {
-    const emojis = ['😞', '😕', '😐', '🙂', '😄'];
     const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
-    final emoji = emojis[nivel - 1];
     final label = labels[nivel - 1];
 
     // Dialog perguntando o motivo
@@ -220,7 +238,7 @@ class _FeedScreenState extends State<FeedScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('$emoji Como você está?', style: AppTextStyles.tituloMedio),
+        title: Text('Como você está?', style: AppTextStyles.tituloMedio),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,8 +302,8 @@ class _FeedScreenState extends State<FeedScreen> {
       final colab = _api.colaboradorAtual;
       final nome = colab?.primeiroNome ?? 'Alguém';
       final conteudo = motivo.isNotEmpty
-          ? '*$nome* está se sentindo $label $emoji\n\n$motivo'
-          : '*$nome* está se sentindo $label $emoji';
+          ? '*$nome* está se sentindo $label\n\n$motivo'
+          : '*$nome* está se sentindo $label';
 
       await _api.criarPost(
         conteudo: conteudo,
@@ -407,7 +425,7 @@ class _FeedScreenState extends State<FeedScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Olá, ${colaborador?.primeiroNome ?? ''} 👋',
+                              'Olá, ${colaborador?.primeiroNome ?? ''}',
                               style: AppTextStyles.tituloBranco,
                             ),
                             Text(
@@ -448,38 +466,40 @@ class _FeedScreenState extends State<FeedScreen> {
                         'Admissão',
                         colaborador?.dataAdmissaoFormatada ?? '—',
                       ),
-                      const SizedBox(width: 10),
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const GamificacaoScreen()),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
-                            borderRadius: BorderRadius.circular(20),
+                      if (_polecoinAtivo) ...[
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const GamificacaoScreen()),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.emoji_events_rounded,
-                                  size: 13, color: Colors.white),
-                              const SizedBox(width: 5),
-                              Text(
-                                '$_meusPontos $nomeMoeda',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.emoji_events_rounded,
+                                    size: 13, color: Colors.white),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '$_meusPontos $nomeMoeda',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   ),
@@ -659,7 +679,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      p.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
+                      p.isPendente ? '⏳ Aguardando' : 'Rejeitado',
                       style: GoogleFonts.poppins(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -787,7 +807,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '📅  $dataFormatada${clinica != null ? '  ·  $clinica' : ''}',
+                  '$dataFormatada${clinica != null ? '  ·  $clinica' : ''}',
                   style: const TextStyle(
                     fontSize: 13,
                     color: Color(0xFF92400E),
@@ -825,6 +845,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return [
       if (_banners.isNotEmpty) _buildBannerHome(),
       _buildHumorCard(),
+      if (_feedbacksPresenciaisPendentes.isNotEmpty) _buildFeedbackPresencialPendenteCard(),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
       _InlineComposer(
@@ -913,7 +934,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final hoje = _aniversariantesHoje;
     final meuSetor = _api.colaboradorAtual?.setor;
     return _CardAniversarioMes(
-      titulo: '🎂 Aniversariantes de hoje',
+      titulo: 'Aniversariantes de hoje',
       itens: hoje
           .map(
             (a) => _LinhaAniversario(
@@ -921,7 +942,7 @@ class _FeedScreenState extends State<FeedScreen> {
               setor: a.colaborador.setor,
               fotoUrl: a.colaborador.fotoUrl,
               cor: AppColors.magenta,
-              mensagem: 'Feliz aniversário! 🎉',
+              mensagem: 'Feliz aniversário!',
               destaqueMeuSetor: meuSetor != null &&
                   meuSetor.isNotEmpty &&
                   a.colaborador.setor == meuSetor,
@@ -934,7 +955,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildAniversarioEmpresaCard() {
     final hoje = _aniversariosEmpresaHoje;
     return _CardAniversarioMes(
-      titulo: '🏆 Aniversário de empresa hoje',
+      titulo: 'Aniversário de empresa hoje',
       itens: hoje.map((a) {
         final anos = (a['anos_completos'] as num?)?.toInt() ?? 0;
         final nivel = NivelTempoCasa.deCategoria(
@@ -945,7 +966,7 @@ class _FeedScreenState extends State<FeedScreen> {
           setor: a['setor'] as String?,
           fotoUrl: a['foto_url'] as String?,
           cor: nivel?.cor ?? AppColors.laranja,
-          mensagem: '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa 🎉',
+          mensagem: '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa',
           nivel: nivel,
         );
       }).toList(),
@@ -954,7 +975,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildNovosPolevalentesCard() {
     return _CardAniversarioMes(
-      titulo: '🚀 Novos Polevalentes essa semana',
+      titulo: 'Novos Polevalentes essa semana',
       itens: _novosColaboradoresSemana.map((c) {
         final dataAdmissao = DateTime.tryParse(
           c['data_admissao'] as String? ?? '',
@@ -968,10 +989,73 @@ class _FeedScreenState extends State<FeedScreen> {
           fotoUrl: c['foto_url'] as String?,
           cor: AppColors.laranja,
           mensagem: dataFormatada.isNotEmpty
-              ? 'Chegou dia $dataFormatada 🎉'
-              : 'Seja bem-vindo(a)! 🎉',
+              ? 'Chegou dia $dataFormatada'
+              : 'Seja bem-vindo(a)!',
         );
       }).toList(),
+    );
+  }
+
+  // ── Feedback presencial pendente de confirmação ───────────────────────────────
+
+  Widget _buildFeedbackPresencialPendenteCard() {
+    final qtd = _feedbacksPresenciaisPendentes.length;
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ElogiarScreen()),
+        );
+        _carregarFeedbacksPresenciaisPendentes();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF59E0B).withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.groups_outlined, color: Color(0xFFF59E0B)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    qtd == 1
+                        ? 'Confirme 1 feedback presencial'
+                        : 'Confirme $qtd feedbacks presenciais',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Seu gestor marcou que essa conversa foi presencial — confirme ou negue.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.cinzaTexto,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFFF59E0B)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1832,7 +1916,13 @@ class _HumorCardState extends State<_HumorCard> {
 
   @override
   Widget build(BuildContext context) {
-    const emojis = ['😞', '😕', '😐', '🙂', '😄'];
+    const humorIcones = [
+      Icons.sentiment_very_dissatisfied_rounded,
+      Icons.sentiment_dissatisfied_rounded,
+      Icons.sentiment_neutral_rounded,
+      Icons.sentiment_satisfied_rounded,
+      Icons.sentiment_very_satisfied_rounded,
+    ];
     const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
     final jaRegistrou = widget.humorHoje != null;
     final nivelAtual = jaRegistrou
@@ -1858,7 +1948,7 @@ class _HumorCardState extends State<_HumorCard> {
         children: [
           Row(
             children: [
-              const Text('💬', style: TextStyle(fontSize: 16)),
+              const Icon(Icons.mood_outlined, size: 16, color: AppColors.magenta),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -1921,14 +2011,12 @@ class _HumorCardState extends State<_HumorCard> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      emojis[idx],
-                      style: TextStyle(
-                        fontSize: selecionado ? 30 : 26,
-                        color: jaRegistrou && !selecionado
-                            ? Colors.black.withOpacity(0.25)
-                            : null,
-                      ),
+                    Icon(
+                      humorIcones[idx],
+                      size: selecionado ? 30 : 26,
+                      color: jaRegistrou && !selecionado
+                          ? Colors.black.withOpacity(0.25)
+                          : AppColors.magenta,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1978,7 +2066,7 @@ class _PostCard extends StatelessWidget {
     final isHumor = post.isHumor;
     final isRespostaParabens = post.isRespostaParabens;
     // Card de humor não tem mais destaque de cor forte (fundo/borda) — só a
-    // etiqueta "💬 Humor do dia" no cabeçalho já avisa o tipo, e o card fica
+    // etiqueta "Humor do dia" no cabeçalho já avisa o tipo, e o card fica
     // discreto/branco igual aos demais, sem o gradiente magenta que ficava
     // pesado visualmente.
 
@@ -2031,8 +2119,8 @@ class _PostCard extends StatelessWidget {
                       Text(
                         isDoSistema
                             ? (isAniversario
-                                  ? '🎉 Gente Pole'
-                                  : '📢 Gente Pole')
+                                  ? 'Gente Pole'
+                                  : 'Gente Pole')
                             : (post.autorNome ?? 'Colaborador'),
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.w700,
@@ -2091,7 +2179,7 @@ class _PostCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '💬 Humor do dia',
+                      'Humor do dia',
                       style: GoogleFonts.poppins(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -2111,7 +2199,7 @@ class _PostCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '📢 Comunicado',
+                      'Comunicado',
                       style: GoogleFonts.poppins(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -2131,7 +2219,7 @@ class _PostCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '✍️ Post',
+                      'Post',
                       style: GoogleFonts.poppins(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -2151,7 +2239,7 @@ class _PostCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '✨ Resposta de aniversário',
+                      'Resposta de aniversário',
                       style: GoogleFonts.poppins(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -2174,7 +2262,7 @@ class _PostCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      post.isPendente ? '⏳ Aguardando' : '✕ Rejeitado',
+                      post.isPendente ? '⏳ Aguardando' : 'Rejeitado',
                       style: GoogleFonts.poppins(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
@@ -2418,9 +2506,10 @@ class _PostCard extends StatelessWidget {
       shape: BoxShape.circle,
     ),
     child: Center(
-      child: Text(
-        isAniversario ? '🎉' : '📢',
-        style: const TextStyle(fontSize: 20),
+      child: Icon(
+        isAniversario ? Icons.celebration_rounded : Icons.campaign_rounded,
+        color: Colors.white,
+        size: 20,
       ),
     ),
   );
@@ -2595,9 +2684,10 @@ class _ReacoesBarState extends State<_ReacoesBar> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
+                              Icon(
                                 ApiService.tiposReacaoPost[tipo]!,
-                                style: const TextStyle(fontSize: 13),
+                                size: 13,
+                                color: AppColors.magenta,
                               ),
                               const SizedBox(width: 3),
                               Text(
@@ -2631,11 +2721,12 @@ class _ReacoesBarState extends State<_ReacoesBar> {
                   children: [
                     Opacity(
                       opacity: reagiu ? 1 : 0.45,
-                      child: Text(
+                      child: Icon(
                         reagiu
                             ? ApiService.tiposReacaoPost[minhaReacao]!
-                            : '👍',
-                        style: const TextStyle(fontSize: 16),
+                            : Icons.thumb_up_rounded,
+                        size: 16,
+                        color: reagiu ? AppColors.magenta : AppColors.cinzaTexto,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -2703,10 +2794,10 @@ class _SeletorReacoes extends StatelessWidget {
                           : Colors.transparent,
                       shape: BoxShape.circle,
                     ),
-                    child: Text(
+                    child: Icon(
                       entry.value,
-                      style: TextStyle(
-                          fontSize: minhaReacao == entry.key ? 26 : 24),
+                      size: minhaReacao == entry.key ? 26 : 24,
+                      color: AppColors.magenta,
                     ),
                   ),
                 ),
@@ -2760,7 +2851,8 @@ class _QuemReagiuSheet extends StatelessWidget {
                 final colab = r['colaboradores'] as Map<String, dynamic>?;
                 final nome = colab?['nome'] as String? ?? 'Colaborador';
                 final fotoUrl = colab?['foto_url'] as String?;
-                final emoji = ApiService.tiposReacaoPost[r['tipo']] ?? '👍';
+                final iconeReacao =
+                    ApiService.tiposReacaoPost[r['tipo']] ?? Icons.thumb_up_rounded;
                 return Row(
                   children: [
                     CircleAvatar(
@@ -2777,7 +2869,7 @@ class _QuemReagiuSheet extends StatelessWidget {
                     Expanded(
                       child: Text(nome, style: AppTextStyles.corpoMedio),
                     ),
-                    Text(emoji, style: const TextStyle(fontSize: 18)),
+                    Icon(iconeReacao, size: 18, color: AppColors.magenta),
                   ],
                 );
               },
@@ -3074,13 +3166,20 @@ class _LinhaAniversario extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: nivel!.cor.withOpacity(0.4)),
                     ),
-                    child: Text(
-                      '${nivel!.emoji} ${nivel!.label}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: nivel!.cor,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(nivel!.icone, size: 11, color: nivel!.cor),
+                        const SizedBox(width: 3),
+                        Text(
+                          nivel!.label,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: nivel!.cor,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

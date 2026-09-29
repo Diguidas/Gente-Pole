@@ -22,7 +22,12 @@ const _etapasBoard = [
 ];
 
 class ChamadosTiScreen extends StatefulWidget {
-  const ChamadosTiScreen({super.key});
+  /// Work item id vindo de uma notificação push (deep link) — se
+  /// presente, assim que a lista carregar já abre o detalhe desse
+  /// chamado direto, sem o colaborador precisar procurar na lista.
+  final int? workItemIdParaAbrir;
+
+  const ChamadosTiScreen({super.key, this.workItemIdParaAbrir});
 
   @override
   State<ChamadosTiScreen> createState() => _ChamadosTiScreenState();
@@ -34,6 +39,7 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
   Map<String, dynamic> _status = {};
   Set<int> _avaliados = {};
   bool _loading = true;
+  bool _jaAbriuDeepLink = false;
 
   @override
   void initState() {
@@ -54,6 +60,18 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
       _avaliados = avaliados;
       _loading = false;
     });
+
+    final idParaAbrir = widget.workItemIdParaAbrir;
+    if (idParaAbrir != null && !_jaAbriuDeepLink) {
+      final chamado = chamados.firstWhere(
+        (c) => c['azure_work_item_id'] == idParaAbrir,
+        orElse: () => const {},
+      );
+      if (chamado.isNotEmpty) {
+        _jaAbriuDeepLink = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _abrirDetalhe(chamado));
+      }
+    }
   }
 
   Future<void> _abrirAvaliacao({required int workItemId, required String titulo}) async {
@@ -62,6 +80,20 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
       builder: (_) => _DialogAvaliacao(workItemId: workItemId, titulo: titulo),
     );
     if (avaliado == true) _carregar();
+  }
+
+  /// Primeiro chamado concluído e ainda não avaliado, se houver — usado
+  /// pra travar a abertura de um novo chamado até avaliar o anterior.
+  Map<String, dynamic>? get _chamadoAguardandoAvaliacao {
+    for (final c in _chamados) {
+      final workItemId = c['azure_work_item_id'] as int;
+      final info = _status[workItemId.toString()] as Map<String, dynamic>?;
+      final estado = info?['state'] as String?;
+      final coluna = info?['boardColumn'] as String?;
+      final concluido = estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído';
+      if (concluido && !_avaliados.contains(workItemId)) return c;
+    }
+    return null;
   }
 
   String _etapaLimpa(String coluna) => coluna.replaceFirst(RegExp(r'^\d+-\s*'), '').trim();
@@ -100,9 +132,32 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
   }
 
   Future<void> _abrirNovoChamado() async {
+    final chamadoPendente = _chamadoAguardandoAvaliacao;
+    if (chamadoPendente != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Avalie o chamado anterior antes de abrir um novo.', style: AppTextStyles.corpoBranco),
+        backgroundColor: AppColors.erro,
+        behavior: SnackBarBehavior.floating,
+      ));
+      await _abrirAvaliacao(
+        workItemId: chamadoPendente['azure_work_item_id'] as int,
+        titulo: chamadoPendente['titulo'] as String? ?? 'Chamado #${chamadoPendente['azure_work_item_id']}',
+      );
+      return;
+    }
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _EscolhaTipoChamadoSheet(),
+    );
+    if (escolha == null) return;
+    final erroGentePole = escolha == 'erro_gente_pole';
     final aberto = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const NovoChamadoTiScreen()),
+      MaterialPageRoute(
+          builder: (_) => NovoChamadoTiScreen(erroGentePole: erroGentePole)),
     );
     if (aberto == true) {
       _carregar();
@@ -303,6 +358,111 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                     },
                   ),
                 ),
+    );
+  }
+}
+
+/// Primeiro passo do "Novo chamado": escolher entre abrir um card normal
+/// pra Sistemas Corporativos e Dados ou reportar um erro do próprio Gente
+/// Pole (que já sai endereçado e priorizado, sem o colaborador escolher
+/// responsável/tipo/urgência).
+class _EscolhaTipoChamadoSheet extends StatelessWidget {
+  const _EscolhaTipoChamadoSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            Text('Novo chamado',
+                style: AppTextStyles.corpoMedio.copyWith(
+                    fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.dark)),
+            const SizedBox(height: 16),
+            _OpcaoNovoChamado(
+              icone: Icons.confirmation_number_outlined,
+              titulo: 'Abertura de card',
+              descricao: 'Ajuda com a equipe de sistemas corporativos e dados',
+              onTap: () => Navigator.of(context).pop('abertura_card'),
+            ),
+            const SizedBox(height: 12),
+            _OpcaoNovoChamado(
+              icone: Icons.bug_report_outlined,
+              titulo: 'Erro no Gente Pole',
+              descricao: 'Ajuda com erro encontrado dentro do sistema Gente Pole',
+              onTap: () => Navigator.of(context).pop('erro_gente_pole'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OpcaoNovoChamado extends StatelessWidget {
+  final IconData icone;
+  final String titulo;
+  final String descricao;
+  final VoidCallback onTap;
+
+  const _OpcaoNovoChamado({
+    required this.icone,
+    required this.titulo,
+    required this.descricao,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.cinzaClaro,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _corTi.withOpacity(.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icone, size: 20, color: _corTi),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo,
+                      style: AppTextStyles.corpoMedio.copyWith(
+                          fontWeight: FontWeight.w700, color: AppColors.dark)),
+                  const SizedBox(height: 2),
+                  Text(descricao,
+                      style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.cinzaTexto)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.cinzaTexto),
+          ]),
+        ),
+      ),
     );
   }
 }

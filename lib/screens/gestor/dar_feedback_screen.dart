@@ -43,12 +43,12 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
   List<Map<String, dynamic>> _filtrados = [];
   Map<String, dynamic>? _colaboradorSelecionado;
 
+  List<Map<String, dynamic>> _gruposItensEmpresa = [];
   List<Map<String, dynamic>> _itensEmpresa = [];
   List<Map<String, dynamic>> _modelos = [];
   int? _modeloSelecionadoId;
-  final Map<int, int> _notasPorSlot = {}; // slot -> nota 1-5
+  final Map<int, int> _notasPorItem = {}; // item id -> nota 1-5
 
-  bool _anonimo = false;
   bool _presencial = false;
 
   @override
@@ -81,6 +81,7 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
       _api.buscarTodosColaboradores(),
       _api.listarItensEmpresaFeedback(),
       _api.listarModelosFeedback(apenasAtivos: true),
+      _api.listarGruposItensEmpresaFeedback(),
     ]);
     if (!mounted) return;
     setState(() {
@@ -88,9 +89,13 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
       _filtrados = _todosColaboradores;
       _itensEmpresa = resultados[1] as List<Map<String, dynamic>>;
       _modelos = resultados[2] as List<Map<String, dynamic>>;
+      _gruposItensEmpresa = resultados[3] as List<Map<String, dynamic>>;
       _carregando = false;
     });
   }
+
+  List<Map<String, dynamic>> _itensDoGrupo(int grupoId) =>
+      _itensEmpresa.where((i) => i['grupo_id'] == grupoId).toList();
 
   void _filtrar() {
     final q = _buscaCtrl.text.toLowerCase().trim();
@@ -120,7 +125,7 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
   bool get _podeEnviar =>
       _colaboradorSelecionado != null &&
       _textoCtrl.text.trim().isNotEmpty &&
-      _itensEmpresa.every((item) => _notasPorSlot[item['slot'] as int] != null);
+      _itensEmpresa.every((item) => _notasPorItem[item['id'] as int] != null);
 
   Future<void> _enviar() async {
     if (!_podeEnviar || _enviando) return;
@@ -129,19 +134,17 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
     setState(() => _enviando = true);
 
     try {
-      final slots = _itensEmpresa.map((i) => i['slot'] as int).toList();
       final feedbackId = await _api.criarFeedbackAvaliacao(
         colaboradorId: _colaboradorSelecionado!['id'] as int,
         autorId: autorId,
         texto: _textoCtrl.text.trim(),
-        anonimo: _anonimo,
+        anonimo: false,
         presencial: _presencial,
         anotacoesInternas: _notasInternasCtrl.text.trim().isEmpty
             ? null
             : _notasInternasCtrl.text.trim(),
         modeloId: _modeloSelecionadoId,
-        item1Nota: slots.isNotEmpty ? _notasPorSlot[slots[0]] : null,
-        item2Nota: slots.length > 1 ? _notasPorSlot[slots[1]] : null,
+        itensNotas: _notasPorItem,
       );
 
       if (widget.solicitacaoId != null) {
@@ -193,7 +196,7 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('📝 Dar Feedback',
+                          Text('Dar Feedback',
                               style: AppTextStyles.tituloGrande.copyWith(color: Colors.white)),
                           Text('Avalie e oriente um colaborador da sua equipe',
                               style: AppTextStyles.corpoBranco
@@ -226,28 +229,44 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
                                   _buscaColaborador(),
                                 const SizedBox(height: 18),
 
-                                _switchCard(
-                                  label: 'Feedback anônimo',
-                                  descricao: 'Seu nome não será exibido junto do feedback.',
-                                  valor: _anonimo,
-                                  onChanged: (v) => setState(() => _anonimo = v),
-                                ),
-                                const SizedBox(height: 18),
-
-                                if (_itensEmpresa.isNotEmpty) ...[
-                                  ..._itensEmpresa.map((item) {
-                                    final slot = item['slot'] as int;
+                                for (final grupo in _gruposItensEmpresa) ...[
+                                  Builder(builder: (_) {
+                                    final itensDoGrupo = _itensDoGrupo(grupo['id'] as int);
+                                    if (itensDoGrupo.isEmpty) return const SizedBox.shrink();
                                     return Padding(
                                       padding: const EdgeInsets.only(bottom: 12),
-                                      child: _CardItemEmpresa(
-                                        nome: item['nome'] as String? ?? 'Item $slot',
-                                        legenda: item['legenda'] as String? ?? '',
-                                        nota: _notasPorSlot[slot] ?? 0,
-                                        onChanged: (n) => setState(() => _notasPorSlot[slot] = n),
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            if ((grupo['titulo'] as String? ?? '').isNotEmpty) ...[
+                                              Text(grupo['titulo'] as String,
+                                                  style: AppTextStyles.corpoMedio
+                                                      .copyWith(fontWeight: FontWeight.w700)),
+                                              const SizedBox(height: 10),
+                                            ],
+                                            for (var i = 0; i < itensDoGrupo.length; i++) ...[
+                                              if (i > 0) const Divider(height: 20),
+                                              _CardItemEmpresa(
+                                                nome: itensDoGrupo[i]['nome'] as String? ?? '',
+                                                legenda: itensDoGrupo[i]['legenda'] as String? ?? '',
+                                                nota: _notasPorItem[itensDoGrupo[i]['id'] as int] ?? 0,
+                                                onChanged: (n) => setState(() =>
+                                                    _notasPorItem[itensDoGrupo[i]['id'] as int] = n),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
                                       ),
                                     );
                                   }),
-                                  const SizedBox(height: 6),
                                 ],
 
                                 Text('Modelo de feedback (opcional)',
@@ -322,7 +341,7 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
                                 Text('Anotações internas', style: AppTextStyles.labelSecao),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Só você vê essas anotações — não aparecem para o colaborador nem para mais ninguém.',
+                                  'Registre aqui pontos de desenvolvimentos, oportunidades de melhoria e ideias de ação que vão ajudar a construir o PDI do colaborador.',
                                   style: AppTextStyles.corpoMenor,
                                 ),
                                 const SizedBox(height: 8),
@@ -524,29 +543,35 @@ class _CardItemEmpresa extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(nome, style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
-          if (legenda.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(legenda, style: AppTextStyles.corpoMenor),
-            ),
-          const SizedBox(height: 10),
-          _Estrelas(nota: nota, onChanged: onChanged),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(nome, style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
+        if (legenda.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(legenda, style: AppTextStyles.corpoMenor),
+          ),
+        const SizedBox(height: 8),
+        _Estrelas(nota: nota, onChanged: onChanged),
+        if (nota > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(_legendasEstrela[nota - 1],
+                style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
+          ),
+      ],
     );
   }
 }
+
+const _legendasEstrela = [
+  'Insatisfatório',
+  'Abaixo do esperado',
+  'Dentro do esperado',
+  'Acima do esperado',
+  'Excelente',
+];
 
 class _Estrelas extends StatelessWidget {
   final int nota;
@@ -560,15 +585,19 @@ class _Estrelas extends StatelessWidget {
       children: List.generate(5, (i) {
         final valor = i + 1;
         final preenchida = valor <= nota;
-        return InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => onChanged(valor),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Icon(
-              preenchida ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: 28,
-              color: preenchida ? const Color(0xFFF59E0B) : AppColors.cinzaTexto.withOpacity(0.5),
+        return Tooltip(
+          message: _legendasEstrela[i],
+          triggerMode: TooltipTriggerMode.longPress,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => onChanged(valor),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Icon(
+                preenchida ? Icons.star_rounded : Icons.star_outline_rounded,
+                size: 28,
+                color: preenchida ? const Color(0xFFF59E0B) : AppColors.cinzaTexto.withOpacity(0.5),
+              ),
             ),
           ),
         );
