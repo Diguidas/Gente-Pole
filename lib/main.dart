@@ -11,6 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/main_layout.dart';
 import 'services/api_service.dart';
 import 'services/notification_service.dart';
+import 'services/version_check_service.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -30,10 +31,21 @@ void main() {
     final sessaoAtiva = await ApiService().restaurarSessao();
 
     if (sessaoAtiva && !defaultTargetPlatform.name.contains('iOS')) {
-      await NotificationService.init();
+      // Best-effort: falha aqui (ex: SERVICE_NOT_AVAILABLE do FCM em
+      // aparelhos com Play Services instável/desatualizado) não pode
+      // impedir o app de abrir — sem isso, a exceção sobe antes do
+      // runApp() e a tela fica preta pra sempre.
+      try {
+        await NotificationService.init();
+      } catch (e, s) {
+        ErrorReporter.report(e, s, contexto: 'Falha ao inicializar notificações');
+      }
     }
 
     runApp(GentePoleApp(sessaoAtiva: sessaoAtiva));
+    // Roda independente de login (pega quem ainda tá na tela de login) e
+    // nunca trava o app se falhar (sem internet, config ausente etc).
+    VersionCheckService.verificarNoInicio();
   }, (error, stack) {
     ErrorReporter.report(error, stack, contexto: 'Erro não tratado');
   });

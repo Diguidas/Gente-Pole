@@ -1,9 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/app_navigator.dart';
 import '../screens/ti/chamados_ti_screen.dart';
+import '../screens/pesquisa/pesquisa_list_screen.dart';
+import '../screens/gestor/vagas_gestor_screen.dart';
+import '../screens/massoterapia/massoterapia_screen.dart';
+import '../screens/nutricionista/nutricionista_screen.dart';
+import '../screens/fisioterapia/fisioterapia_screen.dart';
 import 'api_service.dart';
 
 // Handler de background — deve ser função top-level (fora de qualquer classe)
@@ -52,19 +58,18 @@ class NotificationService {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(),
       ),
-      onDidReceiveNotificationResponse: (r) => _navigate(r.payload),
+      onDidReceiveNotificationResponse: (r) => _navigate(_decodePayload(r.payload)),
     );
 
     // Notificação em foreground → exibe local
     FirebaseMessaging.onMessage.listen(_showLocal);
 
     // Toque em notificação com app em background (não fechado)
-    FirebaseMessaging.onMessageOpenedApp
-        .listen((m) => _navigate(m.data['route'] as String?));
+    FirebaseMessaging.onMessageOpenedApp.listen((m) => _navigate(m.data));
 
     // Toque com app fechado
     final initial = await _fcm.getInitialMessage();
-    if (initial != null) _navigate(initial.data['route'] as String?);
+    if (initial != null) _navigate(initial.data);
 
     // Salva token FCM no Supabase e escuta renovações
     final token = await _fcm.getToken();
@@ -88,21 +93,31 @@ class NotificationService {
         ),
         iOS: const DarwinNotificationDetails(),
       ),
-      payload: message.data['route'] as String?,
+      // Notificação em foreground: guarda todo o 'data' (não só a rota)
+      // como JSON no payload, senão o toque nela (pela bandeja) perde o
+      // workItemId na hora de abrir o app.
+      payload: jsonEncode(message.data),
     );
+  }
+
+  static Map<String, dynamic>? _decodePayload(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    try {
+      return jsonDecode(payload) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
   }
 
   // Mapeia a rota da notificação para uma aba do app
   // 0 = Feed | 1 = Aniversariantes | 2 = Serviços | 3 = Perfil
-  static void _navigate(String? route) {
+  static void _navigate(Map<String, dynamic>? data) {
+    final route = data?['route'] as String?;
     switch (route) {
       case 'aniversario':
       case 'parabens':
         AppNavigator.goToTab(1);
-      case 'servicos':
-      case 'pesquisas':
       case 'gestor_exames':
-      case 'gestor_vagas':
       case 'gestor_feedback':
       case 'gestor_equipe':
         AppNavigator.goToTab(2);
@@ -113,15 +128,47 @@ class NotificationService {
       case 'chamado_ti_comentario_resposta':
       case 'chamado_ti_atualizado':
         AppNavigator.goToTab(2);
-        // Abre a tela de Chamados de TI por cima — não dá pra saber qual
-        // card exato a partir só do 'route' (a notificação genérica não
-        // carrega o work item id), então abre a lista, onde o card com
-        // novidade já aparece com a bolinha de pendente.
         AppNavigator.navigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (_) => const ChamadosTiScreen()),
+          MaterialPageRoute(
+            builder: (_) => ChamadosTiScreen(workItemIdParaAbrir: _itemId(data)),
+          ),
         );
+      case 'pesquisas':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => PesquisaListScreen(pesquisaIdParaAbrir: _itemId(data)),
+          ),
+        );
+      case 'gestor_vagas':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => VagasGestorScreen(vagaIdParaAbrir: _itemId(data)),
+          ),
+        );
+      case 'servicos_massoterapia':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const MassoterapiaScreen()),
+        );
+      case 'servicos_nutricionista':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const NutricionistaScreen()),
+        );
+      case 'servicos_fisioterapia':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const FisioterapiaScreen()),
+        );
+      case 'servicos': // notificação antiga, de antes da rota específica
+        AppNavigator.goToTab(2);
       default: // 'feed' ou qualquer outra coisa
         AppNavigator.goToTab(0);
     }
   }
+
+  static int? _itemId(Map<String, dynamic>? data) =>
+      int.tryParse(data?['itemId'] as String? ?? '');
 }
