@@ -1188,16 +1188,77 @@ class ApiService {
   }
 
   /// Lista as requisições do gestor logado (por supervisorId ou pelo id direto)
+  ///
+  /// Também traz as vagas de setores onde o colaborador lidera (abertas por
+  /// outra pessoa, ex: um requisitante) e as que batem com os pares (setor +
+  /// função) em que ele é requisitante. As abertas por outra pessoa vêm com
+  /// `requisitanteNome`.
   Future<List<VagaModel>> listarMinhasRequisicoes(int gestorId) async {
-    final data = await _client
+    final porId = <int, Map<String, dynamic>>{};
+    void juntar(dynamic data) {
+      for (final v in List<Map<String, dynamic>>.from(data as List)) {
+        porId[v['id'] as int] = v;
+      }
+    }
+
+    juntar(await _client
         .from('vagas')
         .select()
-        .eq('requisitado_por_id', gestorId)
-        .order('created_at', ascending: false);
+        .eq('requisitado_por_id', gestorId));
 
-    return (data as List)
-        .map((e) => VagaModel.fromJson(e as Map<String, dynamic>))
+    if (await colaboradorEhLiderAutorizado()) {
+      final setores = await buscarSetoresEfetivosDoGestor();
+      if (setores.isNotEmpty) {
+        juntar(await _client
+            .from('vagas')
+            .select()
+            .inFilter('departamento', setores));
+      }
+    }
+
+    final pares = (await listarParesRequisitante())
+        .where((p) => p.setor.isNotEmpty && p.funcao.isNotEmpty)
         .toList();
+    if (pares.isNotEmpty) {
+      final data = await _client
+          .from('vagas')
+          .select()
+          .inFilter('departamento', pares.map((p) => p.setor).toSet().toList());
+      for (final v in List<Map<String, dynamic>>.from(data as List)) {
+        final bate = pares
+            .any((p) => p.setor == v['departamento'] && p.funcao == v['titulo']);
+        if (bate) porId[v['id'] as int] = v;
+      }
+    }
+
+    final lista = porId.values.toList()
+      ..sort((a, b) => (b['created_at'] as String? ?? '')
+          .compareTo(a['created_at'] as String? ?? ''));
+
+    // Nome de quem abriu, quando não fui eu.
+    final outros = lista
+        .map((v) => (v['requisitado_por_id'] as num?)?.toInt())
+        .whereType<int>()
+        .where((id) => id != gestorId)
+        .toSet()
+        .toList();
+    if (outros.isNotEmpty) {
+      final nomes = await _client
+          .from('colaboradores')
+          .select('id, nome')
+          .inFilter('id', outros);
+      final mapa = {
+        for (final n in (nomes as List)) n['id'] as int: n['nome'] as String?,
+      };
+      for (final v in lista) {
+        final id = (v['requisitado_por_id'] as num?)?.toInt();
+        if (id != null && id != gestorId && mapa[id] != null) {
+          v['requisitante_nome'] = mapa[id];
+        }
+      }
+    }
+
+    return lista.map((e) => VagaModel.fromJson(e)).toList();
   }
 
   /// Conta, para cada vaga em [vagaIds], quantas candidaturas já estão com

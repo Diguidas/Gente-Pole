@@ -12,6 +12,8 @@ class VagaModel {
   final String status;
   final String tipoVaga;
   final int? requisitadoPorId;
+  /// Nome de quem abriu a vaga, quando não foi o próprio colaborador logado.
+  final String? requisitanteNome;
   final String statusRequisicao;
   final DateTime createdAt;
   final int? templateId;
@@ -43,6 +45,7 @@ class VagaModel {
     required this.status,
     required this.tipoVaga,
     this.requisitadoPorId,
+    this.requisitanteNome,
     required this.statusRequisicao,
     required this.createdAt,
     this.templateId,
@@ -76,6 +79,7 @@ class VagaModel {
       status: json['status'] ?? 'ABERTA',
       tipoVaga: json['tipo_vaga'] ?? 'UNICA',
       requisitadoPorId: json['requisitado_por_id'] as int?,
+      requisitanteNome: json['requisitante_nome'] as String?,
       statusRequisicao: json['status_requisicao'] ?? 'APROVADA',
       templateId: json['template_id'] as int?,
       quantidadeVagas: json['quantidade_vagas'] as int? ?? 1,

@@ -359,6 +359,17 @@ class _TabMinhasVagas extends StatelessWidget {
                         fontSize: 12, color: AppColors.cinzaTexto),
                   ),
                 ],
+                if (v.requisitanteNome != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Aberta por ${v.requisitanteNome}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.magenta,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   children: [
