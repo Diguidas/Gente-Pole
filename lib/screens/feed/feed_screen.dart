@@ -2979,21 +2979,34 @@ class _PostCard extends StatelessWidget {
         if (last < texto.length) {
           final resto = texto.substring(last);
           // Motivo do humor / texto da resposta (depois da quebra dupla de
-          // linha) em itálico, sem aspas literais.
+          // linha), sem aspas literais.
           if ((isHumor || isRespostaParabens) && resto.contains('\n\n')) {
             final partes = resto.split('\n\n');
             spans.add(TextSpan(text: partes.first));
-            spans.add(
-              TextSpan(
-                text: '\n\n${partes.sublist(1).join('\n\n')}',
+            // Motivo com o mesmo estilo da legenda de um post normal;
+            // hashtags em laranja.
+            final motivo = '\n\n${partes.sublist(1).join('\n\n')}';
+            var ult = 0;
+            for (final h in RegExp(r'#[\p{L}\p{N}_]+', unicode: true)
+                .allMatches(motivo)) {
+              if (h.start > ult) {
+                spans.add(TextSpan(text: motivo.substring(ult, h.start)));
+              }
+              spans.add(TextSpan(
+                text: h.group(0),
                 style: GoogleFonts.poppins(
                   fontSize: fontSize,
-                  color: AppColors.cinzaTexto,
-                  fontStyle: FontStyle.italic,
+                  color: AppColors.laranja,
+                  fontWeight: FontWeight.w700,
                   height: 1.5,
+                  backgroundColor: AppColors.laranja.withOpacity(0.08),
                 ),
-              ),
-            );
+              ));
+              ult = h.end;
+            }
+            if (ult < motivo.length) {
+              spans.add(TextSpan(text: motivo.substring(ult)));
+            }
           } else {
             spans.add(TextSpan(text: resto));
           }
@@ -3024,7 +3037,8 @@ class _PostCard extends StatelessWidget {
     final regexStr = mencaoTexto != null
         ? '${mencaoTexto.split('\n').map(RegExp.escape).join('|')}|@\\[[^\\]]+\\]|@\\S+'
         : r'@\[[^\]]+\]|@\S+';
-    final regex = RegExp(regexStr);
+    // Hashtags (#tipole) também ganham destaque, em laranja.
+    final regex = RegExp('$regexStr|#[\\p{L}\\p{N}_]+', unicode: true);
     final matches = regex.allMatches(texto).toList();
     if (matches.isEmpty) return Text(texto, style: baseStyle);
 
@@ -3043,10 +3057,12 @@ class _PostCard extends StatelessWidget {
           text: exibido,
           style: GoogleFonts.poppins(
             fontSize: fontSize,
-            color: AppColors.magenta,
+            color: bruto.startsWith('#') ? AppColors.laranja : AppColors.magenta,
             fontWeight: FontWeight.w700,
             height: 1.5,
-            backgroundColor: AppColors.magenta.withOpacity(0.08),
+            backgroundColor:
+                (bruto.startsWith('#') ? AppColors.laranja : AppColors.magenta)
+                    .withOpacity(0.08),
           ),
         ),
       );

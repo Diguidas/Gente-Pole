@@ -797,6 +797,16 @@ class ApiService {
 
   /// Cria requisição de vaga. Envia com status_requisicao = AGUARDANDO_APROVACAO_RH
   /// Retorna os templates ativos cadastrados pelo RH.
+  /// Função efetiva de um template: a função associada (cargo da TOTVS) ou,
+  /// se ainda não houver, o título — os templates antigos seguem funcionando.
+  static String funcaoEfetivaDoTemplate(Map<String, dynamic> t) {
+    final f = (t['funcao'] as String?)?.trim() ?? '';
+    return f.isNotEmpty ? f : ((t['titulo'] as String?)?.trim() ?? '');
+  }
+
+  /// Comparação de função/cargo sem diferença de maiúsculas e espaços.
+  static String normalizarFuncao(String? s) => (s ?? '').trim().toUpperCase();
+
   /// Pares (setor, função) em que o colaborador logado é requisitante de
   /// vaga (`vaga_requisitantes`) — definem os templates e a equipe que ele
   /// enxerga na abertura de vaga, mesmo sem liderar ninguém.
@@ -818,7 +828,7 @@ class ApiService {
     List<({String setor, String funcao})>? paresSetorFuncao,
   }) async {
     const colunas =
-        'id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao';
+        'id, titulo, funcao, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao';
     final resultados = <int, Map<String, dynamic>>{};
 
     final listaSetores =
@@ -848,8 +858,10 @@ class ApiService {
           .eq('ativo', true)
           .inFilter('departamento', setoresDosPares);
       for (final t in List<Map<String, dynamic>>.from(data as List)) {
-        final bate = pares.any(
-            (p) => p.setor == t['departamento'] && p.funcao == t['titulo']);
+        final bate = pares.any((p) =>
+            p.setor == t['departamento'] &&
+            normalizarFuncao(p.funcao) ==
+                normalizarFuncao(funcaoEfetivaDoTemplate(t)));
         if (bate) resultados[t['id'] as int] = t;
       }
     }
@@ -1220,14 +1232,28 @@ class ApiService {
         .where((p) => p.setor.isNotEmpty && p.funcao.isNotEmpty)
         .toList();
     if (pares.isNotEmpty) {
-      final data = await _client
-          .from('vagas')
-          .select()
+      // Templates cujo (setor, função efetiva) bate com algum par; as vagas
+      // desses templates é que o requisitante enxerga.
+      final templates = await _client
+          .from('ats_templates')
+          .select('id, titulo, funcao, departamento')
           .inFilter('departamento', pares.map((p) => p.setor).toSet().toList());
-      for (final v in List<Map<String, dynamic>>.from(data as List)) {
-        final bate = pares
-            .any((p) => p.setor == v['departamento'] && p.funcao == v['titulo']);
-        if (bate) porId[v['id'] as int] = v;
+      final idsTemplates = <int>[
+        for (final t in List<Map<String, dynamic>>.from(templates as List))
+          if (pares.any((p) =>
+              p.setor == t['departamento'] &&
+              normalizarFuncao(p.funcao) ==
+                  normalizarFuncao(funcaoEfetivaDoTemplate(t))))
+            t['id'] as int,
+      ];
+      if (idsTemplates.isNotEmpty) {
+        final data = await _client
+            .from('vagas')
+            .select()
+            .inFilter('template_id', idsTemplates);
+        for (final v in List<Map<String, dynamic>>.from(data as List)) {
+          porId[v['id'] as int] = v;
+        }
       }
     }
 
@@ -2041,8 +2067,11 @@ class ApiService {
           setoresPar,
           incluirDemitidos: incluirDemitidos,
         );
+        // Quem veio só pelo par de requisitante é marcado: na substituição só
+        // aparece se o cargo bater com a função do template escolhido.
         for (final c in res) {
-          equipe[c['id'] as int] = c;
+          final id = c['id'] as int;
+          equipe.putIfAbsent(id, () => {...c, '_origem_requisitante': true});
         }
       }
     }
@@ -3865,6 +3894,16 @@ class ApiService {
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
           if (p.tipo == 'comunicado') return false;
+          // Post de humor vale só no dia em que foi publicado.
+          if (p.tipo == 'humor') {
+            final c = p.criadoEm.toLocal();
+            final hoje = DateTime.now();
+            if (c.year != hoje.year ||
+                c.month != hoje.month ||
+                c.day != hoje.day) {
+              return false;
+            }
+          }
           // O próprio autor sempre vê seus posts (com qualquer status)
           if (p.autorId == colab.id) return true;
           // Posts de terceiros só aparecem se aprovados
@@ -4920,6 +4959,18 @@ class ApiService {
     int? gestorId,
   }) async {
     if (respostas.isNotEmpty) {
+      // Avaliação é respondida uma vez só: se já existe resposta desse avaliador
+      // nesta avaliação, não regrava (o banco também recusa a alteração).
+      final jaEnviadas = await _client
+          .from('avaliacao_respostas')
+          .select('id')
+          .eq('avaliacao_id', avaliacaoId)
+          .eq('origem', origem)
+          .eq('avaliador_id', avaliadorId)
+          .limit(1);
+      if ((jaEnviadas as List).isNotEmpty) {
+        throw Exception('Esta avaliação já foi enviada e não pode ser alterada.');
+      }
       final linhas = respostas
           .map(
             (r) => {
@@ -4962,9 +5013,14 @@ class ApiService {
             'autoavaliacao_desempenho': desempenho,
             'autoavaliacao_potencial': potencial,
             'autoavaliacao_em': DateTime.now().toIso8601String(),
-            'status': 'pendente_gestor',
           })
           .eq('id', avaliacaoId);
+      // só avança a fila; nunca regride uma avaliação já em andamento/concluída
+      await _client
+          .from('avaliacoes')
+          .update({'status': 'pendente_gestor'})
+          .eq('id', avaliacaoId)
+          .eq('status', 'pendente_auto');
     } else if (origem == 'gestor') {
       final desempenho = media(
         respostas
@@ -5118,7 +5174,7 @@ class ApiService {
   /// de PDI criado pro colaborador — mesma condição usada em [PdiScreen].
   Future<bool> existePdiAtivoPara(int colaboradorId) async {
     final data = await _client
-        .from('pdi_planos')
+        .from('pdi_grupos')
         .select('id')
         .eq('colaborador_id', colaboradorId)
         .limit(1);
@@ -5139,10 +5195,21 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listarPdiGrupos(int colaboradorId) async {
     final data = await _client
         .from('pdi_grupos')
-        .select('*, pdi_planos(*, pdi_acoes(*), pdi_termos_compromisso(*))')
+        .select('*, pdi_termos_compromisso(*), pdi_planos(*, pdi_acoes(*))')
         .eq('colaborador_id', colaboradorId)
         .order('criado_em', ascending: false);
     return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Link único da trilha do PDI na Unipole (cadastrado pelo admin no painel).
+  Future<String?> buscarLinkUnipolePdi() async {
+    final r = await _client
+        .from('pdi_config')
+        .select('link_unipole')
+        .eq('id', 1)
+        .maybeSingle();
+    final l = (r?['link_unipole'] as String?)?.trim();
+    return (l == null || l.isEmpty) ? null : l;
   }
 
   Future<int> criarPdiPlano({
@@ -5458,23 +5525,29 @@ class ApiService {
     }, onConflict: 'colaborador_id,chave');
   }
 
-  /// Colaboradores perto do fim do período de experiência (90 dias após a
-  /// admissão, a partir de 10 dias antes do limite) — porta fiel de
-  /// `listarColaboradoresFimExperiencia` do gentepole_admin, adaptando ids
-  /// `int` (este app) em vez de `String` (web). Só cobre o auto-check do
-  /// colaborador logado (`colaboradorId`); a variante por `setor` (gestor
-  /// olhando a equipe toda) é aceita mas não é usada pelo sino hoje.
+  /// Colaboradores perto de um marco do período de experiência — porta de
+  /// `listarColaboradoresFimExperiencia` do gentepole_admin.
+  /// [checkpointDias]: 45 (1ª etapa) ou 90 (etapa final). Entra na lista a
+  /// partir de 10 dias antes do marco e continua como atrasado
+  /// (`dias_restantes` negativo) por até 30 dias.
+  /// [colaboradorId] = aviso do próprio colaborador; [setores] = aviso do
+  /// gestor sobre a equipe. [paraGestor] muda o que conta como resolvido:
+  /// pro colaborador é ter respondido a pesquisa "Período de Experiência";
+  /// pro gestor é ter concluído a avaliação formal (`avaliacoes.gestor_em`).
   Future<List<Map<String, dynamic>>> listarColaboradoresFimExperiencia({
     int? colaboradorId,
-    String? setor,
+    List<String>? setores,
+    int checkpointDias = 90,
+    bool paraGestor = false,
   }) async {
     var query = _client
         .from('colaboradores')
-        .select('id, nome, setor, data_admissao');
+        .select('id, nome, setor, data_admissao')
+        .eq('demitido', false);
     if (colaboradorId != null) {
       query = query.eq('id', colaboradorId);
-    } else if (setor != null) {
-      query = query.eq('setor', setor);
+    } else if (setores != null && setores.isNotEmpty) {
+      query = query.inFilter('setor', setores);
     } else {
       return [];
     }
@@ -5487,35 +5560,52 @@ class ApiService {
       final admissao = DateTime.tryParse(admissaoStr);
       if (admissao == null) continue;
       final diasDesdeAdmissao = hoje.difference(admissao).inDays;
-      final diasRestantes = 90 - diasDesdeAdmissao;
-      if (diasRestantes >= 0 && diasRestantes <= 10) {
-        resultado.add({...c, 'dias_restantes': diasRestantes});
+      final diasRestantes = checkpointDias - diasDesdeAdmissao;
+      if (diasRestantes >= -30 && diasRestantes <= 10) {
+        resultado.add({
+          ...c,
+          'dias_restantes': diasRestantes,
+          'checkpoint_dias': checkpointDias,
+        });
       }
     }
     if (resultado.isEmpty) return resultado;
 
-    final respondenteId = colaboradorAtual?.id;
-    final pesquisa = await _client
-        .from('pesquisas')
-        .select('id')
-        .eq('tipo', 'periodo_experiencia')
-        .eq('ativa', true)
-        .order('criado_em', ascending: false)
-        .limit(1)
-        .maybeSingle();
-    if (pesquisa != null && respondenteId != null) {
-      final pesquisaId = pesquisa['id'] as int;
-      final alvoIds = resultado.map((c) => c['id']).toList();
-      final respondidas = await _client
-          .from('pesquisa_participacoes')
-          .select('colaborador_alvo_id')
-          .eq('pesquisa_id', pesquisaId)
-          .eq('colaborador_id', respondenteId)
-          .inFilter('colaborador_alvo_id', alvoIds);
-      final jaRespondidos = List<Map<String, dynamic>>.from(
-        respondidas,
-      ).map((r) => r['colaborador_alvo_id']).toSet();
-      resultado.removeWhere((c) => jaRespondidos.contains(c['id']));
+    final alvoIds = resultado.map((c) => c['id']).toList();
+    if (paraGestor) {
+      final avaliados = await _client
+          .from('avaliacoes')
+          .select('colaborador_id')
+          .eq('tipo', 'periodo_experiencia')
+          .not('gestor_em', 'is', null)
+          .inFilter('colaborador_id', alvoIds);
+      final jaAvaliados = List<Map<String, dynamic>>.from(avaliados)
+          .map((a) => a['colaborador_id'].toString())
+          .toSet();
+      resultado.removeWhere((c) => jaAvaliados.contains(c['id'].toString()));
+    } else {
+      final respondenteId = colaboradorAtual?.id;
+      final pesquisa = await _client
+          .from('pesquisas')
+          .select('id')
+          .eq('tipo', 'periodo_experiencia')
+          .eq('ativa', true)
+          .order('criado_em', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (pesquisa != null && respondenteId != null) {
+        final respondidas = await _client
+            .from('pesquisa_participacoes')
+            .select('colaborador_alvo_id')
+            .eq('pesquisa_id', pesquisa['id'] as int)
+            .eq('colaborador_id', respondenteId)
+            .inFilter('colaborador_alvo_id', alvoIds);
+        final jaRespondidos = List<Map<String, dynamic>>.from(respondidas)
+            .map((r) => r['colaborador_alvo_id'].toString())
+            .toSet();
+        resultado
+            .removeWhere((c) => jaRespondidos.contains(c['id'].toString()));
+      }
     }
 
     resultado.sort(
@@ -5779,24 +5869,50 @@ class ApiService {
     }
 
     try {
-      final experiencia = await listarColaboradoresFimExperiencia(
-        colaboradorId: meuId,
-      );
-      for (final c in experiencia) {
-        final chave = 'experiencia:${c['id']}';
-        if (dispensadas.contains(chave)) continue;
-        final diasRestantes = c['dias_restantes'] as int;
-        itens.add(
-          NotificacaoItem(
-            chave: chave,
-            tipo: 'experiencia',
-            titulo: 'Fim do período de experiência',
-            subtitulo: diasRestantes <= 0
-                ? 'Seu período de experiência está terminando'
-                : 'Faltam $diasRestantes dia(s) para o fim do seu período de experiência',
-            criadoEm: DateTime.now(),
+      final ehGestor = await verificarSeEhGestor();
+      final setoresEquipe =
+          ehGestor ? await buscarSetoresEfetivosDoGestor() : <String>[];
+      final vistos = <String>{};
+      for (final checkpoint in [45, 90]) {
+        final listas = await Future.wait([
+          listarColaboradoresFimExperiencia(
+            colaboradorId: meuId,
+            checkpointDias: checkpoint,
           ),
-        );
+          if (ehGestor && setoresEquipe.isNotEmpty)
+            listarColaboradoresFimExperiencia(
+              setores: setoresEquipe,
+              checkpointDias: checkpoint,
+              paraGestor: true,
+            ),
+        ]);
+        for (final lista in listas) {
+          for (final c in lista) {
+            // Mesma chave do painel web: dispensar num lugar vale no outro.
+            final chave = 'periodo_experiencia_$checkpoint:${c['id']}';
+            if (!vistos.add(chave) || dispensadas.contains(chave)) continue;
+            final dias = c['dias_restantes'] as int;
+            final voce = c['id'].toString() == meuId.toString();
+            final marco = checkpoint == 45
+                ? 'checkpoint dos 45 dias'
+                : 'checkpoint dos 90 dias';
+            final quem = voce ? 'da sua experiência' : 'da experiência de ${c['nome']}';
+            final texto = dias < 0
+                ? 'ATRASADO: o $marco $quem passou há ${-dias} ${-dias == 1 ? 'dia' : 'dias'}.'
+                : dias == 0
+                ? 'Hoje é o $marco $quem.'
+                : 'Faltam $dias ${dias == 1 ? 'dia' : 'dias'} para o $marco $quem.';
+            itens.add(
+              NotificacaoItem(
+                chave: chave,
+                tipo: voce ? 'experiencia' : 'experiencia_equipe',
+                titulo: 'Período de experiência',
+                subtitulo: texto,
+                criadoEm: DateTime.now(),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       debugPrint('Erro ao carregar aviso de experiência no sino: $e');
@@ -6038,6 +6154,61 @@ class ApiService {
   Future<void> excluirVeiculo(int id) async {
     await _client.from('veiculos').delete().eq('id', id);
   }
+
+  /// Matriz 9Box fixa: avaliações CONCLUÍDAS do ciclo mais recente de cada
+  /// setor (aberto ou fechado), só dos colaboradores dos setores informados.
+  Future<List<Map<String, dynamic>>> listarAvaliacoesMatrizEquipe(
+      List<String> setores) async {
+    if (setores.isEmpty) return [];
+    final ciclosVistos = <int>{};
+    final resultado = <Map<String, dynamic>>[];
+    for (final setor in setores) {
+      final data = await _client
+          .from('avaliacao_ciclos')
+          .select('id, setor')
+          .or('setor.eq.$setor,setor.is.null')
+          .order('criado_em', ascending: false)
+          .limit(1);
+      final lista = List<Map<String, dynamic>>.from(data as List);
+      if (lista.isEmpty) continue;
+      final cicloId = lista.first['id'] as int;
+      if (!ciclosVistos.add(cicloId)) continue;
+      final avs = await _client
+          .from('avaliacoes')
+          .select(
+              '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)')
+          .eq('ciclo_id', cicloId)
+          .eq('status', 'concluida');
+      resultado.addAll(List<Map<String, dynamic>>.from(avs as List).where(
+          (a) => setores.contains((a['colaboradores'] as Map?)?['setor'])));
+    }
+    return resultado;
+  }
+
+  Future<Map<int, Map<String, int>>> buscarPesosTemplates(
+      List<int> templateIds) async {
+    if (templateIds.isEmpty) return {};
+    final data = await _client
+        .from('avaliacao_templates')
+        .select('id, peso_gestor, peso_colaborador, peso_equipe')
+        .inFilter('id', templateIds);
+    return {
+      for (final t in data as List)
+        t['id'] as int: {
+          'gestor': t['peso_gestor'] as int,
+          'colaborador': t['peso_colaborador'] as int,
+          'equipe': t['peso_equipe'] as int,
+        }
+    };
+  }
+
+  Future<Map<String, String>> listarNineBoxLegendas() async {
+    final data = await _client.from('nine_box_legendas').select();
+    return {
+      for (final row in List<Map<String, dynamic>>.from(data as List))
+        row['chave'] as String: row['texto'] as String? ?? '',
+    };
+  }
 }
 
 /// Um item do sino de notificações — junta categorias bem diferentes
@@ -6058,4 +6229,5 @@ class NotificacaoItem {
     required this.subtitulo,
     required this.criadoEm,
   });
+
 }

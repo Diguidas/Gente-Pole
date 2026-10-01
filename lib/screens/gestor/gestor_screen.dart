@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import 'vagas_gestor_screen.dart';
+import 'matriz_9box_screen.dart';
 import 'minha_equipe_screen.dart';
 import 'avaliar_equipe_screen.dart';
 import 'avaliar_periodo_experiencia_gestor_screen.dart';
@@ -193,6 +194,20 @@ class _GestorScreenState extends State<GestorScreen> {
                                 ),
                                 const SizedBox(height: 16),
                               ],
+
+                              _BotaoGestor(
+                                icone: Icons.grid_view_rounded,
+                                titulo: 'Matriz 9Box',
+                                subtitulo: 'Desempenho x potencial da sua equipe',
+                                cor: AppColors.magenta,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const Matriz9BoxScreen(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
 
                               if (!_bloqueadas
                                   .contains('avaliar_equipe_gestor')) ...[

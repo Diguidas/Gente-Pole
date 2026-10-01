@@ -21,6 +21,9 @@ class ColaboradorModel {
   /// Só vem preenchido como true no picker de substituição da abertura de
   /// vaga (demitidos nunca aparecem nas demais listas).
   final bool demitido;
+  /// Veio só pelo par (setor + função) de requisitante de vaga: na
+  /// substituição só vale se o cargo bater com a função do template.
+  final bool origemRequisitante;
 
   ColaboradorModel({
     required this.id,
@@ -38,6 +41,7 @@ class ColaboradorModel {
     this.ehGestor = false,
     this.branch,
     this.demitido = false,
+    this.origemRequisitante = false,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -58,6 +62,7 @@ class ColaboradorModel {
       ehGestor: json['eh_gestor'] as bool? ?? false,
       branch: json['branch'],
       demitido: json['demitido'] as bool? ?? false,
+      origemRequisitante: json['_origem_requisitante'] as bool? ?? false,
     );
   }
 

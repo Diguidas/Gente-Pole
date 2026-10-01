@@ -69,6 +69,13 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
   }
 
   Future<void> _abrirAvaliacao(Map<String, dynamic> avaliacao) async {
+    // Avaliação concluída não pode ser refeita: só um novo ciclo libera outra.
+    if (avaliacao['status'] == 'concluida') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Esta avaliação já foi concluída e não pode ser alterada.'),
+      ));
+      return;
+    }
     final colab = avaliacao['colaboradores'] as Map?;
     final funcao = colab?['cargo'] as String? ?? '';
     final perguntas = await _api.listarPerguntasFuncao(funcao);

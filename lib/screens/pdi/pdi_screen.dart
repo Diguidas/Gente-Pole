@@ -25,6 +25,7 @@ class _PdiScreenState extends State<PdiScreen> {
   bool _loading = true;
   String? _erro;
   List<Map<String, dynamic>> _grupos = [];
+  String? _linkUnipole;
 
   @override
   void initState() {
@@ -47,8 +48,10 @@ class _PdiScreenState extends State<PdiScreen> {
         return;
       }
       final grupos = await _api.listarPdiGrupos(col.id);
+      final link = await _api.buscarLinkUnipolePdi();
       if (!mounted) return;
       setState(() {
+        _linkUnipole = link;
         _grupos = grupos;
         _loading = false;
       });
@@ -83,21 +86,6 @@ class _PdiScreenState extends State<PdiScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Erro ao anexar arquivo: $e'),
-        backgroundColor: AppColors.erro,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
-  }
-
-  Future<void> _alternarStatusAcao(Map<String, dynamic> acao) async {
-    final novoStatus = acao['status'] == 'concluido' ? 'pendente' : 'concluido';
-    try {
-      await _api.atualizarStatusAcaoPdi(acao['id'] as int, novoStatus);
-      _carregar();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao atualizar: $e'),
         backgroundColor: AppColors.erro,
         behavior: SnackBarBehavior.floating,
       ));
@@ -189,122 +177,165 @@ class _PdiScreenState extends State<PdiScreen> {
     );
   }
 
+  Widget _chipTipo(String texto) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.laranja.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(texto,
+            style: AppTextStyles.corpoMinimo.copyWith(
+                fontWeight: FontWeight.w600, color: AppColors.laranja)),
+      );
+
   Widget _buildGrupoSecao(Map<String, dynamic> grupo) {
     final titulo = grupo['titulo'] as String? ?? 'PDI';
+    final objetivo = (grupo['objetivo'] as String?)?.trim() ?? '';
     final planos =
         (grupo['pdi_planos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    final termos = (grupo['pdi_termos_compromisso'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        [];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBEFEA),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Text('Título', style: AppTextStyles.corpoMinimo),
+          Text(titulo, style: AppTextStyles.labelSecao),
+          if (objetivo.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Objetivo',
+                      style: AppTextStyles.corpoMedio
+                          .copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(objetivo, style: AppTextStyles.corpoMedio),
+                ],
+              ),
+            ),
+          ],
+          if (_linkUnipole != null) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => _abrirUrl(_linkUnipole!),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.laranja.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text('Clique e acesse seu PDI na Unipole',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.corpoMedio.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.laranja)),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.touch_app_rounded,
+                        size: 18, color: AppColors.laranja),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: planos.isEmpty
+                ? Text('Nenhuma ação cadastrada ainda.',
+                    style: AppTextStyles.corpoCinza)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final tipo in const ['tecnico', 'comportamental'])
+                        if (planos.any((p) => p['tipo'] == tipo)) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 8),
+                            child: _chipTipo(tipo == 'tecnico'
+                                ? 'Desenvolvimento Técnico'
+                                : 'Desenvolvimento Comportamental'),
+                          ),
+                          ...planos
+                              .where((p) => p['tipo'] == tipo)
+                              .map(_buildPlanoBloco),
+                        ],
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 14),
+          Text('Termo de compromisso',
+              style: AppTextStyles.corpoMedio
+                  .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Icon(Icons.flag_rounded, size: 16, color: AppColors.laranja),
-              const SizedBox(width: 6),
-              Text(titulo,
-                  style: AppTextStyles.labelSecao),
+              ...termos.map((t) => InkWell(
+                    onTap: () => _abrirUrl(t['arquivo_url'] as String),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.description_outlined,
+                          size: 15, color: AppColors.laranja),
+                      const SizedBox(width: 4),
+                      Text(t['nome_arquivo'] as String? ?? 'termo.pdf',
+                          style: AppTextStyles.corpoMedio.copyWith(
+                              color: AppColors.laranja,
+                              decoration: TextDecoration.underline)),
+                    ]),
+                  )),
+              if (termos.isEmpty)
+                Text('O RH ainda não anexou o termo.',
+                    style: AppTextStyles.corpoCinza),
             ],
           ),
-          const SizedBox(height: 10),
-          ...planos.map(_buildPlanoCard),
         ],
       ),
     );
   }
 
-  Widget _buildPlanoCard(Map<String, dynamic> plano) {
+  Widget _buildPlanoBloco(Map<String, dynamic> plano) {
     final acoes =
         (plano['pdi_acoes'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    final termos = (plano['pdi_termos_compromisso'] as List?)
-            ?.cast<Map<String, dynamic>>() ??
-        [];
-    final total = acoes.length;
-    final concluidas = acoes.where((a) => a['status'] == 'concluido').length;
-    final status = plano['status'] as String? ?? 'em_andamento';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.laranja.withOpacity(0.10),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    final tituloPlano =
+        (plano['titulo'] ?? plano['objetivo']) as String? ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(plano['objetivo'] as String? ?? '',
-                    style: AppTextStyles.labelSecao),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (status == 'concluido' ? AppColors.sucesso : AppColors.laranja)
-                      .withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  status == 'concluido'
-                      ? 'Concluído'
-                      : status == 'cancelado'
-                          ? 'Cancelado'
-                          : 'Em andamento',
-                  style: AppTextStyles.corpoMinimo.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: status == 'concluido' ? AppColors.sucesso : AppColors.laranja,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (total > 0) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: concluidas / total,
-                minHeight: 8,
-                backgroundColor: AppColors.cinzaClaro,
-                valueColor: const AlwaysStoppedAnimation(AppColors.laranja),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text('$concluidas de $total ações concluídas', style: AppTextStyles.corpoMinimo),
-          ],
-          const SizedBox(height: 12),
+          if (tituloPlano.isNotEmpty)
+            Text(tituloPlano,
+                style: AppTextStyles.corpoMedio
+                    .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
           ...acoes.map(_buildAcaoItem),
-          if (termos.isNotEmpty) ...[
-            const Divider(height: 24),
-            Text('Termo de compromisso',
-                style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            ...termos.map((t) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: InkWell(
-                    onTap: () => _abrirUrl(t['arquivo_url'] as String),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.download_rounded, size: 15, color: AppColors.laranja),
-                        const SizedBox(width: 6),
-                        Text(t['nome_arquivo'] as String? ?? 'termo.pdf',
-                            style: AppTextStyles.corpoMedio.copyWith(
-                                color: AppColors.laranja, decoration: TextDecoration.underline)),
-                      ],
-                    ),
-                  ),
-                )),
-          ],
         ],
       ),
     );
@@ -324,13 +355,10 @@ class _PdiScreenState extends State<PdiScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              GestureDetector(
-                onTap: () => _alternarStatusAcao(acao),
-                child: Icon(
-                  concluida ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                  size: 20,
-                  color: concluida ? AppColors.sucesso : AppColors.cinzaTexto,
-                ),
+              Icon(
+                concluida ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                size: 20,
+                color: concluida ? AppColors.sucesso : AppColors.cinzaTexto,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -377,6 +405,7 @@ class _PdiScreenState extends State<PdiScreen> {
                       ],
                     ),
                   ),
+                if (!concluida)
                 InkWell(
                   onTap: () => _anexarArquivo(acao['id'] as int),
                   child: Row(
@@ -385,7 +414,7 @@ class _PdiScreenState extends State<PdiScreen> {
                       const Icon(Icons.upload_file_rounded, size: 13, color: AppColors.laranja),
                       const SizedBox(width: 3),
                       Text(
-                        anexoNome == null ? 'Anexar arquivo' : 'Trocar arquivo',
+                        anexoNome == null ? 'Anexar comprovante' : 'Trocar comprovante',
                         style: AppTextStyles.corpoMinimo.copyWith(
                             color: AppColors.laranja, decoration: TextDecoration.underline),
                       ),

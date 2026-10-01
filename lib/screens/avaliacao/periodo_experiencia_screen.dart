@@ -247,7 +247,9 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
-      child: Column(
+      child: AbsorbPointer(
+        absorbing: jaEnviada,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Autoavaliação · Período de Experiência',
@@ -255,7 +257,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
           const SizedBox(height: 4),
           Text(
             jaEnviada
-                ? 'Você já enviou sua autoavaliação. Pode ajustar até o gestor avaliar.'
+                ? 'Autoavaliação enviada ✓ Ela não pode ser alterada — uma nova avaliação só abre quando o ciclo liberar outra.'
                 : 'Responda as perguntas abaixo sobre seu desempenho e potencial.',
             style: AppTextStyles.corpoCinza,
           ),
@@ -327,6 +329,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
             ),
           ],
           const SizedBox(height: 8),
+          if (!jaEnviada)
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -351,7 +354,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

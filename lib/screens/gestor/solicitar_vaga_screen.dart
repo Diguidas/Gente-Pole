@@ -111,8 +111,17 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   List<ColaboradorModel> get _equipeDoSetorDaVaga {
     final setorVaga = _templateSelecionado?['departamento'] as String?;
-    final lista = _equipe.where((c) =>
-        !c.demitido || !_idsJaSubstituidosAlgumaVez.contains(c.id));
+    final funcaoTemplate = _templateSelecionado == null
+        ? null
+        : ApiService.normalizarFuncao(
+            ApiService.funcaoEfetivaDoTemplate(_templateSelecionado!));
+    final lista = _equipe
+        .where((c) =>
+            !c.demitido || !_idsJaSubstituidosAlgumaVez.contains(c.id))
+        // Requisitante: só quem tem o cargo da função do template.
+        .where((c) =>
+            !c.origemRequisitante ||
+            ApiService.normalizarFuncao(c.cargo) == funcaoTemplate);
     if (setorVaga == null || setorVaga.isEmpty) return lista.toList();
     return lista.where((c) => c.setor == setorVaga).toList();
   }

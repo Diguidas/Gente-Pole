@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../screens/gestor/avaliar_periodo_experiencia_gestor_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../core/app_navigator.dart';
@@ -166,6 +167,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
       case 'feedback':
         return (icone: Icons.forum_outlined, cor: AppColors.laranja);
       case 'experiencia':
+      case 'experiencia_equipe':
         return (icone: Icons.hourglass_bottom_rounded, cor: AppColors.amarelo);
       default:
         return (icone: Icons.notifications_outlined, cor: AppColors.cinzaTexto);
@@ -204,6 +206,13 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
         break;
       case 'experiencia':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicosScreen()));
+        break;
+      case 'experiencia_equipe':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => const AvaliarPeriodoExperienciaGestorScreen()),
+        );
         break;
     }
   }
