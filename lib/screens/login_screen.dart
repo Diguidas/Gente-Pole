@@ -86,6 +86,8 @@ class _LoginScreenState extends State<LoginScreen>
       switch (resultado.status) {
         case 'NAO_ENCONTRADO':
           _mostrarErro('CPF não encontrado.');
+        case 'SEM_ACESSO':
+          _mostrarErro('O acesso ao sistema não está liberado para você.');
         case 'FORNECEDOR':
           setState(() {
             _etapa = 2;

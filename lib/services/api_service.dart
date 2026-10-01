@@ -67,6 +67,34 @@ class ApiService {
     await prefs.remove(_kEmpresaKey);
   }
 
+  /// Única porta de entrada do app: colaborador desligado nunca entra, e o
+  /// bloqueio por setor/admin do painel (Configurações > Acesso por setor)
+  /// vale por cima. Se a checagem falhar por qualquer motivo, NEGA.
+  Future<bool> acessoLiberado(String matricula, String empresa) async {
+    try {
+      final r = await _client.rpc('acesso_liberado',
+          params: {'p_matricula': matricula, 'p_empresa': empresa});
+      return r == true;
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Checar acesso ao sistema');
+      return false;
+    }
+  }
+
+  /// Conferência periódica de quem já está logado: `true` = segue liberado,
+  /// `false` = acesso encerrado (desligado ou bloqueado no painel), `null` =
+  /// não deu pra conferir (erro de rede) — nesse caso NÃO derruba a sessão,
+  /// pra uma oscilação de internet não deslogar todo mundo.
+  Future<bool?> verificarAcessoAtivo(String matricula, String empresa) async {
+    try {
+      final r = await _client.rpc('acesso_liberado',
+          params: {'p_matricula': matricula, 'p_empresa': empresa});
+      return r == true;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Tenta restaurar a sessão salva. Retorna true se conseguiu.
   Future<bool> restaurarSessao() async {
     final prefs = await SharedPreferences.getInstance();
@@ -80,7 +108,7 @@ class ApiService {
         .eq('matricula', matricula)
         .eq('empresa', empresa)
         .maybeSingle();
-    if (data == null) {
+    if (data == null || !await acessoLiberado(matricula, empresa)) {
       await prefs.remove(_kMatriculaKey);
       await prefs.remove(_kEmpresaKey);
       return false;
@@ -117,6 +145,9 @@ class ApiService {
     }
 
     final colaborador = ColaboradorModel.fromJson(resultColaborador);
+    if (!await acessoLiberado(colaborador.matricula, colaborador.empresa ?? '')) {
+      return (status: 'SEM_ACESSO', colaborador: null);
+    }
     colaboradorAtual = colaborador;
 
     final resultAuth = await _client
@@ -138,6 +169,7 @@ class ApiService {
     required String? empresa,
   }) async {
     if (empresa == null) return false;
+    if (!await acessoLiberado(matricula, empresa)) return false;
     try {
       await _client.rpc('criar_usuario_auth', params: {
         'p_matricula': matricula,
@@ -165,7 +197,8 @@ class ApiService {
         .eq('empresa', empresa)
         .maybeSingle();
     if (data == null) return false;
-    return data['senha_hash'] == _hash(senha);
+    if (data['senha_hash'] != _hash(senha)) return false;
+    return acessoLiberado(matricula, empresa);
   }
 
   /// Reseta a senha de quem já tem conta, mediante confirmação da data de
@@ -186,6 +219,7 @@ class ApiService {
           .maybeSingle();
       if (colaborador == null) return false;
       if (colaborador['data_nascimento'] != dataNascimento) return false;
+      if (!await acessoLiberado(matricula, empresa)) return false;
 
       final auth = await _client
           .from('usuarios_auth')
@@ -567,6 +601,41 @@ class ApiService {
 
   // ─── Colaboradores ────────────────────────────────────────────────────────────
 
+  static const _ordemNiveisHierarquia = [
+    'gerente_geral',
+    'gestor',
+    'coordenador',
+    'supervisor',
+    'encarregado',
+    'lider',
+  ];
+
+  /// Hierarquia já resolvida do colaborador (Administração de setor do
+  /// painel): quem é o gerente geral, gestor, coordenador, supervisor etc.
+  /// dele. Ignora responsáveis desligados e vem do nível mais alto ao mais
+  /// baixo. Cada item: `{nivel, nome}`.
+  Future<List<Map<String, String>>> buscarHierarquiaDoColaborador(
+      int colaboradorId) async {
+    final res = await _client
+        .from('colaborador_hierarquia')
+        .select(
+            'nivel, responsavel:colaboradores!colaborador_hierarquia_responsavel_id_fkey(nome, demitido)')
+        .eq('colaborador_id', colaboradorId);
+    final itens = <Map<String, String>>[];
+    for (final h in res as List) {
+      final resp = h['responsavel'] as Map?;
+      final nome = resp?['nome'] as String?;
+      if (nome == null || resp?['demitido'] == true) continue;
+      itens.add({'nivel': h['nivel'] as String, 'nome': nome});
+    }
+    itens.sort((a, b) {
+      final ia = _ordemNiveisHierarquia.indexOf(a['nivel']!);
+      final ib = _ordemNiveisHierarquia.indexOf(b['nivel']!);
+      return ia.compareTo(ib);
+    });
+    return itens;
+  }
+
   Future<ColaboradorModel?> buscarSupervisor(int supervisorId) async {
     final data = await _client
         .from('colaboradores')
@@ -590,6 +659,7 @@ class ApiService {
         .from('colaboradores')
         .select()
         .eq('setor', meuSetor)
+        .eq('demitido', false)
         .neq('id', colaboradorAtual!.id) // exclui o próprio usuário
         .order('nome', ascending: true);
 
@@ -804,15 +874,47 @@ class ApiService {
   /// cobrem o setor inteiro) veem todo mundo do setor. Setor sem hierarquia
   /// configurada continua mostrando todo mundo, como sempre foi — mantém
   /// compatibilidade com quem só está em `gestor_setores` (legado).
+  ///
+  /// [incluirDemitidos] só deve ser usado no picker de "colaborador a
+  /// substituir" da abertura de vaga: junta, além da equipe ativa, os
+  /// demitidos desses setores (menos prestadores) — o gestor precisa
+  /// conseguir indicar quem acabou de sair. Quem já foi indicado como
+  /// substituído em outra vaga é tirado depois, na tela.
   Future<List<Map<String, dynamic>>> buscarEquipeGestorMultiSetor(
-      List<String> setores, {int? responsavelId}) async {
+      List<String> setores,
+      {int? responsavelId,
+      bool incluirDemitidos = false}) async {
     if (setores.isEmpty) return [];
 
+    final ativos = await _buscarEquipeAtivaMultiSetor(setores, responsavelId);
+    if (!incluirDemitidos) return ativos;
+
+    final demitidos = await _client
+        .from('colaboradores')
+        .select()
+        .inFilter('setor', setores)
+        .eq('demitido', true)
+        .not('cargo', 'ilike', 'PRESTADOR%');
+    final porId = <int, Map<String, dynamic>>{
+      for (final c in ativos) c['id'] as int: c,
+    };
+    for (final c in (demitidos as List)) {
+      porId.putIfAbsent(
+          c['id'] as int, () => Map<String, dynamic>.from(c as Map));
+    }
+    return porId.values.toList()
+      ..sort((a, b) =>
+          (a['nome'] as String? ?? '').compareTo(b['nome'] as String? ?? ''));
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarEquipeAtivaMultiSetor(
+      List<String> setores, int? responsavelId) async {
     if (responsavelId == null) {
       final data = await _client
           .from('colaboradores')
           .select()
           .inFilter('setor', setores)
+          .eq('demitido', false)
           .order('nome');
       return List<Map<String, dynamic>>.from(data as List);
     }
@@ -840,7 +942,8 @@ class ApiService {
       final data = await _client
           .from('colaboradores')
           .select()
-          .inFilter('id', idsPermitidos.toList());
+          .inFilter('id', idsPermitidos.toList())
+          .eq('demitido', false);
       for (final c in (data as List)) {
         resultados[c['id'] as int] = c as Map<String, dynamic>;
       }
@@ -849,7 +952,8 @@ class ApiService {
       final data = await _client
           .from('colaboradores')
           .select()
-          .inFilter('setor', setoresSemHierarquia);
+          .inFilter('setor', setoresSemHierarquia)
+          .eq('demitido', false);
       for (final c in (data as List)) {
         resultados[c['id'] as int] = c as Map<String, dynamic>;
       }
@@ -1687,12 +1791,132 @@ class ApiService {
 
   /// Busca a equipe do gestor logado — respeitando a Administração de Setor
   /// (supervisor com liderados específicos só vê essas pessoas).
-  Future<List<ColaboradorModel>> buscarMinhaEquipe() async {
+  // ─── Celebrações coletivas (tempo de empresa e novos polevalentes) ───────
+
+  static String _isoData(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Data de hoje no formato do banco (yyyy-MM-dd).
+  static String dataHojeIso() => _isoData(DateTime.now());
+
+  /// Quem já celebrou [colaboradorId] neste evento, do mais antigo ao mais novo.
+  Future<List<Map<String, dynamic>>> listarCelebracoes({
+    required String tipo,
+    required int colaboradorId,
+    required String dataEvento,
+  }) async {
+    final res = await _client
+        .from('celebracoes')
+        .select('id, autor_id, mensagem, criado_em, '
+            'autor:colaboradores!autor_id(nome, foto_url, setor)')
+        .eq('tipo', tipo)
+        .eq('colaborador_id', colaboradorId)
+        .eq('data_evento', dataEvento)
+        .order('criado_em', ascending: true);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Registra a celebração do colaborador logado. Retorna false se ele já
+  /// celebrou esse evento (chave única) ou em caso de erro.
+  Future<bool> celebrar({
+    required String tipo,
+    required int colaboradorId,
+    required String dataEvento,
+    required String mensagem,
+  }) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client.from('celebracoes').insert({
+        'tipo': tipo,
+        'colaborador_id': colaboradorId,
+        'autor_id': meuId,
+        'data_evento': dataEvento,
+        'mensagem': mensagem.trim(),
+      });
+      PontosBus.notificarGanho();
+      return true;
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Celebrar colaborador');
+      return false;
+    }
+  }
+
+  /// Celebrações que o colaborador logado recebeu e que ainda valem: tempo de
+  /// empresa só no dia; novo polevalente na semana da chegada. Agrupadas por
+  /// evento — cada item: `{tipo, data_evento, celebracoes: [...]}`.
+  Future<List<Map<String, dynamic>>> listarCelebracoesRecebidas() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    final inicioSemana =
+        hojeSemHora.subtract(Duration(days: hoje.weekday - 1));
+    final res = await _client
+        .from('celebracoes')
+        .select('tipo, data_evento, mensagem, criado_em, '
+            'autor:colaboradores!autor_id(nome, foto_url)')
+        .eq('colaborador_id', meuId)
+        .gte('data_evento', _isoData(inicioSemana))
+        .lte('data_evento', _isoData(hojeSemHora))
+        .order('criado_em', ascending: true);
+    final grupos = <String, Map<String, dynamic>>{};
+    for (final c in res as List) {
+      final tipo = c['tipo'] as String;
+      final data = c['data_evento'] as String;
+      if (tipo == 'tempo_empresa' && data != _isoData(hojeSemHora)) continue;
+      final g = grupos.putIfAbsent(
+        '$tipo|$data',
+        () => {
+          'tipo': tipo,
+          'data_evento': data,
+          'celebracoes': <Map<String, dynamic>>[],
+        },
+      );
+      (g['celebracoes'] as List).add(Map<String, dynamic>.from(c as Map));
+    }
+    return grupos.values.toList();
+  }
+
+  /// Ids de colaboradores já indicados como "substituído" em vagas
+  /// aguardando aprovação do RH ou aprovadas. Por padrão só vagas ainda em
+  /// aberto; com [incluirEncerradas] também as já preenchidas (vale para os
+  /// demitidos: quem já foi substituído uma vez não volta ao picker).
+  Future<Set<int>> listarColaboradoresJaIndicadosComoSubstituto({
+    bool incluirEncerradas = false,
+  }) async {
+    final res = await _client
+        .from('vagas')
+        .select(
+            'colaborador_substituido_id, colaboradores_substituidos_ids, status, status_requisicao')
+        .inFilter('status_requisicao', ['AGUARDANDO_APROVACAO_RH', 'APROVADA']);
+    final ids = <int>{};
+    for (final r in res as List) {
+      final aindaEmAberto =
+          r['status_requisicao'] == 'AGUARDANDO_APROVACAO_RH' ||
+              r['status'] != 'ENCERRADA';
+      if (!aindaEmAberto && !incluirEncerradas) continue;
+      final unico = (r['colaborador_substituido_id'] as num?)?.toInt();
+      if (unico != null) ids.add(unico);
+      final lista = r['colaboradores_substituidos_ids'] as List?;
+      if (lista != null) {
+        ids.addAll(lista.map((v) => (v as num).toInt()));
+      }
+    }
+    return ids;
+  }
+
+  /// [incluirDemitidos] só para o picker de "colaborador a substituir" na
+  /// abertura de vaga (ver [buscarEquipeGestorMultiSetor]).
+  Future<List<ColaboradorModel>> buscarMinhaEquipe({
+    bool incluirDemitidos = false,
+  }) async {
     final setores = await buscarSetoresEfetivosDoGestor();
     if (setores.isEmpty) return [];
     final res = await buscarEquipeGestorMultiSetor(
       setores,
       responsavelId: colaboradorAtual?.id,
+      incluirDemitidos: incluirDemitidos,
     );
     return res.map((e) => ColaboradorModel.fromJson(e)).toList();
   }
@@ -2533,6 +2757,7 @@ class ApiService {
       final res = await _client
           .from('colaboradores')
           .select('id, nome, setor, cargo')
+          .eq('demitido', false)
           .neq('id', meuId ?? 0)
           .order('nome', ascending: true)
           .range(from, from + pageSize - 1);
@@ -3515,10 +3740,17 @@ class ApiService {
           if (!p.isAprovado) return false;
           if (p.destinatario == 'todos') return true;
           if (p.destinatario == '@setor:${colab.setor}') return true;
-          // Suporta '@colaborador:42' e '@colaborador:42|NOME'
-          if (p.destinatario.startsWith('@colaborador:${colab.id}|') ||
-              p.destinatario == '@colaborador:${colab.id}')
-            return true;
+          // Suporta '@colaborador:42', '@colaborador:42|NOME' e vários
+          // destinatários ('@colaborador:42,57|NOME1, NOME2')
+          if (p.destinatario.startsWith('@colaborador:')) {
+            final ids = p.destinatario
+                .substring('@colaborador:'.length)
+                .split('|')
+                .first
+                .split(',')
+                .map((e) => e.trim());
+            if (ids.contains(colab.id.toString())) return true;
+          }
           return false;
         })
         .toList();
@@ -3702,6 +3934,7 @@ class ApiService {
       final res = await _client
           .from('colaboradores')
           .select('setor')
+          .eq('demitido', false)
           .not('setor', 'is', null)
           .range(from, from + pageSize - 1);
       final page = res as List;
@@ -3723,6 +3956,7 @@ class ApiService {
     final res = await _client
         .from('colaboradores')
         .select('id, nome, setor')
+        .eq('demitido', false)
         .ilike('nome', '%$query%')
         .limit(8);
     return List<Map<String, dynamic>>.from(res as List);
@@ -3769,6 +4003,7 @@ class ApiService {
     final colabs = await _client
         .from('colaboradores')
         .select('id, nome, cargo')
+        .eq('demitido', false)
         .ilike('nome', '%$q%')
         .limit(6);
 
@@ -3890,6 +4125,7 @@ class ApiService {
       final page = await _client
           .from('colaboradores')
           .select('branch')
+          .eq('demitido', false)
           .range(from, from + pageSize - 1);
       final linhas = page as List;
       for (final c in linhas) {
@@ -4031,10 +4267,15 @@ class ApiService {
           .from('colaborador_hierarquia')
           .select('nivel, responsavel_id')
           .eq('colaborador_id', colaboradorId);
-      final porNivel = {
-        for (final h in (hierarquia as List))
-          h['nivel'] as String: h['responsavel_id'] as int,
-      };
+      // Vários responsáveis no mesmo nível ("Geral" em dupla): fica o de menor
+      // id, pra a escolha ser sempre a mesma.
+      final porNivel = <String, int>{};
+      for (final h in (hierarquia as List)) {
+        final nivel = h['nivel'] as String;
+        final resp = h['responsavel_id'] as int;
+        final atual = porNivel[nivel];
+        if (atual == null || resp < atual) porNivel[nivel] = resp;
+      }
       for (final nivel in _niveisComAcessoDeGestor) {
         final responsavelId = porNivel[nivel];
         if (responsavelId == null) continue;
@@ -4042,6 +4283,7 @@ class ApiService {
             .from('colaboradores')
             .select()
             .eq('id', responsavelId)
+            .eq('demitido', false)
             .maybeSingle();
         if (data != null) return ColaboradorModel.fromJson(data);
       }
@@ -4053,6 +4295,7 @@ class ApiService {
         .eq('setor', setor)
         .eq('empresa', empresa)
         .eq('eh_gestor', true)
+        .eq('demitido', false)
         .limit(1)
         .maybeSingle();
     if (data == null) return null;
@@ -5048,6 +5291,7 @@ class ApiService {
     final res = await _client
         .from('colaboradores')
         .select('id, nome, setor, foto_url, data_admissao')
+        .eq('demitido', false)
         .gte('data_admissao', fmt(inicioSemana))
         .lte('data_admissao', fmt(limiteSuperior))
         .order('data_admissao', ascending: false);
@@ -5158,17 +5402,64 @@ class ApiService {
   }) async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return [];
+    // O destinatário pode listar várias pessoas ('@colaborador:1,2|NOMES'),
+    // então o filtro por id é feito aqui e não no SQL.
     final res = await _client
         .from('feed_posts')
         .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
-        .or(
-          'destinatario.eq.@colaborador:$meuId,destinatario.like.@colaborador:$meuId|%',
-        )
+        .like('destinatario', '@colaborador:%')
         .order('criado_em', ascending: false)
-        .limit(limite);
-    return List<Map<String, dynamic>>.from(
-      res as List,
-    ).where((p) => p['autor_id'] != meuId).toList();
+        .limit(200);
+    return List<Map<String, dynamic>>.from(res as List)
+        .where((p) => p['autor_id'] != meuId)
+        .where((p) {
+          final dest = p['destinatario'] as String? ?? '';
+          final ids = dest
+              .substring('@colaborador:'.length)
+              .split('|')
+              .first
+              .split(',')
+              .map((e) => e.trim());
+          return ids.contains(meuId.toString());
+        })
+        .take(limite)
+        .toList();
+  }
+
+  /// Posts aprovados dos últimos 30 dias em que o colaborador logado foi
+  /// marcado (`@[Nome Completo]`) por outra pessoa e que ele pode ver (para
+  /// todos ou o setor dele). Posts endereçados a pessoas já aparecem como
+  /// mensagem direta.
+  Future<List<Map<String, dynamic>>> listarMencoesRecebidas() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final desde = DateTime.now()
+        .subtract(const Duration(days: 30))
+        .toUtc()
+        .toIso8601String();
+    final res = await _client
+        .from('feed_posts')
+        .select('id, autor_id, conteudo, criado_em, destinatario, '
+            'autor:colaboradores!autor_id(nome)')
+        .eq('status', 'aprovado')
+        .gte('criado_em', desde)
+        .ilike('conteudo', '%@[${colab.nome}]%')
+        .order('criado_em', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(res as List)
+        .where((p) => p['autor_id'].toString() != colab.id.toString())
+        .where((p) {
+      final dest = p['destinatario'] as String? ?? 'todos';
+      if (dest == 'todos' || dest.isEmpty) return true;
+      if (dest.startsWith('@setor:')) {
+        return dest
+            .substring(7)
+            .split(',')
+            .map((s) => s.trim())
+            .contains(colab.setor);
+      }
+      return false;
+    }).toList();
   }
 
   /// Parabéns recebidos pelo colaborador logado que ainda não tiveram
@@ -5262,6 +5553,29 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('Erro ao carregar mensagens diretas no sino: $e');
+    }
+
+    try {
+      final mencoes = await listarMencoesRecebidas();
+      for (final m in mencoes) {
+        final chave = 'mencao:${m['id']}';
+        if (dispensadas.contains(chave)) continue;
+        final autor = m['autor'] as Map?;
+        final autorNome = autor?['nome'] as String? ?? 'Alguém';
+        itens.add(
+          NotificacaoItem(
+            chave: chave,
+            tipo: 'mencao',
+            titulo: '$autorNome marcou você em um post',
+            subtitulo: (m['conteudo'] as String?) ?? 'Toque para ver o post',
+            criadoEm:
+                DateTime.tryParse(m['criado_em'] as String? ?? '') ??
+                DateTime.now(),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar marcações no sino: $e');
     }
 
     try {

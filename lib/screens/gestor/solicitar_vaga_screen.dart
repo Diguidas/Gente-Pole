@@ -21,11 +21,18 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   List<Map<String, dynamic>> _templates = [];
   bool _carregandoTemplates = true;
   Map<String, dynamic>? _templateSelecionado;
+  // Primeiro escolhe o setor; só então aparecem os templates dele.
+  String? _setorEscolhido;
+  final _buscaEtapa1Ctrl = TextEditingController();
+  String _buscaEtapa1 = '';
 
   // Etapa 2: detalhes da requisição
   bool _ehSubstituicao = false;
   ColaboradorModel? _colaboradorSubstituido;
   List<ColaboradorModel> _equipe = [];
+  // Demitidos que já foram indicados como substituídos em alguma vaga
+  // (inclusive já preenchida) — não voltam a aparecer no picker.
+  Set<int> _idsJaSubstituidosAlgumaVez = {};
   bool _carregandoEquipe = false;
   final _motivoCtrl = TextEditingController();
   bool _enviando = false;
@@ -72,6 +79,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   @override
   void dispose() {
     _motivoCtrl.dispose();
+    _buscaEtapa1Ctrl.dispose();
     _centroCustoCtrl.dispose();
     _observacaoTICtrl.dispose();
     super.dispose();
@@ -99,15 +107,25 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   List<ColaboradorModel> get _equipeDoSetorDaVaga {
     final setorVaga = _templateSelecionado?['departamento'] as String?;
-    if (setorVaga == null || setorVaga.isEmpty) return _equipe;
-    return _equipe.where((c) => c.setor == setorVaga).toList();
+    final lista = _equipe.where((c) =>
+        !c.demitido || !_idsJaSubstituidosAlgumaVez.contains(c.id));
+    if (setorVaga == null || setorVaga.isEmpty) return lista.toList();
+    return lista.where((c) => c.setor == setorVaga).toList();
   }
 
   Future<void> _carregarEquipe() async {
     setState(() => _carregandoEquipe = true);
     try {
-      final lista = await _api.buscarMinhaEquipe();
-      if (mounted) setState(() { _equipe = lista; _carregandoEquipe = false; });
+      final lista = await _api.buscarMinhaEquipe(incluirDemitidos: true);
+      final jaSubstituidos = await _api
+          .listarColaboradoresJaIndicadosComoSubstituto(incluirEncerradas: true);
+      if (mounted) {
+        setState(() {
+          _equipe = lista;
+          _idsJaSubstituidosAlgumaVez = jaSubstituidos;
+          _carregandoEquipe = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _carregandoEquipe = false);
     }
@@ -412,7 +430,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                             ? () => setState(() => _mostrarEtapa3 = false)
                             : _templateSelecionado != null
                                 ? _voltarParaTemplates
-                                : () => Navigator.pop(context),
+                                : _voltaParaSetores
+                                    ? _voltarParaSetores
+                                    : () => Navigator.pop(context),
                         icon: const Icon(Icons.arrow_back_ios_new_rounded,
                             color: Colors.white, size: 20),
                       ),
@@ -433,7 +453,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                             ),
                             Text(
                               _templateSelecionado == null
-                                  ? 'Selecione o cargo'
+                                  ? (_setorAtual == null
+                                      ? 'Selecione o setor'
+                                      : 'Selecione o cargo · $_setorAtual')
                                   : _mostrarEtapa3
                                       ? 'Passo 3 de 3'
                                       : 'Passo 2 de 3',
@@ -498,22 +520,159 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
-      itemCount: _templates.length + 1,
-      itemBuilder: (_, i) {
-        if (i == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Text(
-              'Selecione o cargo da vaga',
-              style: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.cinzaTexto),
+    final setorAtual = _setorAtual;
+    final termo = _buscaEtapa1.trim().toLowerCase();
+    final porSetor = _templatesPorSetor;
+
+    final List<Widget> itens;
+    if (setorAtual == null) {
+      final setores = porSetor.keys
+          .where((s) => termo.isEmpty || s.toLowerCase().contains(termo))
+          .toList()
+        ..sort();
+      itens = setores.isEmpty
+          ? [_vazioBusca('Nenhum setor encontrado para "$termo".')]
+          : setores.map((s) => _cardSetor(s, porSetor[s]!.length)).toList();
+    } else {
+      final templates = (porSetor[setorAtual] ?? [])
+          .where((t) =>
+              termo.isEmpty ||
+              (t['titulo'] as String? ?? '').toLowerCase().contains(termo))
+          .toList()
+        ..sort((a, b) =>
+            (a['titulo'] as String? ?? '').compareTo(b['titulo'] as String? ?? ''));
+      itens = templates.isEmpty
+          ? [_vazioBusca('Nenhuma vaga encontrada para "$termo".')]
+          : templates.map(_cardTemplate).toList();
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+          child: TextField(
+            controller: _buscaEtapa1Ctrl,
+            onChanged: (v) => setState(() => _buscaEtapa1 = v),
+            style: GoogleFonts.poppins(fontSize: 13),
+            decoration: InputDecoration(
+              hintText: setorAtual == null ? 'Pesquisar setor...' : 'Pesquisar vaga...',
+              hintStyle:
+                  GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+              prefixIcon:
+                  const Icon(Icons.search, size: 20, color: AppColors.cinzaTexto),
+              suffixIcon: _buscaEtapa1.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close,
+                          size: 18, color: AppColors.cinzaTexto),
+                      onPressed: () => setState(_limparBuscaEtapa1),
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
-          );
-        }
-        return _cardTemplate(_templates[i - 1]);
-      },
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+            children: itens,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Templates agrupados pelo setor (departamento) da vaga.
+  Map<String, List<Map<String, dynamic>>> get _templatesPorSetor {
+    final mapa = <String, List<Map<String, dynamic>>>{};
+    for (final t in _templates) {
+      final d = (t['departamento'] as String?)?.trim() ?? '';
+      mapa.putIfAbsent(d.isEmpty ? 'Sem setor' : d, () => []).add(t);
+    }
+    return mapa;
+  }
+
+  // Quem só enxerga um setor (ex: requisitante) pula direto pros templates.
+  String? get _setorAtual {
+    if (_setorEscolhido != null) return _setorEscolhido;
+    final setores = _templatesPorSetor.keys;
+    return setores.length == 1 ? setores.first : null;
+  }
+
+  bool get _voltaParaSetores =>
+      _setorEscolhido != null && _templatesPorSetor.length > 1;
+
+  void _limparBuscaEtapa1() {
+    _buscaEtapa1Ctrl.clear();
+    _buscaEtapa1 = '';
+  }
+
+  void _voltarParaSetores() {
+    setState(() {
+      _setorEscolhido = null;
+      _limparBuscaEtapa1();
+    });
+  }
+
+  Widget _vazioBusca(String msg) => Padding(
+        padding: const EdgeInsets.only(top: 40),
+        child: Center(
+          child: Text(msg,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto)),
+        ),
+      );
+
+  Widget _cardSetor(String setor, int quantidade) {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _setorEscolhido = setor;
+        _limparBuscaEtapa1();
+      }),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.apartment_outlined, color: Color(0xFF6366F1)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(setor,
+                      style: GoogleFonts.poppins(
+                          fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dark)),
+                  const SizedBox(height: 2),
+                  Text('$quantidade ${quantidade == 1 ? 'vaga' : 'vagas'}',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: AppColors.cinzaTexto)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.cinzaTexto),
+          ],
+        ),
+      ),
     );
   }
 
@@ -638,7 +797,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           children: [
             Expanded(
               child: _botaoTipo(
-                label: 'Nova vaga',
+                label: 'Aumento de quadro',
                 icone: Icons.add_circle_outline_rounded,
                 selecionado: !_ehSubstituicao,
                 onTap: () => _onTipoAlterado(false),
@@ -707,9 +866,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     return DropdownMenuItem(
                       value: c.matricula,
                       child: Text(
-                        c.cargo != null && c.cargo!.isNotEmpty
-                            ? '${c.nome} – ${c.cargo}'
-                            : c.nome,
+                        '${c.cargo != null && c.cargo!.isNotEmpty ? '${c.nome} – ${c.cargo}' : c.nome}${c.demitido ? ' (desligado)' : ''}',
                         style: GoogleFonts.poppins(fontSize: 13),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1117,7 +1274,8 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     items: _equipeDoSetorDaVaga.map((c) {
                       return DropdownMenuItem(
                         value: c.matricula,
-                        child: Text('${c.nome} – ${c.cargo}',
+                        child: Text(
+                            '${c.nome} – ${c.cargo}${c.demitido ? ' (desligado)' : ''}',
                             overflow: TextOverflow.ellipsis),
                       );
                     }).toList(),

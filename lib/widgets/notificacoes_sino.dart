@@ -159,6 +159,8 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
         return (icone: Icons.poll_outlined, cor: AppColors.magenta);
       case 'mensagem':
         return (icone: Icons.mail_outline_rounded, cor: const Color(0xFF6366F1));
+      case 'mencao':
+        return (icone: Icons.alternate_email_rounded, cor: const Color(0xFF0EA5E9));
       case 'parabens':
         return (icone: Icons.cake_outlined, cor: const Color(0xFFEC4899));
       case 'feedback':
@@ -184,6 +186,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
         Navigator.push(context, MaterialPageRoute(builder: (_) => const PesquisaListScreen()));
         break;
       case 'mensagem':
+      case 'mencao':
         AppNavigator.goToTab(0); // aba Feed
         break;
       case 'parabens':

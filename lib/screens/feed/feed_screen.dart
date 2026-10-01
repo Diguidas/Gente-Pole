@@ -60,6 +60,8 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // Colaboradores admitidos na semana corrente
   List<Map<String, dynamic>> _novosColaboradoresSemana = [];
+  // Celebrações que EU recebi (tempo de empresa / novo polevalente) e ainda valem.
+  List<Map<String, dynamic>> _celebracoesRecebidas = [];
 
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
@@ -81,6 +83,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarBanners();
     _carregarAniversarios();
     _carregarNovosColaboradoresSemana();
+    _carregarCelebracoesRecebidas();
     _carregarPesquisasPendentes();
     _carregarFeedbacksPresenciaisPendentes();
     _scrollCtrl.addListener(_onScroll);
@@ -187,6 +190,44 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (_) {}
   }
 
+  Future<void> _carregarCelebracoesRecebidas() async {
+    try {
+      final r = await _api.listarCelebracoesRecebidas();
+      if (!mounted) return;
+      setState(() => _celebracoesRecebidas = r);
+    } catch (_) {}
+  }
+
+  /// Abre a folha de celebração de um card de tempo de empresa ou de novo
+  /// polevalente (aniversariante tem o fluxo de parabéns próprio).
+  void _abrirCelebracao({
+    required String tipo,
+    required Map<String, dynamic> pessoa,
+    required String dataEvento,
+    required String titulo,
+    required String subtitulo,
+  }) {
+    final meuId = _api.colaboradorAtual?.id;
+    final pessoaId = (pessoa['id'] as num?)?.toInt();
+    if (meuId == null || pessoaId == null || pessoaId == meuId) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CelebracaoSheet(
+        api: _api,
+        meuId: meuId,
+        tipo: tipo,
+        colaboradorId: pessoaId,
+        nome: pessoa['nome'] as String? ?? 'Colega',
+        setor: pessoa['setor'] as String?,
+        dataEvento: dataEvento,
+        titulo: titulo,
+        subtitulo: subtitulo,
+      ),
+    );
+  }
+
   Future<void> _carregarNovosColaboradoresSemana() async {
     try {
       final n = await _api.buscarNovosColaboradoresSemana();
@@ -220,13 +261,22 @@ class _FeedScreenState extends State<FeedScreen> {
   List<AniversarianteModel> get _aniversariantesHoje =>
       _aniversariantes.where((a) => a.ehHoje).toList();
 
+  /// Aniversários de empresa de hoje, do maior tempo de casa ao menor (empate
+  /// por nome).
   List<Map<String, dynamic>> get _aniversariosEmpresaHoje =>
-      _aniversariosEmpresa
+      (_aniversariosEmpresa
           .where(
             (a) =>
                 a['eh_hoje'] == true && (a['anos_completos'] as int? ?? 0) >= 1,
           )
-          .toList();
+          .toList())
+        ..sort((a, b) {
+          final anos = ((b['anos_completos'] as num?)?.toInt() ?? 0)
+              .compareTo((a['anos_completos'] as num?)?.toInt() ?? 0);
+          if (anos != 0) return anos;
+          return (a['nome'] as String? ?? '')
+              .compareTo(b['nome'] as String? ?? '');
+        });
 
   Future<void> _registrarHumor(int nivel) async {
     const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
@@ -661,59 +711,55 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFFDE68A)),
+          // Prévia: o post inteiro como vai aparecer no feed (foto, texto
+          // formatado, menções, destinatário), não só um trecho.
           ...posts.map(
             (p) => Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: p.isPendente
-                          ? const Color(0xFFFEF3C7)
-                          : const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      p.isPendente ? '⏳ Aguardando' : 'Rejeitado',
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: p.isPendente
-                            ? const Color(0xFFB45309)
-                            : const Color(0xFFB91C1C),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      p.conteudo ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: const Color(0xFF78350F),
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                  if (p.isRejeitado)
-                    GestureDetector(
-                      onTap: () => _confirmarExclusao(p),
-                      child: const Padding(
-                        padding: EdgeInsets.only(left: 8),
-                        child: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                          color: Color(0xFFB91C1C),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            p.isPendente
+                                ? 'É assim que vai aparecer no feed depois de aprovado'
+                                : (p.motivoRejeicao != null &&
+                                        p.motivoRejeicao!.isNotEmpty
+                                    ? 'Post rejeitado pelo RH. Motivo: ${p.motivoRejeicao}'
+                                    : 'Este post foi rejeitado pelo RH'),
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: p.isPendente
+                                  ? const Color(0xFFB45309)
+                                  : const Color(0xFFB91C1C),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (p.isRejeitado)
+                          GestureDetector(
+                            onTap: () => _confirmarExclusao(p),
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Color(0xFFB91C1C),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
+                  ),
+                  _PostCard(
+                    post: p,
+                    meuId: _api.colaboradorAtual?.id,
+                    onExcluir: () {},
+                    preview: true,
+                  ),
                 ],
               ),
             ),
@@ -845,6 +891,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return [
       if (_banners.isNotEmpty) _buildBannerHome(),
       _buildHumorCard(),
+      if (_celebracoesRecebidas.isNotEmpty) _buildCelebracoesRecebidasCard(),
       if (_feedbacksPresenciaisPendentes.isNotEmpty) _buildFeedbackPresencialPendenteCard(),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
@@ -968,6 +1015,17 @@ class _FeedScreenState extends State<FeedScreen> {
           cor: nivel?.cor ?? AppColors.laranja,
           mensagem: '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa',
           nivel: nivel,
+          onTap: (a['id'] as num?)?.toInt() == _api.colaboradorAtual?.id
+              ? null
+              : () => _abrirCelebracao(
+                    tipo: 'tempo_empresa',
+                    pessoa: a,
+                    dataEvento: ApiService.dataHojeIso(),
+                    titulo:
+                        'Celebrar ${(a['nome'] as String? ?? '').split(' ').first}',
+                    subtitulo:
+                        '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa',
+                  ),
         );
       }).toList(),
     );
@@ -991,8 +1049,96 @@ class _FeedScreenState extends State<FeedScreen> {
           mensagem: dataFormatada.isNotEmpty
               ? 'Chegou dia $dataFormatada'
               : 'Seja bem-vindo(a)!',
+          onTap: (c['id'] as num?)?.toInt() == _api.colaboradorAtual?.id ||
+                  c['data_admissao'] == null
+              ? null
+              : () => _abrirCelebracao(
+                    tipo: 'novo_colaborador',
+                    pessoa: c,
+                    dataEvento: c['data_admissao'] as String,
+                    titulo:
+                        'Boas-vindas, ${(c['nome'] as String? ?? '').split(' ').first}!',
+                    subtitulo: dataFormatada.isNotEmpty
+                        ? 'Chegou dia $dataFormatada'
+                        : 'Novo polevalente',
+                  ),
         );
       }).toList(),
+    );
+  }
+
+  /// Card (só de quem foi celebrado) com quem celebrou e as mensagens. Só
+  /// existe se pelo menos uma pessoa celebrou.
+  Widget _buildCelebracoesRecebidasCard() {
+    return Column(
+      children: [
+        for (final g in _celebracoesRecebidas)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.laranja.withOpacity(0.35)),
+              boxShadow: const [
+                BoxShadow(
+                    color: Color(0x08000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 3)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  g['tipo'] == 'tempo_empresa'
+                      ? '🎉 Celebraram seu tempo de Pole!'
+                      : '👋 Deram boas-vindas a você!',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.dark,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final c in (g['celebracoes'] as List))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _avatarCelebracao(c['autor'] as Map?),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (c['autor']?['nome'] as String?) ?? 'Alguém',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.dark,
+                                ),
+                              ),
+                              Text(
+                                c['mensagem'] as String? ?? '',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12.5,
+                                  color: AppColors.cinzaTexto,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -1336,6 +1482,13 @@ class _InlineComposerState extends State<_InlineComposer> {
   String _destinatario = 'todos';
   String _destinatarioLabel = 'Todos';
 
+  // "Para:" (quem vê o post) — separado das @marcações do texto, como no
+  // painel web: o @ só marca/notifica a pessoa; o "Para" é o direcionamento.
+  String _tipoDestino = 'todos'; // 'todos' | 'setor' | 'pessoas'
+  Set<String> _setoresSel = {};
+  List<({String id, String nome})> _pessoasSel = [];
+  List<String>? _setoresDisponiveis;
+
   bool _showSugestoes = false;
   List<Map<String, String>> _sugestoes = [];
   bool _buscandoSugestoes = false;
@@ -1367,6 +1520,53 @@ class _InlineComposerState extends State<_InlineComposer> {
   int _mencaoStart = -1;
   int _mencaoEnd =
       -1; // posição após o último label inserido; ignora @s anteriores
+
+  /// Recalcula `_destinatario`/rótulo a partir da escolha no seletor "Para".
+  void _atualizarDestino() {
+    switch (_tipoDestino) {
+      case 'setor':
+        final lista = _setoresSel.toList()..sort();
+        _destinatario = lista.isEmpty ? 'todos' : '@setor:${lista.join(',')}';
+        _destinatarioLabel = lista.map((x) => '@$x').join(', ');
+      case 'pessoas':
+        if (_pessoasSel.isEmpty) {
+          _destinatario = 'todos';
+          _destinatarioLabel = 'Todos';
+        } else {
+          _destinatario =
+              '@colaborador:${_pessoasSel.map((x) => x.id).join(',')}|${_pessoasSel.map((x) => x.nome).join(', ')}';
+          _destinatarioLabel = _pessoasSel.map((x) => '@${x.nome}').join(', ');
+        }
+      default:
+        _destinatario = 'todos';
+        _destinatarioLabel = 'Todos';
+    }
+  }
+
+  Future<void> _abrirSeletorDestino() async {
+    _setoresDisponiveis ??= await widget.api.listarSetoresDistintos()
+      ..sort();
+    if (!mounted) return;
+    final r = await showModalBottomSheet<_DestinoEscolhido>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SeletorDestinoSheet(
+        api: widget.api,
+        setores: _setoresDisponiveis ?? const [],
+        tipo: _tipoDestino,
+        setoresSel: _setoresSel,
+        pessoasSel: _pessoasSel,
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _tipoDestino = r.tipo;
+      _setoresSel = r.setores;
+      _pessoasSel = r.pessoas;
+      _atualizarDestino();
+    });
+  }
 
   void _onTextoMudou() {
     setState(() {});
@@ -1406,7 +1606,9 @@ class _InlineComposerState extends State<_InlineComposer> {
 
   Future<void> _buscarSugestoes(String query) async {
     setState(() => _buscandoSugestoes = true);
-    final resultados = await widget.api.buscarSugestoesMencao(query);
+    final resultados = (await widget.api.buscarSugestoesMencao(query))
+        .where((r) => r['tipo'] != 'todos')
+        .toList();
     if (!mounted) return;
     setState(() {
       _sugestoes = resultados;
@@ -1415,31 +1617,27 @@ class _InlineComposerState extends State<_InlineComposer> {
     });
   }
 
+  /// Insere a marcação no texto — NÃO mexe no "Para:". Nomes com espaço ficam
+  /// entre colchetes (`@[Nome Completo]`), que é o formato que o servidor
+  /// reconhece pra mandar o push/sino pra pessoa marcada.
   void _selecionarMencao(Map<String, String> sugestao) {
-    final valor = sugestao['valor']!;
-    final label = sugestao['label']!;
+    final nome = sugestao['label']!.replaceFirst('@', '');
+    final marcado = nome.contains(' ') ? '@[$nome]' : '@$nome';
     final texto = _ctrl.text;
     final cursor = _ctrl.selection.baseOffset;
     final depois = texto.substring(cursor);
     final novoAntes = _mencaoStart >= 0
-        ? '${texto.substring(0, _mencaoStart)}$label '
-        : texto.substring(0, cursor).replaceAll(RegExp(r'@\S*$'), '$label ');
+        ? '${texto.substring(0, _mencaoStart)}$marcado '
+        : texto.substring(0, cursor).replaceAll(RegExp(r'@\S*$'), '$marcado ');
 
-    // Para colaboradores, embute o nome no destinatario: '@colaborador:42|NOME'
-    final destinatarioFinal = valor.startsWith('@colaborador:')
-        ? '$valor|${label.replaceFirst('@', '')}'
-        : valor;
-
-    // Registra o label para o controller destacar exatamente esse trecho
-    _ctrl.addMention(label);
+    // Registra o trecho pro controller destacá-lo no campo de texto
+    _ctrl.addMention(marcado);
 
     _ctrl.value = TextEditingValue(
       text: novoAntes + depois,
       selection: TextSelection.collapsed(offset: novoAntes.length),
     );
     setState(() {
-      _destinatario = destinatarioFinal;
-      _destinatarioLabel = label;
       _showSugestoes = false;
       _sugestoes = [];
       _mencaoStart = -1;
@@ -1505,6 +1703,9 @@ class _InlineComposerState extends State<_InlineComposer> {
       setState(() {
         _imagemBytes = null;
         _imagemNome = null;
+        _tipoDestino = 'todos';
+        _setoresSel = {};
+        _pessoasSel = [];
         _destinatario = 'todos';
         _mencaoEnd = -1;
         _destinatarioLabel = 'Todos';
@@ -1572,10 +1773,13 @@ class _InlineComposerState extends State<_InlineComposer> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Chip de destinatário — sempre visível
+                      // "Para:" — sempre visível; toque abre o seletor
                       Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Container(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _abrirSeletorDestino,
+                          child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
                             vertical: 4,
@@ -1602,34 +1806,45 @@ class _InlineComposerState extends State<_InlineComposer> {
                                 color: AppColors.magenta,
                               ),
                               const SizedBox(width: 4),
-                              Text(
+                              Flexible(
+                                child: Text(
                                 _destinatario == 'todos'
                                     ? 'Para todos'
                                     : _destinatarioLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.poppins(
                                   color: AppColors.magenta,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              if (_destinatario != 'todos') ...[
-                                const SizedBox(width: 4),
+                              ),
+                              const SizedBox(width: 4),
+                              if (_destinatario != 'todos')
                                 GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () => setState(() {
-                                    _destinatario = 'todos';
-                                    _destinatarioLabel = 'Todos';
-                                    _mencaoEnd = -1;
+                                    _tipoDestino = 'todos';
+                                    _setoresSel = {};
+                                    _pessoasSel = [];
+                                    _atualizarDestino();
                                   }),
                                   child: Icon(
                                     Icons.close_rounded,
                                     size: 14,
                                     color: AppColors.magenta,
                                   ),
+                                )
+                              else
+                                Icon(
+                                  Icons.expand_more_rounded,
+                                  size: 14,
+                                  color: AppColors.magenta,
                                 ),
-                              ],
                             ],
                           ),
+                        ),
                         ),
                       ),
 
@@ -1897,6 +2112,347 @@ class _InlineComposerState extends State<_InlineComposer> {
       );
 }
 
+class _DestinoEscolhido {
+  final String tipo; // 'todos' | 'setor' | 'pessoas'
+  final Set<String> setores;
+  final List<({String id, String nome})> pessoas;
+  const _DestinoEscolhido(this.tipo, this.setores, this.pessoas);
+}
+
+/// Seletor do "Para:" do post — mesmas opções do painel web: Todos, Por setor
+/// (vários) e Pessoas (várias).
+class _SeletorDestinoSheet extends StatefulWidget {
+  final ApiService api;
+  final List<String> setores;
+  final String tipo;
+  final Set<String> setoresSel;
+  final List<({String id, String nome})> pessoasSel;
+
+  const _SeletorDestinoSheet({
+    required this.api,
+    required this.setores,
+    required this.tipo,
+    required this.setoresSel,
+    required this.pessoasSel,
+  });
+
+  @override
+  State<_SeletorDestinoSheet> createState() => _SeletorDestinoSheetState();
+}
+
+class _SeletorDestinoSheetState extends State<_SeletorDestinoSheet> {
+  late String _tipo = widget.tipo;
+  late final Set<String> _setores = {...widget.setoresSel};
+  late final List<({String id, String nome})> _pessoas = [...widget.pessoasSel];
+  final _buscaSetorCtrl = TextEditingController();
+  final _buscaPessoaCtrl = TextEditingController();
+  List<Map<String, dynamic>> _resultados = [];
+  bool _buscando = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _buscaSetorCtrl.dispose();
+    _buscaPessoaCtrl.dispose();
+    super.dispose();
+  }
+
+  void _buscarPessoas(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 2) {
+      setState(() => _resultados = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      setState(() => _buscando = true);
+      final r = await widget.api.buscarColaboradoresParaDestinatario(q.trim());
+      if (!mounted) return;
+      setState(() {
+        _resultados = r;
+        _buscando = false;
+      });
+    });
+  }
+
+  bool get _valido => switch (_tipo) {
+        'setor' => _setores.isNotEmpty,
+        'pessoas' => _pessoas.isNotEmpty,
+        _ => true,
+      };
+
+  void _alternarPessoa(String id, String nome) {
+    setState(() {
+      final i = _pessoas.indexWhere((p) => p.id == id);
+      if (i >= 0) {
+        _pessoas.removeAt(i);
+      } else {
+        _pessoas.add((id: id, nome: nome));
+      }
+    });
+  }
+
+  Widget _opcaoTipo(String valor, String rotulo, IconData icone) {
+    final sel = _tipo == valor;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _tipo = valor),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: sel
+                ? AppColors.magenta.withOpacity(0.1)
+                : const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: sel ? AppColors.magenta : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icone,
+                  size: 20,
+                  color: sel ? AppColors.magenta : AppColors.cinzaTexto),
+              const SizedBox(height: 4),
+              Text(
+                rotulo,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                  color: sel ? AppColors.magenta : AppColors.cinzaTexto,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final termoSetor = _buscaSetorCtrl.text.trim().toLowerCase();
+    final setoresFiltrados = widget.setores
+        .where((x) => termoSetor.isEmpty || x.toLowerCase().contains(termoSetor))
+        .toList();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('Para quem vai esse post?', style: AppTextStyles.tituloMedio),
+            const SizedBox(height: 4),
+            Text(
+              'Use @ no texto para marcar alguém sem mudar quem vê o post.',
+              style: AppTextStyles.corpoCinza,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                _opcaoTipo('todos', 'Todos', Icons.public_rounded),
+                const SizedBox(width: 8),
+                _opcaoTipo('setor', 'Por setor', Icons.group_rounded),
+                const SizedBox(width: 8),
+                _opcaoTipo('pessoas', 'Pessoas', Icons.person_rounded),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_tipo == 'todos')
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'Precisa de aprovação do RH antes de aparecer no feed.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFFB45309),
+                          ),
+                        ),
+                      ),
+                    if (_tipo == 'setor') ...[
+                      TextField(
+                        controller: _buscaSetorCtrl,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar setor...',
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          isDense: true,
+                          filled: true,
+                          fillColor: const Color(0xFFF3F4F6),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final x in setoresFiltrados)
+                            FilterChip(
+                              label: Text('@$x',
+                                  style: GoogleFonts.poppins(fontSize: 12)),
+                              selected: _setores.contains(x),
+                              selectedColor:
+                                  AppColors.laranja.withOpacity(0.15),
+                              checkmarkColor: AppColors.laranja,
+                              onSelected: (v) => setState(() {
+                                v ? _setores.add(x) : _setores.remove(x);
+                              }),
+                            ),
+                        ],
+                      ),
+                    ],
+                    if (_tipo == 'pessoas') ...[
+                      if (_pessoas.isNotEmpty) ...[
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final pe in _pessoas)
+                              InputChip(
+                                avatar: const Icon(Icons.person_rounded,
+                                    size: 14, color: AppColors.magenta),
+                                label: Text(pe.nome,
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        color: AppColors.magenta,
+                                        fontWeight: FontWeight.w600)),
+                                backgroundColor:
+                                    AppColors.magenta.withOpacity(0.08),
+                                onDeleted: () => _alternarPessoa(pe.id, pe.nome),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      TextField(
+                        controller: _buscaPessoaCtrl,
+                        onChanged: _buscarPessoas,
+                        decoration: InputDecoration(
+                          hintText: _pessoas.isEmpty
+                              ? 'Buscar pessoas pelo nome...'
+                              : 'Adicionar mais pessoas...',
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          isDense: true,
+                          filled: true,
+                          fillColor: const Color(0xFFF3F4F6),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      if (_buscando)
+                        const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: LinearProgressIndicator(
+                              color: AppColors.magenta),
+                        ),
+                      for (final c in _resultados)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor:
+                                AppColors.magenta.withOpacity(0.12),
+                            child: Text(
+                              (c['nome'] as String? ?? '?').isNotEmpty
+                                  ? (c['nome'] as String)[0].toUpperCase()
+                                  : '?',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.magenta,
+                              ),
+                            ),
+                          ),
+                          title: Text(c['nome'] as String? ?? '',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                          subtitle: Text(c['setor'] as String? ?? '',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11, color: AppColors.cinzaTexto)),
+                          trailing: _pessoas.any((x) => x.id == '${c['id']}')
+                              ? const Icon(Icons.check_circle_rounded,
+                                  color: AppColors.magenta, size: 18)
+                              : null,
+                          onTap: () {
+                            _alternarPessoa(
+                                '${c['id']}', c['nome'] as String? ?? '');
+                            setState(() {
+                              _resultados = [];
+                              _buscaPessoaCtrl.clear();
+                            });
+                          },
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _valido
+                    ? () => Navigator.pop(
+                          context,
+                          _DestinoEscolhido(_tipo, _setores, _pessoas),
+                        )
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.magenta,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: Text('Concluir',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // _HumorCard — widget separado para garantir tap correto dentro de ListView
 // ════════════════════════════════════════════════════════════════════════════════
@@ -2052,11 +2608,15 @@ class _PostCard extends StatelessWidget {
   final FeedPostModel post;
   final int? meuId;
   final VoidCallback onExcluir;
+  /// Prévia de um post ainda pendente/rejeitado: sem menu de excluir nem
+  /// reações.
+  final bool preview;
 
   const _PostCard({
     required this.post,
     required this.meuId,
     required this.onExcluir,
+    this.preview = false,
   });
 
   @override
@@ -2274,7 +2834,7 @@ class _PostCard extends StatelessWidget {
                   ),
                 // Post de humor não pode ser excluído — é um registro de
                 // bem-estar, não um post social comum.
-                if (meuId != null && post.autorId == meuId && !isHumor)
+                if (!preview && meuId != null && post.autorId == meuId && !isHumor)
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'excluir') onExcluir();
@@ -2367,7 +2927,7 @@ class _PostCard extends StatelessWidget {
             const SizedBox(height: 14),
 
           // ── Reações ─────────────────────────────────────────────────────────
-          _ReacoesBar(postId: post.id, meuId: meuId),
+          if (!preview) _ReacoesBar(postId: post.id, meuId: meuId),
         ],
       ),
     );
@@ -2449,13 +3009,20 @@ class _PostCard extends StatelessWidget {
     String? mencaoTexto;
     if (post.destinatario.startsWith('@colaborador:')) {
       final pipeIdx = post.destinatario.indexOf('|');
-      if (pipeIdx >= 0)
-        mencaoTexto = '@${post.destinatario.substring(pipeIdx + 1)}';
+      // Uma ou várias pessoas ('NOME1, NOME2'): cada nome vira uma
+      // alternativa do regex (separadas por '\n' em mencaoTexto).
+      if (pipeIdx >= 0) {
+        mencaoTexto = post.destinatario
+            .substring(pipeIdx + 1)
+            .split(', ')
+            .map((n) => '@$n')
+            .join('\n');
+      }
     } else if (post.destinatario.startsWith('@setor:')) {
       mencaoTexto = '@${post.destinatario.substring(7)}';
     }
     final regexStr = mencaoTexto != null
-        ? '${RegExp.escape(mencaoTexto)}|@\\[[^\\]]+\\]|@\\S+'
+        ? '${mencaoTexto.split('\n').map(RegExp.escape).join('|')}|@\\[[^\\]]+\\]|@\\S+'
         : r'@\[[^\]]+\]|@\S+';
     final regex = RegExp(regexStr);
     final matches = regex.allMatches(texto).toList();
@@ -3053,6 +3620,9 @@ class _LinhaAniversario extends StatelessWidget {
   final String mensagem;
   final NivelTempoCasa? nivel;
   final bool destaqueMeuSetor;
+  /// Quando preenchido, o card inteiro é clicável (abre a celebração) e
+  /// mostra um ícone de festa à direita.
+  final VoidCallback? onTap;
 
   const _LinhaAniversario({
     required this.nome,
@@ -3062,6 +3632,7 @@ class _LinhaAniversario extends StatelessWidget {
     required this.mensagem,
     this.nivel,
     this.destaqueMeuSetor = false,
+    this.onTap,
   });
 
   @override
@@ -3070,7 +3641,7 @@ class _LinhaAniversario extends StatelessWidget {
         ? nome.trim().split(' ').take(2).map((p) => p[0]).join().toUpperCase()
         : '?';
 
-    return Container(
+    final card = Container(
       width: 250,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -3186,7 +3757,293 @@ class _LinhaAniversario extends StatelessWidget {
               ],
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: cor,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.celebration_rounded,
+                  size: 16, color: Colors.white),
+            ),
+          ],
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return GestureDetector(onTap: onTap, child: card);
+  }
+}
+
+Widget _avatarCelebracao(Map? autor) {
+  final foto = autor?['foto_url'] as String?;
+  final nome = (autor?['nome'] as String?)?.trim() ?? '?';
+  return CircleAvatar(
+    radius: 16,
+    backgroundColor: AppColors.laranja.withOpacity(0.15),
+    backgroundImage: (foto != null && foto.isNotEmpty)
+        ? CachedNetworkImageProvider(foto)
+        : null,
+    child: (foto != null && foto.isNotEmpty)
+        ? null
+        : Text(
+            nome.isNotEmpty ? nome[0].toUpperCase() : '?',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.laranja,
+            ),
+          ),
+  );
+}
+
+/// Folha de celebração (tempo de empresa / novo polevalente): em cima, quem
+/// já celebrou; embaixo, o campo para celebrar também.
+class _CelebracaoSheet extends StatefulWidget {
+  final ApiService api;
+  final int meuId;
+  final String tipo;
+  final int colaboradorId;
+  final String nome;
+  final String? setor;
+  final String dataEvento;
+  final String titulo;
+  final String subtitulo;
+
+  const _CelebracaoSheet({
+    required this.api,
+    required this.meuId,
+    required this.tipo,
+    required this.colaboradorId,
+    required this.nome,
+    required this.setor,
+    required this.dataEvento,
+    required this.titulo,
+    required this.subtitulo,
+  });
+
+  @override
+  State<_CelebracaoSheet> createState() => _CelebracaoSheetState();
+}
+
+class _CelebracaoSheetState extends State<_CelebracaoSheet> {
+  final _ctrl = TextEditingController();
+  List<Map<String, dynamic>> _celebracoes = [];
+  bool _carregando = true;
+  bool _enviando = false;
+
+  bool get _jaCelebrei =>
+      _celebracoes.any((c) => c['autor_id'].toString() == '${widget.meuId}');
+
+  @override
+  void initState() {
+    super.initState();
+    final primeiro = widget.nome.split(' ').first;
+    _ctrl.text = widget.tipo == 'tempo_empresa'
+        ? 'Parabéns pelo seu tempo de Pole, $primeiro! 🎉'
+        : 'Seja muito bem-vindo(a), $primeiro! 👋';
+    _carregar();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _carregar() async {
+    try {
+      final r = await widget.api.listarCelebracoes(
+        tipo: widget.tipo,
+        colaboradorId: widget.colaboradorId,
+        dataEvento: widget.dataEvento,
+      );
+      if (mounted) setState(() => _celebracoes = r);
+    } catch (_) {}
+    if (mounted) setState(() => _carregando = false);
+  }
+
+  Future<void> _celebrar() async {
+    final msg = _ctrl.text.trim();
+    if (msg.isEmpty || _enviando) return;
+    setState(() => _enviando = true);
+    final ok = await widget.api.celebrar(
+      tipo: widget.tipo,
+      colaboradorId: widget.colaboradorId,
+      dataEvento: widget.dataEvento,
+      mensagem: msg,
+    );
+    if (!mounted) return;
+    if (ok) await _carregar();
+    if (!mounted) return;
+    setState(() => _enviando = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível enviar. Você já pode ter celebrado.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(widget.titulo, style: AppTextStyles.tituloMedio),
+            Text(
+              [
+                widget.subtitulo,
+                if ((widget.setor ?? '').isNotEmpty) widget.setor!,
+              ].join(' · '),
+              style: AppTextStyles.corpoCinza,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _celebracoes.isEmpty
+                  ? 'Ninguém celebrou ainda — seja o primeiro!'
+                  : 'Quem já celebrou (${_celebracoes.length})',
+              style: GoogleFonts.poppins(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.cinzaTexto,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: _carregando
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.magenta,
+                        ),
+                      ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final c in _celebracoes)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _avatarCelebracao(c['autor'] as Map?),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        (c['autor']?['nome'] as String?) ??
+                                            'Alguém',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.dark,
+                                        ),
+                                      ),
+                                      Text(
+                                        c['mensagem'] as String? ?? '',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12.5,
+                                          color: AppColors.cinzaTexto,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            const Divider(height: 24),
+            if (_jaCelebrei)
+              Text(
+                'Você já celebrou ${widget.nome.split(' ').first}. ✓',
+                style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.magenta,
+                ),
+              )
+            else ...[
+              TextField(
+                controller: _ctrl,
+                maxLines: 3,
+                maxLength: 280,
+                style: GoogleFonts.poppins(fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: 'Escreva sua mensagem...',
+                  filled: true,
+                  fillColor: const Color(0xFFF3F4F6),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _enviando ? null : _celebrar,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.magenta,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: _enviando
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          'Celebrar',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

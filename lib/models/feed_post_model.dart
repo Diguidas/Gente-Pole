@@ -23,6 +23,8 @@ class FeedPostModel {
   final DateTime criadoEm;
   // 'aprovado' | 'pendente' | 'rejeitado' — só relevante para posts para 'todos'
   final String status;
+  /// Explicação do RH quando o post foi rejeitado.
+  final String? motivoRejeicao;
 
   const FeedPostModel({
     required this.id,
@@ -37,6 +39,7 @@ class FeedPostModel {
     required this.destinatario,
     required this.criadoEm,
     this.status = 'aprovado',
+    this.motivoRejeicao,
   });
 
   factory FeedPostModel.fromJson(Map<String, dynamic> json) {
@@ -56,6 +59,7 @@ class FeedPostModel {
       destinatario: json['destinatario'] as String? ?? 'todos',
       criadoEm: DateTime.parse(json['criado_em'] as String),
       status: json['status'] as String? ?? 'aprovado',
+      motivoRejeicao: json['motivo_rejeicao'] as String?,
     );
   }
 
@@ -69,7 +73,14 @@ class FeedPostModel {
     }
     if (destinatario.startsWith('@colaborador:')) {
       final pipeIdx = destinatario.indexOf('|');
-      if (pipeIdx >= 0) return '@${destinatario.substring(pipeIdx + 1)}';
+      if (pipeIdx >= 0) {
+        // Várias pessoas: '@colaborador:1,2|NOME1, NOME2'
+        return destinatario
+            .substring(pipeIdx + 1)
+            .split(', ')
+            .map((n) => '@$n')
+            .join(', ');
+      }
       return 'Menção direta';
     }
     return destinatario;
@@ -100,6 +111,7 @@ class FeedPostModel {
         destinatario: destinatario,
         criadoEm: criadoEm,
         status: status ?? this.status,
+        motivoRejeicao: motivoRejeicao,
       );
 
   bool get isDoSistema => autorId == null;

@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import 'login_screen.dart';
 import 'package:gentepole/screens/feed/feed_screen.dart';
 import '../core/app_theme.dart';
 import '../core/app_navigator.dart';
@@ -16,20 +19,67 @@ class MainLayout extends StatefulWidget {
   State<MainLayout> createState() => _MainLayoutState();
 }
 
-class _MainLayoutState extends State<MainLayout> {
+class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final Set<int> _visitadas = {0};
+  Timer? _timerAcesso;
+  bool _encerrando = false;
 
   @override
   void initState() {
     super.initState();
     AppNavigator.tabIndex.addListener(_onExternalTab);
+    // Confere o acesso de quem já está logado: a cada poucos minutos e
+    // quando o app volta ao primeiro plano.
+    WidgetsBinding.instance.addObserver(this);
+    _timerAcesso = Timer.periodic(
+        const Duration(minutes: 5), (_) => _verificarAcesso());
   }
 
   @override
   void dispose() {
     AppNavigator.tabIndex.removeListener(_onExternalTab);
+    WidgetsBinding.instance.removeObserver(this);
+    _timerAcesso?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _verificarAcesso();
+  }
+
+  /// Desligado ou bloqueado no painel: encerra a sessão. Se a conferência
+  /// falhar (sem internet), não derruba ninguém.
+  Future<void> _verificarAcesso() async {
+    if (_encerrando) return;
+    final api = ApiService();
+    final colab = api.colaboradorAtual;
+    if (colab == null) return;
+    final ok =
+        await api.verificarAcessoAtivo(colab.matricula, colab.empresa ?? '');
+    if (ok != false || !mounted) return;
+    _encerrando = true;
+    await api.limparSessao();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Acesso encerrado'),
+        content: const Text('Seu acesso ao sistema foi encerrado.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   void _onExternalTab() => _onTabTap(AppNavigator.tabIndex.value);

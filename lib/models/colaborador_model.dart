@@ -18,6 +18,9 @@ class ColaboradorModel {
   /// Código da filial vindo direto do TOTVS RM (campo `branch`) — mais
   /// confiável que derivar de codCentro.
   final String? branch;
+  /// Só vem preenchido como true no picker de substituição da abertura de
+  /// vaga (demitidos nunca aparecem nas demais listas).
+  final bool demitido;
 
   ColaboradorModel({
     required this.id,
@@ -34,6 +37,7 @@ class ColaboradorModel {
     this.empresa,
     this.ehGestor = false,
     this.branch,
+    this.demitido = false,
   });
 
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
@@ -53,6 +57,7 @@ class ColaboradorModel {
       empresa: json['empresa'],
       ehGestor: json['eh_gestor'] as bool? ?? false,
       branch: json['branch'],
+      demitido: json['demitido'] as bool? ?? false,
     );
   }
 

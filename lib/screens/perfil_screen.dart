@@ -19,11 +19,40 @@ class _PessoasScreenState extends State<PessoasScreen> {
   ColaboradorModel? _supervisor;
   bool _loadingSupervisor = false;
   bool _uploadandoFoto = false;
+  // Hierarquia resolvida (gerente geral, gestor, coordenador...). Quando
+  // existe, substitui o "Supervisor" legado (supervisor_id).
+  List<Map<String, String>> _hierarquia = [];
+
+  static const _rotulosNivel = {
+    'gerente_geral': 'Gerente Geral',
+    'gestor': 'Gestor',
+    'coordenador': 'Coordenador',
+    'supervisor': 'Supervisor',
+    'encarregado': 'Encarregado',
+    'lider': 'Líder',
+  };
+
+  static String _rotuloNivel(String nivel) =>
+      _rotulosNivel[nivel] ??
+      nivel
+          .split('_')
+          .map((p) => p.isEmpty ? p : p[0].toUpperCase() + p.substring(1))
+          .join(' ');
 
   @override
   void initState() {
     super.initState();
     _carregarSupervisor();
+    _carregarHierarquia();
+  }
+
+  Future<void> _carregarHierarquia() async {
+    final id = _api.colaboradorAtual?.id;
+    if (id == null) return;
+    try {
+      final h = await _api.buscarHierarquiaDoColaborador(id);
+      if (mounted) setState(() => _hierarquia = h);
+    } catch (_) {}
   }
 
   Future<void> _carregarSupervisor() async {
@@ -237,8 +266,18 @@ class _PessoasScreenState extends State<PessoasScreen> {
                               _mascaraCpf(c.cpf!),
                             ),
 
-                          // Supervisor
-                          if (_loadingSupervisor)
+                          // Hierarquia (gerente geral, gestor, coordenador...)
+                          for (final h in _hierarquia)
+                            _itemInfo(
+                              Icons.account_tree_outlined,
+                              _rotuloNivel(h['nivel']!),
+                              h['nome']!,
+                            ),
+
+                          // Supervisor (legado) — só quando não há hierarquia
+                          if (_hierarquia.isNotEmpty)
+                            const SizedBox.shrink()
+                          else if (_loadingSupervisor)
                             const Padding(
                               padding: EdgeInsets.all(12),
                               child: CircularProgressIndicator(
