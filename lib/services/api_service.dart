@@ -797,25 +797,66 @@ class ApiService {
 
   /// Cria requisição de vaga. Envia com status_requisicao = AGUARDANDO_APROVACAO_RH
   /// Retorna os templates ativos cadastrados pelo RH.
+  /// Pares (setor, função) em que o colaborador logado é requisitante de
+  /// vaga (`vaga_requisitantes`) — definem os templates e a equipe que ele
+  /// enxerga na abertura de vaga, mesmo sem liderar ninguém.
+  Future<List<({String setor, String funcao})>> listarParesRequisitante() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final res = await _client
+        .from('vaga_requisitantes')
+        .select('setor, funcao')
+        .eq('colaborador_id', colab.id);
+    return List<Map<String, dynamic>>.from(res as List)
+        .map((r) => (setor: r['setor'] as String, funcao: r['funcao'] as String))
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> listarTemplatesGestor({
     String? setor,
     List<String>? setores,
+    List<({String setor, String funcao})>? paresSetorFuncao,
   }) async {
-    var q = _client
-        .from('ats_templates')
-        .select(
-          'id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao',
-        )
-        .eq('ativo', true);
+    const colunas =
+        'id, titulo, departamento, tipo_contrato, tipo_vaga, teste_pratico, descricao';
+    final resultados = <int, Map<String, dynamic>>{};
+
     final listaSetores =
         setores?.where((s) => s.isNotEmpty).toList() ?? const [];
-    if (listaSetores.isNotEmpty) {
-      q = q.inFilter('departamento', listaSetores);
-    } else if (setor != null && setor.isNotEmpty) {
-      q = q.eq('departamento', setor);
+    if (listaSetores.isNotEmpty || (setor != null && setor.isNotEmpty)) {
+      var q = _client.from('ats_templates').select(colunas).eq('ativo', true);
+      q = listaSetores.isNotEmpty
+          ? q.inFilter('departamento', listaSetores)
+          : q.eq('departamento', setor!);
+      final data = await q;
+      for (final t in List<Map<String, dynamic>>.from(data as List)) {
+        resultados[t['id'] as int] = t;
+      }
     }
-    final res = await q.order('titulo');
-    return List<Map<String, dynamic>>.from(res as List);
+
+    // Requisitante de vaga: soma os templates exatos dos pares (setor, função)
+    // dele — mesmo fora dos setores onde ele é gestor.
+    final pares = paresSetorFuncao
+            ?.where((p) => p.setor.isNotEmpty && p.funcao.isNotEmpty)
+            .toList() ??
+        const [];
+    if (pares.isNotEmpty) {
+      final setoresDosPares = pares.map((p) => p.setor).toSet().toList();
+      final data = await _client
+          .from('ats_templates')
+          .select(colunas)
+          .eq('ativo', true)
+          .inFilter('departamento', setoresDosPares);
+      for (final t in List<Map<String, dynamic>>.from(data as List)) {
+        final bate = pares.any(
+            (p) => p.setor == t['departamento'] && p.funcao == t['titulo']);
+        if (bate) resultados[t['id'] as int] = t;
+      }
+    }
+
+    return resultados.values.toList()
+      ..sort((a, b) =>
+          (a['titulo'] as String? ?? '').compareTo(b['titulo'] as String? ?? ''));
   }
 
   /// Níveis da hierarquia de setor (ver Administração de Setor no painel web)
@@ -1908,17 +1949,47 @@ class ApiService {
 
   /// [incluirDemitidos] só para o picker de "colaborador a substituir" na
   /// abertura de vaga (ver [buscarEquipeGestorMultiSetor]).
+  ///
+  /// [incluirSetoresDeRequisitante]: soma a equipe dos setores em que o
+  /// colaborador é requisitante de vaga (sem exigir que ele lidere ali) —
+  /// só para o picker de substituição da abertura de vaga.
   Future<List<ColaboradorModel>> buscarMinhaEquipe({
     bool incluirDemitidos = false,
+    bool incluirSetoresDeRequisitante = false,
   }) async {
     final setores = await buscarSetoresEfetivosDoGestor();
-    if (setores.isEmpty) return [];
-    final res = await buscarEquipeGestorMultiSetor(
-      setores,
-      responsavelId: colaboradorAtual?.id,
-      incluirDemitidos: incluirDemitidos,
-    );
-    return res.map((e) => ColaboradorModel.fromJson(e)).toList();
+    final equipe = <int, Map<String, dynamic>>{};
+    if (setores.isNotEmpty) {
+      final res = await buscarEquipeGestorMultiSetor(
+        setores,
+        responsavelId: colaboradorAtual?.id,
+        incluirDemitidos: incluirDemitidos,
+      );
+      for (final c in res) {
+        equipe[c['id'] as int] = c;
+      }
+    }
+    if (incluirSetoresDeRequisitante) {
+      final pares = await listarParesRequisitante();
+      final setoresPar = pares
+          .map((p) => p.setor)
+          .toSet()
+          .where((s) => !setores.contains(s))
+          .toList();
+      if (setoresPar.isNotEmpty) {
+        final res = await buscarEquipeGestorMultiSetor(
+          setoresPar,
+          incluirDemitidos: incluirDemitidos,
+        );
+        for (final c in res) {
+          equipe[c['id'] as int] = c;
+        }
+      }
+    }
+    final lista = equipe.values.toList()
+      ..sort((a, b) =>
+          (a['nome'] as String? ?? '').compareTo(b['nome'] as String? ?? ''));
+    return lista.map((e) => ColaboradorModel.fromJson(e)).toList();
   }
 
   /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando

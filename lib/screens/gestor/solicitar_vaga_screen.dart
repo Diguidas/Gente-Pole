@@ -97,8 +97,12 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   Future<void> _carregarTemplates() async {
     try {
       final setores = await _api.buscarSetoresEfetivosDoGestor();
+      // Requisitante de vaga: soma os templates dos pares (setor, função).
+      final pares = await _api.listarParesRequisitante();
       final lista = await _api.listarTemplatesGestor(
-          setor: _api.colaboradorAtual?.setor, setores: setores);
+          setor: _api.colaboradorAtual?.setor,
+          setores: setores,
+          paresSetorFuncao: pares);
       if (mounted) setState(() { _templates = lista; _carregandoTemplates = false; });
     } catch (_) {
       if (mounted) setState(() => _carregandoTemplates = false);
@@ -116,7 +120,8 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   Future<void> _carregarEquipe() async {
     setState(() => _carregandoEquipe = true);
     try {
-      final lista = await _api.buscarMinhaEquipe(incluirDemitidos: true);
+      final lista = await _api.buscarMinhaEquipe(
+          incluirDemitidos: true, incluirSetoresDeRequisitante: true);
       final jaSubstituidos = await _api
           .listarColaboradoresJaIndicadosComoSubstituto(incluirEncerradas: true);
       if (mounted) {
