@@ -2032,11 +2032,10 @@ class ApiService {
     }
     if (incluirSetoresDeRequisitante) {
       final pares = await listarParesRequisitante();
-      final setoresPar = pares
-          .map((p) => p.setor)
-          .toSet()
-          .where((s) => !setores.contains(s))
-          .toList();
+      // Mesmo que o setor do par também seja um setor "do líder" (ex: o próprio
+      // setor do colaborador), a equipe inteira dele entra: a lista do líder
+      // é restrita à hierarquia e ficaria vazia pra quem não lidera ninguém ali.
+      final setoresPar = pares.map((p) => p.setor).toSet().toList();
       if (setoresPar.isNotEmpty) {
         final res = await buscarEquipeGestorMultiSetor(
           setoresPar,
