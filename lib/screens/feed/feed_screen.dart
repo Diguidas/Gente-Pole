@@ -16,6 +16,8 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/gestures.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _douradoResposta = Color(0xFFB8860B);
@@ -77,6 +79,7 @@ class _FeedScreenState extends State<FeedScreen> {
   void initState() {
     super.initState();
     _carregarPontos();
+    _carregarFotoGentePole();
     _carregarFeed();
     _carregarHumor();
     _carregarExame();
@@ -131,6 +134,14 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   // ── Polens (gamificação) ─────────────────────────────────────────────────
+
+  Future<void> _carregarFotoGentePole() async {
+    try {
+      final f = await _api.buscarFotoGentePole();
+      if (!mounted || f == null) return;
+      setState(() => _PostCard.fotoGentePole = f);
+    } catch (_) {}
+  }
 
   Future<void> _carregarPontos() async {
     try {
@@ -2605,6 +2616,9 @@ class _HumorCardState extends State<_HumorCard> {
 // ════════════════════════════════════════════════════════════════════════════════
 
 class _PostCard extends StatelessWidget {
+  /// Foto do usuário Gente Pole (avatar dos comunicados); carregada pela tela.
+  static String? fotoGentePole;
+
   final FeedPostModel post;
   final int? meuId;
   final VoidCallback onExcluir;
@@ -2639,10 +2653,20 @@ class _PostCard extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               )
+            : (isDoSistema && !isAniversario)
+            ? LinearGradient(
+                colors: [AppColors.laranja.withOpacity(0.07), Colors.white],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              )
             : null,
-        color: isRespostaParabens ? null : Colors.white,
+        color: (isRespostaParabens || (isDoSistema && !isAniversario))
+            ? null
+            : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: isRespostaParabens
+        border: (isDoSistema && !isAniversario)
+            ? Border.all(color: AppColors.laranja.withOpacity(0.55), width: 1.5)
+            : isRespostaParabens
             ? Border.all(color: _douradoResposta.withOpacity(0.35), width: 1.5)
             : isAniversario
             ? Border.all(color: AppColors.laranja.withOpacity(0.4), width: 1.5)
@@ -2676,17 +2700,30 @@ class _PostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isDoSistema
-                            ? (isAniversario
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              isDoSistema
                                   ? 'Gente Pole'
-                                  : 'Gente Pole')
-                            : (post.autorNome ?? 'Colaborador'),
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: AppColors.dark,
-                        ),
+                                  : (post.autorNome ?? 'Colaborador'),
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AppColors.dark,
+                              ),
+                            ),
+                          ),
+                          if (isDoSistema && !isAniversario) ...[
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: AppColors.laranja,
+                            ),
+                          ],
+                        ],
                       ),
                       Row(
                         children: [
@@ -2755,16 +2792,27 @@ class _PostCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.amarelo.withOpacity(0.15),
+                      color: AppColors.laranja,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      'Comunicado',
-                      style: GoogleFonts.poppins(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF8A6400),
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.campaign_rounded,
+                          size: 13,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Comunicado oficial',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 if (!isDoSistema && !isHumor && !isRespostaParabens)
@@ -2874,15 +2922,7 @@ class _PostCard extends StatelessWidget {
           ),
 
           // ── Imagem ──────────────────────────────────────────────────────────
-          if (post.temImagem)
-            CachedNetworkImage(
-              imageUrl: post.imagemUrl!,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              placeholder: (_, __) =>
-                  Container(height: 200, color: const Color(0xFFF3F4F6)),
-              errorWidget: (_, __, ___) => const SizedBox.shrink(),
-            ),
+          if (post.temImagem) _imagensDoPost(),
 
           // ── Título (comunicados) ───────────────────────────────────────────
           if (post.titulo != null && post.titulo!.isNotEmpty)
@@ -3040,13 +3080,17 @@ class _PostCard extends StatelessWidget {
     // Hashtags (#tipole) também ganham destaque, em laranja.
     final regex = RegExp('$regexStr|#[\\p{L}\\p{N}_]+', unicode: true);
     final matches = regex.allMatches(texto).toList();
-    if (matches.isEmpty) return Text(texto, style: baseStyle);
+    if (matches.isEmpty) {
+      return RichText(
+        text: TextSpan(style: baseStyle, children: _comLinks(texto, fontSize)),
+      );
+    }
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     int last = 0;
     for (final m in matches) {
       if (m.start > last) {
-        spans.add(TextSpan(text: texto.substring(last, m.start)));
+        spans.addAll(_comLinks(texto.substring(last, m.start), fontSize));
       }
       final bruto = m.group(0)!;
       final exibido = bruto.startsWith('@[') && bruto.endsWith(']')
@@ -3069,7 +3113,7 @@ class _PostCard extends StatelessWidget {
       last = m.end;
     }
     if (last < texto.length) {
-      spans.add(TextSpan(text: texto.substring(last)));
+      spans.addAll(_comLinks(texto.substring(last), fontSize));
     }
 
     return RichText(
@@ -3077,7 +3121,80 @@ class _PostCard extends StatelessWidget {
     );
   }
 
-  Widget _avatarSistema(bool isAniversario) => Container(
+  static final _regexLink = RegExp(
+    r'(https?://[^\s]+|www\.[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|gov|edu)(?:\.br)?(?:/[^\s]*)?)',
+    caseSensitive: false,
+  );
+
+  /// Quebra o texto em trechos normais e links (clicáveis, em azul).
+  static List<InlineSpan> _comLinks(String texto, double fontSize) {
+    final out = <InlineSpan>[];
+    var ult = 0;
+    for (final m in _regexLink.allMatches(texto)) {
+      var link = m.group(0)!;
+      final sobra = RegExp(r'[.,;:!?)]+$').firstMatch(link)?.group(0) ?? '';
+      link = link.substring(0, link.length - sobra.length);
+      final fim = m.end - sobra.length;
+      if (link.isEmpty) continue;
+      if (m.start > ult) out.add(TextSpan(text: texto.substring(ult, m.start)));
+      final destino = link.toLowerCase().startsWith('http')
+          ? link
+          : 'https://$link';
+      out.add(
+        TextSpan(
+          text: link,
+          style: GoogleFonts.poppins(
+            fontSize: fontSize,
+            color: const Color(0xFF1D6FD8),
+            decoration: TextDecoration.underline,
+            height: 1.5,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () => launchUrl(
+              Uri.parse(destino),
+              mode: LaunchMode.externalApplication,
+            ),
+        ),
+      );
+      ult = fim;
+    }
+    if (ult < texto.length) out.add(TextSpan(text: texto.substring(ult)));
+    return out;
+  }
+
+  /// Uma imagem: como sempre (inteira, na largura do card). Várias (separadas
+  /// por quebra de linha em imagem_url): carrossel com contador e bolinhas.
+  Widget _imagensDoPost() {
+    final urls = post.imagemUrl!
+        .split('\n')
+        .map((u) => u.trim())
+        .where((u) => u.isNotEmpty)
+        .toList();
+    if (urls.length <= 1) {
+      return CachedNetworkImage(
+        imageUrl: urls.isEmpty ? post.imagemUrl! : urls.first,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        placeholder: (_, __) =>
+            Container(height: 200, color: const Color(0xFFF3F4F6)),
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+    return _GaleriaImagensPost(urls: urls);
+  }
+
+  Widget _avatarSistema(bool isAniversario) {
+    final foto = _PostCard.fotoGentePole;
+    if (!isAniversario && foto != null && foto.isNotEmpty) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundImage: CachedNetworkImageProvider(foto),
+      );
+    }
+    return _avatarSistemaPadrao(isAniversario);
+  }
+
+  Widget _avatarSistemaPadrao(bool isAniversario) => Container(
     width: 40,
     height: 40,
     decoration: BoxDecoration(
@@ -4059,6 +4176,147 @@ class _CelebracaoSheetState extends State<_CelebracaoSheet> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Galeria de imagens do post
+// ════════════════════════════════════════════════════════════════════════════════
+
+class _GaleriaImagensPost extends StatefulWidget {
+  final List<String> urls;
+  const _GaleriaImagensPost({required this.urls});
+
+  @override
+  State<_GaleriaImagensPost> createState() => _GaleriaImagensPostState();
+}
+
+class _GaleriaImagensPostState extends State<_GaleriaImagensPost> {
+  int _atual = 0;
+
+  void _abrir(int i) => Navigator.of(context).push(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => _VisualizadorImagens(urls: widget.urls, inicial: i),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.urls;
+    return Container(
+      color: const Color(0xFFF3F4F6),
+      height: 300,
+      child: Stack(
+        children: [
+          PageView.builder(
+            itemCount: urls.length,
+            onPageChanged: (i) => setState(() => _atual = i),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => _abrir(i),
+              child: CachedNetworkImage(
+                imageUrl: urls[i],
+                fit: BoxFit.contain,
+                placeholder: (_, __) => const SizedBox.shrink(),
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_atual + 1}/${urls.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 8,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < urls.length; i++)
+                  Container(
+                    width: 7,
+                    height: 7,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i == _atual ? AppColors.laranja : Colors.black26,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Visualizador em tela cheia: arrastar para trocar de foto, pinça para zoom.
+class _VisualizadorImagens extends StatefulWidget {
+  final List<String> urls;
+  final int inicial;
+  const _VisualizadorImagens({required this.urls, required this.inicial});
+
+  @override
+  State<_VisualizadorImagens> createState() => _VisualizadorImagensState();
+}
+
+class _VisualizadorImagensState extends State<_VisualizadorImagens> {
+  late final PageController _controller = PageController(
+    initialPage: widget.inicial,
+  );
+  late int _atual = widget.inicial;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text('${_atual + 1}/${widget.urls.length}'),
+      ),
+      body: PageView.builder(
+        controller: _controller,
+        itemCount: widget.urls.length,
+        onPageChanged: (i) => setState(() => _atual = i),
+        itemBuilder: (_, i) => InteractiveViewer(
+          child: Center(
+            child: CachedNetworkImage(
+              imageUrl: widget.urls[i],
+              fit: BoxFit.contain,
+              errorWidget: (_, __, ___) => const Icon(
+                Icons.broken_image,
+                color: Colors.white,
+                size: 48,
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -6185,6 +6185,17 @@ class ApiService {
     return resultado;
   }
 
+  /// Foto do usuário "Gente Pole" (matrícula GENTEPOLE) — avatar dos
+  /// comunicados oficiais no feed.
+  Future<String?> buscarFotoGentePole() async {
+    final r = await _client
+        .from('colaboradores')
+        .select('foto_url')
+        .eq('matricula', 'GENTEPOLE')
+        .maybeSingle();
+    return r?['foto_url'] as String?;
+  }
+
   Future<Map<int, Map<String, int>>> buscarPesosTemplates(
       List<int> templateIds) async {
     if (templateIds.isEmpty) return {};
