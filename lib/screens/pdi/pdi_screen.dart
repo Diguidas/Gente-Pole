@@ -6,9 +6,21 @@ import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 
 const _modalidadesAcao = {
-  'blearning': 'B-learning',
+  'presencial': 'Presencial',
+  'online': 'Online',
   'benchmarking': 'Benchmarking',
-  'elearning': 'E-learning',
+  'artigo': 'Artigo',
+  'curso_online': 'Curso online',
+  'ebook': 'eBook',
+  'filme': 'Filme',
+  'livro_fisico': 'Livro Físico',
+  'livro_online': 'Livro Online',
+  'podcast': 'Podcast',
+  'serie': 'Série',
+  'ted_talk': 'TED Talk',
+  'unipole': 'UniPole',
+  'video': 'Vídeo',
+  'webinar': 'Webinar',
 };
 
 /// "Meu PDI" — Plano de Desenvolvimento Individual do colaborador logado.
