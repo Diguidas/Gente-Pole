@@ -16,6 +16,14 @@ const indigo9Box = Color(0xFF6366F1);
 /// do gestor (dentro de avaliar_equipe_gestor_screen.dart).
 int? resultado9Box(Map<String, dynamic> a, String dimensao,
     [Map<int, Map<String, int>>? pesosPorTemplate]) {
+  final v = nota9BoxDecimal(a, dimensao, pesosPorTemplate);
+  return v == null ? null : v.round().clamp(1, 5);
+}
+
+/// Mesma nota de [resultado9Box], mas sem arredondar (ex.: 3,45) — é ela que
+/// a régua de faixas ([Faixas9Box]) usa para classificar em Baixo/Médio/Alto.
+double? nota9BoxDecimal(Map<String, dynamic> a, String dimensao,
+    [Map<int, Map<String, int>>? pesosPorTemplate]) {
   final gestor = a['gestor_$dimensao'] as int?;
   if (gestor == null) return null; // gestor ainda não avaliou
   final auto = a['autoavaliacao_$dimensao'] as int?;
@@ -28,7 +36,7 @@ int? resultado9Box(Map<String, dynamic> a, String dimensao,
   }
   if (pesos == null) {
     final notas = [gestor, if (auto != null) auto, if (equipe != null) equipe];
-    return (notas.reduce((x, y) => x + y) / notas.length).round().clamp(1, 5);
+    return notas.reduce((x, y) => x + y) / notas.length;
   }
 
   var somaPesos = 0;
@@ -42,9 +50,43 @@ int? resultado9Box(Map<String, dynamic> a, String dimensao,
   aplicar(gestor, pesos['gestor'] ?? 0);
   aplicar(auto, pesos['colaborador'] ?? 0);
   aplicar(equipe, pesos['equipe'] ?? 0);
-  if (somaPesos == 0) return gestor;
-  return (somaValores / somaPesos).round().clamp(1, 5);
+  if (somaPesos == 0) return gestor.toDouble();
+  return somaValores / somaPesos;
 }
+
+/// Régua que transforma a nota decimal em faixa: Baixo (≤ [baixoMax]),
+/// Alto (≥ [altoMin]) e Médio no meio. Configurável na tela de legendas da
+/// Matriz 9Box (admin); guardada na mesma tabela das legendas, com as chaves
+/// [chaveBaixoMax] e [chaveAltoMin].
+class Faixas9Box {
+  static const chaveBaixoMax = 'cfg_faixa_baixo_max';
+  static const chaveAltoMin = 'cfg_faixa_alto_min';
+
+  final double baixoMax;
+  final double altoMin;
+  const Faixas9Box({this.baixoMax = 1.80, this.altoMin = 3.30});
+
+  factory Faixas9Box.dasLegendas(Map<String, String> legendas) {
+    double? ler(String chave) =>
+        double.tryParse((legendas[chave] ?? '').replaceAll(',', '.'));
+    return Faixas9Box(
+        baixoMax: ler(chaveBaixoMax) ?? 1.80, altoMin: ler(chaveAltoMin) ?? 3.30);
+  }
+
+  /// 0 = baixo, 1 = médio, 2 = alto.
+  int faixa(double nota) {
+    if (nota <= baixoMax) return 0;
+    if (nota >= altoMin) return 2;
+    return 1;
+  }
+
+  String rotulo(double nota) => const ['Baixo', 'Médio', 'Alto'][faixa(nota)];
+
+  String get descricao =>
+      'Baixo ≤ ${fmtNota(baixoMax)} · Médio entre ${fmtNota(baixoMax)} e ${fmtNota(altoMin)} · Alto ≥ ${fmtNota(altoMin)}';
+}
+
+String fmtNota(double n) => n.toStringAsFixed(2).replaceAll('.', ',');
 
 /// Nome, cor e ícone de cada célula da matriz 9box clássica — cruza
 /// Potencial (linha) x Desempenho (coluna), cada um reduzido de 1-5 pra 3
@@ -79,13 +121,6 @@ const List<List<_InfoQuadrante>> _quadrantes = [
 const _labelsFaixaPotencial = ['BAIXO', 'MÉDIO', 'ALTO'];
 const _labelsFaixaDesempenho = ['ABAIXO DO\nESPERADO', 'ESPERADO', 'ACIMA DO\nESPERADO'];
 
-/// Reduz a nota 1-5 pra faixa 0 (baixo, 1-2) / 1 (médio, 3) / 2 (alto, 4-5).
-int _faixa3(int nota1a5) {
-  if (nota1a5 <= 2) return 0;
-  if (nota1a5 == 3) return 1;
-  return 2;
-}
-
 class Grid9Box extends StatelessWidget {
   final List<Map<String, dynamic>> avaliacoes;
   final Map<int, Map<String, int>> pesos;
@@ -101,13 +136,14 @@ class Grid9Box extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final faixas = Faixas9Box.dasLegendas(legendas);
     // célula[potencial 0..2][desempenho 0..2], potencial alto (2) no topo
     final celulas = List.generate(3, (_) => List.generate(3, (_) => <Map<String, dynamic>>[]));
     for (final a in avaliacoes) {
-      final d = resultado9Box(a, 'desempenho', pesos);
-      final p = resultado9Box(a, 'potencial', pesos);
+      final d = nota9BoxDecimal(a, 'desempenho', pesos);
+      final p = nota9BoxDecimal(a, 'potencial', pesos);
       if (d == null || p == null) continue;
-      celulas[_faixa3(p)][_faixa3(d)].add(a);
+      celulas[faixas.faixa(p)][faixas.faixa(d)].add(a);
     }
 
     return Column(
@@ -192,6 +228,12 @@ class Grid9Box extends StatelessWidget {
           padding: const EdgeInsets.only(left: 76),
           child: Text('DESEMPENHO',
               style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.dark)),
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 76),
+          child: Text('Régua das notas: ${faixas.descricao}',
+              style: GoogleFonts.poppins(fontSize: 10.5, color: AppColors.cinzaTexto)),
         ),
       ],
     );
@@ -303,9 +345,13 @@ class _ChipColaborador extends StatelessWidget {
 class DetalheColaboradorAvaliacaoDialog extends StatelessWidget {
   final Map<String, dynamic> avaliacao;
   final Map<int, Map<String, int>> pesos;
+  final Map<String, String> legendas;
 
   const DetalheColaboradorAvaliacaoDialog(
-      {super.key, required this.avaliacao, required this.pesos});
+      {super.key,
+      required this.avaliacao,
+      required this.pesos,
+      this.legendas = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -315,8 +361,9 @@ class DetalheColaboradorAvaliacaoDialog extends StatelessWidget {
         .whereType<String>()
         .where((s) => s.isNotEmpty && s != '—')
         .join(' · ');
-    final d = resultado9Box(avaliacao, 'desempenho', pesos);
-    final p = resultado9Box(avaliacao, 'potencial', pesos);
+    final d = nota9BoxDecimal(avaliacao, 'desempenho', pesos);
+    final p = nota9BoxDecimal(avaliacao, 'potencial', pesos);
+    final faixas = Faixas9Box.dasLegendas(legendas);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -355,8 +402,12 @@ class DetalheColaboradorAvaliacaoDialog extends StatelessWidget {
                 Wrap(
                   spacing: 8,
                   children: [
-                    _Badge(label: 'Desempenho: ${labelNota1a5(d)}'),
-                    _Badge(label: 'Potencial: ${labelNota1a5(p)}'),
+                    _Badge(
+                        label:
+                            'Desempenho: ${fmtNota(d)} (${faixas.rotulo(d)})'),
+                    _Badge(
+                        label:
+                            'Potencial: ${fmtNota(p)} (${faixas.rotulo(p)})'),
                   ],
                 ),
               ],

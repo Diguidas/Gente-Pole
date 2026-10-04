@@ -43,7 +43,22 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         });
         return;
       }
-      final ciclo = await _api.buscarCicloAbertoParaSetor(col.setor!);
+      // Todos os setores sob responsabilidade do gestor (próprio + atribuídos
+      // + hierarquia), não só o setor em que ele está lotado.
+      final setores = await _api.buscarSetoresEfetivosDoGestor();
+      Map<String, dynamic>? ciclo;
+      final avaliacoes = <Map<String, dynamic>>[];
+      final idsVistos = <Object?>{};
+      for (final setor in setores) {
+        final cicloSetor = await _api.buscarCicloAbertoParaSetor(setor);
+        if (cicloSetor == null) continue;
+        ciclo ??= cicloSetor;
+        final doSetor = await _api.listarAvaliacoesEquipeGestor(
+            cicloId: cicloSetor['id'] as int, setor: setor);
+        for (final a in doSetor) {
+          if (idsVistos.add(a['id'])) avaliacoes.add(a);
+        }
+      }
       if (!mounted) return;
       if (ciclo == null) {
         setState(() {
@@ -52,8 +67,6 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         });
         return;
       }
-      final avaliacoes = await _api.listarAvaliacoesEquipeGestor(cicloId: ciclo['id'] as int);
-      if (!mounted) return;
       setState(() {
         _ciclo = ciclo;
         _avaliacoes = avaliacoes;
@@ -66,6 +79,41 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Prazo do ciclo (`data_fim`) com contagem regressiva, em destaque quando
+  /// faltam poucos dias ou já venceu.
+  Widget _textoPrazoCiclo() {
+    final fim = DateTime.tryParse(_ciclo?['data_fim'] as String? ?? '');
+    if (fim == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text('Prazo para avaliar: não definido pelo RH',
+            style: AppTextStyles.corpoMinimo),
+      );
+    }
+    final hoje = DateTime.now();
+    final dias = DateTime(fim.year, fim.month, fim.day)
+        .difference(DateTime(hoje.year, hoje.month, hoje.day))
+        .inDays;
+    final data =
+        '${fim.day.toString().padLeft(2, '0')}/${fim.month.toString().padLeft(2, '0')}/${fim.year}';
+    final String texto;
+    if (dias < 0) {
+      texto = 'Prazo encerrado em $data (há ${-dias} ${-dias == 1 ? 'dia' : 'dias'})';
+    } else if (dias == 0) {
+      texto = 'Prazo termina hoje ($data)';
+    } else {
+      texto = 'Prazo para avaliar: $data (faltam $dias ${dias == 1 ? 'dia' : 'dias'})';
+    }
+    final urgente = dias <= 7;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(texto,
+          style: AppTextStyles.corpoMinimo.copyWith(
+              fontWeight: urgente ? FontWeight.w600 : FontWeight.w400,
+              color: urgente ? Colors.red : null)),
+    );
   }
 
   Future<void> _abrirAvaliacao(Map<String, dynamic> avaliacao) async {
@@ -344,6 +392,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         children: [
           Text('Ciclo: ${_ciclo!['nome']}',
               style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
+          _textoPrazoCiclo(),
           const SizedBox(height: 14),
           ..._avaliacoes.map((avaliacao) {
             final colab = avaliacao['colaboradores'] as Map?;

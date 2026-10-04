@@ -906,9 +906,6 @@ class ApiService {
     final setores = <String>{
       for (final row in (data as List)) row['setor'] as String,
     };
-    if (colab.setor != null && colab.setor!.isNotEmpty) {
-      setores.add(colab.setor!);
-    }
     final hierarquia = await _client
         .from('setor_hierarquia')
         .select('setor')
@@ -917,6 +914,11 @@ class ApiService {
     for (final h in (hierarquia as List)) {
       final s = h['setor'] as String?;
       if (s != null && s.isNotEmpty) setores.add(s);
+    }
+    // O setor de lotação só vale quando não há nenhum setor atribuído; senão
+    // quem é lotado num setor mas gere outro veria a equipe errada.
+    if (setores.isEmpty && colab.setor != null && colab.setor!.isNotEmpty) {
+      setores.add(colab.setor!);
     }
     return setores.toList();
   }
@@ -933,21 +935,41 @@ class ApiService {
   /// demitidos desses setores (menos prestadores) — o gestor precisa
   /// conseguir indicar quem acabou de sair. Quem já foi indicado como
   /// substituído em outra vaga é tirado depois, na tela.
+  ///
+  /// Com [apenasLiderDireto] (telas de avaliação, PDI, vagas), cada pessoa só
+  /// entra na equipe do responsável do nível mais próximo dela: o líder avalia
+  /// a equipe, quem está um nível acima avalia o líder, e assim por diante.
+  /// Quem tem a [funcionalidade] bloqueada em `gestor_permissoes` não conta
+  /// como líder direto — a pessoa sobe pro próximo nível liberado.
   Future<List<Map<String, dynamic>>> buscarEquipeGestorMultiSetor(
       List<String> setores,
       {int? responsavelId,
-      bool incluirDemitidos = false}) async {
+      bool incluirDemitidos = false,
+      bool apenasLiderDireto = false,
+      String? funcionalidade}) async {
     if (setores.isEmpty) return [];
 
-    final ativos = await _buscarEquipeAtivaMultiSetor(setores, responsavelId);
+    final ativos = await _buscarEquipeAtivaMultiSetor(setores, responsavelId,
+        apenasLiderDireto: apenasLiderDireto, funcionalidade: funcionalidade);
     if (!incluirDemitidos) return ativos;
 
-    final demitidos = await _client
+    var demitidos = List<Map<String, dynamic>>.from(await _client
         .from('colaboradores')
         .select()
         .inFilter('setor', setores)
         .eq('demitido', true)
-        .not('cargo', 'ilike', 'PRESTADOR%');
+        .not('cargo', 'ilike', 'PRESTADOR%') as List);
+    if (responsavelId != null) {
+      // Mesma regra dos ativos: só quem era liderado por [responsavelId]
+      // (setor sem hierarquia configurada continua mostrando todos).
+      final v = await _vinculosDoResponsavel(setores, responsavelId,
+          apenasLiderDireto: apenasLiderDireto, funcionalidade: funcionalidade);
+      demitidos = demitidos
+          .where((c) =>
+              !v.setoresComHierarquia.contains(c['setor']) ||
+              v.meus.contains(c['id']))
+          .toList();
+    }
     final porId = <int, Map<String, dynamic>>{
       for (final c in ativos) c['id'] as int: c,
     };
@@ -961,7 +983,8 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> _buscarEquipeAtivaMultiSetor(
-      List<String> setores, int? responsavelId) async {
+      List<String> setores, int? responsavelId,
+      {bool apenasLiderDireto = false, String? funcionalidade}) async {
     if (responsavelId == null) {
       final data = await _client
           .from('colaboradores')
@@ -972,20 +995,10 @@ class ApiService {
       return List<Map<String, dynamic>>.from(data as List);
     }
 
-    final hierarquia = await _client
-        .from('colaborador_hierarquia')
-        .select('setor, colaborador_id, responsavel_id')
-        .inFilter('setor', setores);
-
-    final setoresComHierarquia = <String>{};
-    final idsPermitidos = <int>{};
-    for (final h in (hierarquia as List)) {
-      final setor = h['setor'] as String;
-      setoresComHierarquia.add(setor);
-      if (h['responsavel_id'] == responsavelId) {
-        idsPermitidos.add(h['colaborador_id'] as int);
-      }
-    }
+    final vinculos = await _vinculosDoResponsavel(setores, responsavelId,
+        apenasLiderDireto: apenasLiderDireto, funcionalidade: funcionalidade);
+    final setoresComHierarquia = vinculos.setoresComHierarquia;
+    final idsPermitidos = vinculos.meus;
     final setoresSemHierarquia =
         setores.where((s) => !setoresComHierarquia.contains(s)).toList();
 
@@ -1012,10 +1025,93 @@ class ApiService {
       }
     }
 
+    // Ninguém é da própria equipe.
+    resultados.remove(responsavelId);
+
     final lista = resultados.values.toList()
       ..sort((a, b) =>
           (a['nome'] as String? ?? '').compareTo(b['nome'] as String? ?? ''));
     return lista;
+  }
+
+  /// Quem [responsavelId] lidera nesses setores, lendo `colaborador_hierarquia`.
+  /// Padrão: todos que têm ele como responsável em qualquer nível. Com
+  /// [apenasLiderDireto], só quem o tem como responsável do nível mais
+  /// próximo (pulando quem tem [funcionalidade] bloqueada). Havendo vários
+  /// "gerais" no mesmo nível, vale o de menor id.
+  Future<({Set<String> setoresComHierarquia, Set<int> meus})>
+      _vinculosDoResponsavel(List<String> setores, int? responsavelId,
+          {bool apenasLiderDireto = false, String? funcionalidade}) async {
+    final hierarquia = await _client
+        .from('colaborador_hierarquia')
+        .select('setor, colaborador_id, responsavel_id, nivel')
+        .inFilter('setor', setores);
+    final setoresComHierarquia = <String>{};
+    final meus = <int>{};
+    final lideresDiretos = <int, ({int rank, int responsavel})>{};
+    final bloqueados = (apenasLiderDireto && funcionalidade != null)
+        ? await _colaboradoresComFuncionalidadeBloqueada(funcionalidade)
+        : <int>{};
+    for (final h in (hierarquia as List)) {
+      setoresComHierarquia.add(h['setor'] as String);
+      if (apenasLiderDireto) {
+        final colabId = h['colaborador_id'] as int;
+        // _niveisComAcessoDeGestor já vem do nível mais próximo ao mais distante.
+        final rank = _niveisComAcessoDeGestor.indexOf(h['nivel'] as String);
+        if (rank < 0) continue;
+        final resp = h['responsavel_id'] as int;
+        if (bloqueados.contains(resp)) continue;
+        final atual = lideresDiretos[colabId];
+        if (atual == null ||
+            rank < atual.rank ||
+            (rank == atual.rank && resp < atual.responsavel)) {
+          lideresDiretos[colabId] = (rank: rank, responsavel: resp);
+        }
+      } else if (h['responsavel_id'] == responsavelId) {
+        meus.add(h['colaborador_id'] as int);
+      }
+    }
+    if (apenasLiderDireto) {
+      lideresDiretos.forEach((colabId, l) {
+        if (l.responsavel == responsavelId) meus.add(colabId);
+      });
+    }
+    return (setoresComHierarquia: setoresComHierarquia, meus: meus);
+  }
+
+  Future<Set<int>> _colaboradoresComFuncionalidadeBloqueada(
+      String funcionalidade) async {
+    final res = await _client
+        .from('gestor_permissoes')
+        .select('colaborador_id')
+        .eq('funcionalidade', funcionalidade);
+    return {for (final r in (res as List)) (r['colaborador_id'] as num).toInt()};
+  }
+
+  /// IDs da equipe sob [responsavelId] nesses setores, no modelo de líder
+  /// direto. `null` = sem filtro.
+  Future<Set<int>?> _idsEquipeDoResponsavel(
+      List<String> setores, int? responsavelId, String funcionalidade) async {
+    if (responsavelId == null) return null;
+    final equipe = await buscarEquipeGestorMultiSetor(setores,
+        responsavelId: responsavelId,
+        apenasLiderDireto: true,
+        funcionalidade: funcionalidade);
+    return equipe.map((c) => c['id'] as int).toSet();
+  }
+
+  /// Coordenador, gestor ou gerente geral (em qualquer setor) enxergam toda a
+  /// equipe abaixo deles em "Minha Equipe"; supervisor/encarregado/líder só a
+  /// equipe direta. Quem não está na hierarquia (legado) segue vendo tudo.
+  Future<bool> veTodaEquipeAbaixo(int colaboradorId) async {
+    final res = await _client
+        .from('setor_hierarquia')
+        .select('nivel')
+        .eq('colaborador_id', colaboradorId);
+    final niveis = {for (final r in (res as List)) r['nivel'] as String};
+    if (niveis.isEmpty) return true;
+    return niveis
+        .any((n) => const ['coordenador', 'gestor', 'gerente_geral'].contains(n));
   }
 
   // ─── Requisitantes de Vaga (Gestão de Equipe) ──────────────────────────────
@@ -1113,6 +1209,7 @@ class ApiService {
     {'id': 'vagas_gestor', 'label': 'Vagas'},
     {'id': 'avaliar_equipe_gestor', 'label': 'Avaliar Equipe'},
     {'id': 'avaliar_periodo_experiencia_gestor', 'label': 'Período de Experiência'},
+    {'id': 'pdi_gestor', 'label': 'PDI'},
     {'id': 'feedback_gestor', 'label': 'Feedback'},
     {'id': 'exames_gestor', 'label': 'Exames'},
     {'id': 'solicitacoes_gestor', 'label': 'Solicitações'},
@@ -2043,6 +2140,8 @@ class ApiService {
   Future<List<ColaboradorModel>> buscarMinhaEquipe({
     bool incluirDemitidos = false,
     bool incluirSetoresDeRequisitante = false,
+    bool apenasLiderDireto = false,
+    String? funcionalidade,
   }) async {
     final setores = await buscarSetoresEfetivosDoGestor();
     final equipe = <int, Map<String, dynamic>>{};
@@ -2051,6 +2150,8 @@ class ApiService {
         setores,
         responsavelId: colaboradorAtual?.id,
         incluirDemitidos: incluirDemitidos,
+        apenasLiderDireto: apenasLiderDireto,
+        funcionalidade: funcionalidade,
       );
       for (final c in res) {
         equipe[c['id'] as int] = c;
@@ -2079,6 +2180,17 @@ class ApiService {
       ..sort((a, b) =>
           (a['nome'] as String? ?? '').compareTo(b['nome'] as String? ?? ''));
     return lista.map((e) => ColaboradorModel.fromJson(e)).toList();
+  }
+
+  /// "Minha Equipe": coordenador pra cima vê toda a equipe abaixo; supervisor,
+  /// encarregado e líder só a equipe direta.
+  Future<List<ColaboradorModel>> buscarMinhaEquipeVisao() async {
+    final id = colaboradorAtual?.id;
+    final veTudo = id == null ? true : await veTodaEquipeAbaixo(id);
+    return buscarMinhaEquipe(
+      apenasLiderDireto: !veTudo,
+      funcionalidade: 'minha_equipe_gestor',
+    );
   }
 
   /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando
@@ -4701,9 +4813,12 @@ class ApiService {
   /// setores informados — usado pelo gestor pra ver quem tem avaliação
   /// pendente na sua equipe. Porta de `listarPeriodoExperienciaGestor`.
   Future<List<Map<String, dynamic>>> listarPeriodoExperienciaGestor(
-    List<String> setores,
-  ) async {
+    List<String> setores, {
+    int? responsavelId,
+  }) async {
     if (setores.isEmpty) return [];
+    final idsEquipe = await _idsEquipeDoResponsavel(
+        setores, responsavelId, 'avaliar_periodo_experiencia_gestor');
     final data = await _client
         .from('avaliacoes')
         .select(
@@ -4714,7 +4829,10 @@ class ApiService {
     final lista = List<Map<String, dynamic>>.from(data as List);
     return lista.where((a) {
       final setorColab = (a['colaboradores'] as Map?)?['setor'] as String?;
-      return setorColab != null && setores.contains(setorColab);
+      return setorColab != null &&
+          setores.contains(setorColab) &&
+          (idsEquipe == null ||
+              idsEquipe.contains((a['colaborador_id'] as num?)?.toInt()));
     }).toList();
   }
 
@@ -5106,13 +5224,19 @@ class ApiService {
   /// [buscarMinhaEquipe] pra obter os colaboradores do setor do gestor.
   Future<List<Map<String, dynamic>>> listarAvaliacoesEquipeGestor({
     required int cicloId,
+    required String setor,
   }) async {
-    final equipe = await buscarMinhaEquipe();
+    // Líder direto: só quem tem o gestor logado como responsável do nível
+    // mais próximo (e com a funcionalidade liberada pra ele).
+    final equipe = await buscarEquipeGestorMultiSetor([setor],
+        responsavelId: colaboradorAtual?.id,
+        apenasLiderDireto: true,
+        funcionalidade: 'avaliar_equipe_gestor');
     final resultado = <Map<String, dynamic>>[];
     for (final colab in equipe) {
       final avaliacao = await buscarOuCriarAvaliacao(
         cicloId: cicloId,
-        colaboradorId: colab.id,
+        colaboradorId: colab['id'] as int,
       );
       if (avaliacao != null) resultado.add(avaliacao);
     }
@@ -5155,17 +5279,89 @@ class ApiService {
         false);
   }
 
+  /// Cria a avaliação de Período de Experiência de um colaborador usando o
+  /// conjunto canônico de perguntas (template ativo do tipo). Devolve false se
+  /// ainda não há template cadastrado.
+  Future<bool> criarAvaliacaoPeriodoExperiencia(int colaboradorId) async {
+    final templates = await _client
+        .from('avaliacao_templates')
+        .select('id')
+        .eq('tipo', 'periodo_experiencia')
+        .eq('ativo', true)
+        .order('nome')
+        .limit(1);
+    final lista = List<Map<String, dynamic>>.from(templates as List);
+    if (lista.isEmpty) return false;
+    await _client.from('avaliacoes').insert({
+      'colaborador_id': colaboradorId,
+      'tipo': 'periodo_experiencia',
+      'template_id': lista.first['id'],
+      'perguntas_liberadas': true,
+    });
+    return true;
+  }
+
   /// Verificação leve pra tela de Serviços: true se existe ao menos uma
   /// avaliação de período de experiência criada pro colaborador — mesma
   /// condição usada em [PeriodoExperienciaScreen].
   Future<bool> existePeriodoExperienciaPendente(int colaboradorId) async {
-    final data = await _client
-        .from('avaliacoes')
+    final colab = colaboradorAtual;
+    if (colab == null) return false;
+    return await buscarPesquisaPeriodoExperienciaPendente(colab) != null;
+  }
+
+  /// Pesquisa "Período de Experiência" pendente pro colaborador: dispara pela
+  /// data de admissão (10 dias antes até 30 dias depois dos marcos de 45 e 90
+  /// dias) e vale como resposta única pras duas. Não depende de `ativa`, que
+  /// só vira true via "Encaminhar" — e esse tipo não tem envio.
+  Future<Map<String, dynamic>?> buscarPesquisaPeriodoExperienciaPendente(
+      ColaboradorModel colab) async {
+    final admissao = DateTime.tryParse(colab.dataAdmissao ?? '');
+    if (admissao == null) return null;
+    final dias = DateTime.now().difference(admissao).inDays;
+    final dentro = [45, 90].any((c) => c - dias >= -30 && c - dias <= 10);
+    if (!dentro) return null;
+
+    final pesquisa = await _client
+        .from('pesquisas')
+        .select()
+        .eq('tipo', 'periodo_experiencia')
+        .order('criado_em', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (pesquisa == null) return null;
+
+    final jaRespondeu = await _client
+        .from('pesquisa_participacoes')
+        .select('id')
+        .eq('pesquisa_id', pesquisa['id'] as int)
+        .eq('colaborador_id', colab.id)
+        .eq('colaborador_alvo_id', colab.id)
+        .maybeSingle();
+    if (jaRespondeu != null) return null;
+    return Map<String, dynamic>.from(pesquisa);
+  }
+
+  /// Por que [buscarPesquisaPeriodoExperienciaPendente] devolveu nada.
+  Future<String> motivoSemPesquisaPeriodoExperiencia(
+      ColaboradorModel colab) async {
+    final admissao = DateTime.tryParse(colab.dataAdmissao ?? '');
+    if (admissao == null) return 'Sua data de admissão não está cadastrada.';
+    final dias = DateTime.now().difference(admissao).inDays;
+    final dentro = [45, 90].any((c) => c - dias >= -30 && c - dias <= 10);
+    if (!dentro) {
+      return 'Você está com $dias dias de admissão. A pesquisa abre 10 dias antes dos marcos de 45 e 90 dias e fica disponível até 30 dias depois deles.';
+    }
+    final pesquisa = await _client
+        .from('pesquisas')
         .select('id')
         .eq('tipo', 'periodo_experiencia')
-        .eq('colaborador_id', colaboradorId)
-        .limit(1);
-    return (data as List).isNotEmpty;
+        .limit(1)
+        .maybeSingle();
+    if (pesquisa == null) {
+      return 'Nenhuma pesquisa de período de experiência está cadastrada.';
+    }
+    return 'Você já respondeu a pesquisa de período de experiência. Obrigado!';
   }
 
   // ─── Performance: PDI (Plano de Desenvolvimento Individual) ─────────────
@@ -5202,6 +5398,90 @@ class ApiService {
   }
 
   /// Link único da trilha do PDI na Unipole (cadastrado pelo admin no painel).
+  // ── PDI do gestor (compartilhado com o RH, mesmas tabelas do painel web) ──
+
+  /// PDIs (com planos e ações) dos colaboradores informados.
+  Future<List<Map<String, dynamic>>> listarPdisDaEquipe(
+      List<int> colaboradorIds) async {
+    if (colaboradorIds.isEmpty) return [];
+    final data = await _client
+        .from('pdi_grupos')
+        .select('*, pdi_planos(id, tipo, titulo, pdi_acoes(id, status))')
+        .inFilter('colaborador_id', colaboradorIds)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Cria um PDI (agrupamento nomeado) pro colaborador.
+  Future<int> criarPdiGrupo({
+    required int colaboradorId,
+    required String titulo,
+    String? objetivo,
+  }) async {
+    final res = await _client
+        .from('pdi_grupos')
+        .insert({
+          'colaborador_id': colaboradorId,
+          'titulo': titulo,
+          'objetivo': objetivo,
+        })
+        .select('id')
+        .single();
+    return res['id'] as int;
+  }
+
+  /// Cria um plano dentro de um PDI (modelo novo: título + tipo).
+  Future<int> criarPdiPlanoEmGrupo({
+    required int colaboradorId,
+    required int pdiGrupoId,
+    required String titulo,
+    required String tipo, // 'tecnico' | 'comportamental'
+  }) async {
+    final res = await _client
+        .from('pdi_planos')
+        .insert({
+          'colaborador_id': colaboradorId,
+          'pdi_grupo_id': pdiGrupoId,
+          'titulo': titulo,
+          'tipo': tipo,
+        })
+        .select('id')
+        .single();
+    return res['id'] as int;
+  }
+
+  /// Status da ação marcado pelo gestor. Diferente de
+  /// [atualizarStatusAcaoPdi], não dá pontos de gamificação a quem marca — os
+  /// pontos são do colaborador dono do PDI.
+  Future<void> atualizarStatusAcaoPdiGestor(int acaoId, String status) async {
+    await _client.from('pdi_acoes').update({'status': status}).eq('id', acaoId);
+  }
+
+  Future<void> excluirPdiPlano(int planoId) async {
+    await _client.from('pdi_acoes').delete().eq('plano_id', planoId);
+    await _client
+        .from('pdi_termos_compromisso')
+        .delete()
+        .eq('plano_id', planoId);
+    await _client.from('pdi_planos').delete().eq('id', planoId);
+  }
+
+  /// Exclui um PDI inteiro: planos (e o que depende deles), termos e o grupo.
+  Future<void> excluirPdiGrupo(int grupoId) async {
+    final planos = await _client
+        .from('pdi_planos')
+        .select('id')
+        .eq('pdi_grupo_id', grupoId);
+    for (final p in List<Map<String, dynamic>>.from(planos as List)) {
+      await excluirPdiPlano(p['id'] as int);
+    }
+    await _client
+        .from('pdi_termos_compromisso')
+        .delete()
+        .eq('pdi_grupo_id', grupoId);
+    await _client.from('pdi_grupos').delete().eq('id', grupoId);
+  }
+
   Future<String?> buscarLinkUnipolePdi() async {
     final r = await _client
         .from('pdi_config')
@@ -5554,7 +5834,13 @@ class ApiService {
     final data = await query;
     final hoje = DateTime.now();
     final resultado = <Map<String, dynamic>>[];
+    // Aviso pro gestor: só a equipe sob ele (líder direto).
+    final idsEquipe = (paraGestor && setores != null)
+        ? await _idsEquipeDoResponsavel(setores, colaboradorAtual?.id,
+            'avaliar_periodo_experiencia_gestor')
+        : null;
     for (final c in List<Map<String, dynamic>>.from(data as List)) {
+      if (idsEquipe != null && !idsEquipe.contains(c['id'])) continue;
       final admissaoStr = c['data_admissao'] as String?;
       if (admissaoStr == null) continue;
       final admissao = DateTime.tryParse(admissaoStr);
@@ -5589,7 +5875,6 @@ class ApiService {
           .from('pesquisas')
           .select('id')
           .eq('tipo', 'periodo_experiencia')
-          .eq('ativa', true)
           .order('criado_em', ascending: false)
           .limit(1)
           .maybeSingle();
@@ -6158,8 +6443,10 @@ class ApiService {
   /// Matriz 9Box fixa: avaliações CONCLUÍDAS do ciclo mais recente de cada
   /// setor (aberto ou fechado), só dos colaboradores dos setores informados.
   Future<List<Map<String, dynamic>>> listarAvaliacoesMatrizEquipe(
-      List<String> setores) async {
+      List<String> setores, {int? responsavelId}) async {
     if (setores.isEmpty) return [];
+    final idsEquipe = await _idsEquipeDoResponsavel(
+        setores, responsavelId, 'avaliar_equipe_gestor');
     final ciclosVistos = <int>{};
     final resultado = <Map<String, dynamic>>[];
     for (final setor in setores) {
@@ -6179,8 +6466,10 @@ class ApiService {
               '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)')
           .eq('ciclo_id', cicloId)
           .eq('status', 'concluida');
-      resultado.addAll(List<Map<String, dynamic>>.from(avs as List).where(
-          (a) => setores.contains((a['colaboradores'] as Map?)?['setor'])));
+      resultado.addAll(List<Map<String, dynamic>>.from(avs as List).where((a) =>
+          setores.contains((a['colaboradores'] as Map?)?['setor']) &&
+          (idsEquipe == null ||
+              idsEquipe.contains((a['colaborador_id'] as num?)?.toInt()))));
     }
     return resultado;
   }

@@ -130,7 +130,10 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     setState(() => _carregandoEquipe = true);
     try {
       final lista = await _api.buscarMinhaEquipe(
-          incluirDemitidos: true, incluirSetoresDeRequisitante: true);
+          incluirDemitidos: true,
+          incluirSetoresDeRequisitante: true,
+          apenasLiderDireto: true,
+          funcionalidade: 'vagas_gestor');
       final jaSubstituidos = await _api
           .listarColaboradoresJaIndicadosComoSubstituto(incluirEncerradas: true);
       if (mounted) {

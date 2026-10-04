@@ -7,6 +7,7 @@ import 'matriz_9box_screen.dart';
 import 'minha_equipe_screen.dart';
 import 'avaliar_equipe_screen.dart';
 import 'avaliar_periodo_experiencia_gestor_screen.dart';
+import 'pdi_gestor_screen.dart';
 import 'solicitacoes_gestor_screen.dart';
 import 'feedback_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
@@ -240,6 +241,23 @@ class _GestorScreenState extends State<GestorScreen> {
                                     MaterialPageRoute(
                                       builder: (_) =>
                                           const AvaliarPeriodoExperienciaGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas.contains('pdi_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.trending_up_outlined,
+                                  titulo: 'PDI da Equipe',
+                                  subtitulo:
+                                      'Crie e acompanhe os PDIs, junto com o RH',
+                                  cor: const Color(0xFF0EA5E9),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const PdiGestorScreen(),
                                     ),
                                   ),
                                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import '../../widgets/grid_9box.dart';
 import '../../widgets/seletor_nota_widget.dart';
 
 const _indigo = Color(0xFF6366F1);
@@ -29,6 +30,9 @@ class _AvaliarPeriodoExperienciaGestorScreenState
   bool _loading = true;
   String? _erro;
   List<Map<String, dynamic>> _avaliacoes = [];
+  List<Map<String, dynamic>> _avaliadas = [];
+  Map<int, Map<String, int>> _pesos = {};
+  Map<String, String> _legendas = {};
 
   @override
   void initState() {
@@ -51,10 +55,52 @@ class _AvaliarPeriodoExperienciaGestorScreenState
         return;
       }
       final setores = await _api.buscarSetoresEfetivosDoGestor();
-      final todas = await _api.listarPeriodoExperienciaGestor(setores);
+      var todas = await _api.listarPeriodoExperienciaGestor(setores,
+          responsavelId: col.id);
+      // O sino avisa pela data de admissão, mas a avaliação só existe depois
+      // que alguém a inicia. Se o RH ainda não iniciou, inicia aqui pra quem
+      // já está na janela dos 45/90 dias, senão o líder vê o aviso e a tela
+      // vazia.
+      final idsComAvaliacao =
+          todas.map((a) => a['colaborador_id'].toString()).toSet();
+      final semAvaliacao = <String>{};
+      for (final checkpoint in [45, 90]) {
+        final devidos = await _api.listarColaboradoresFimExperiencia(
+            setores: setores, checkpointDias: checkpoint, paraGestor: true);
+        for (final c in devidos) {
+          final id = c['id'].toString();
+          if (!idsComAvaliacao.contains(id)) semAvaliacao.add(id);
+        }
+      }
+      if (semAvaliacao.isNotEmpty) {
+        var criou = false;
+        for (final id in semAvaliacao) {
+          try {
+            criou = await _api.criarAvaliacaoPeriodoExperiencia(int.parse(id)) ||
+                criou;
+          } catch (_) {}
+        }
+        if (criou) {
+          todas = await _api.listarPeriodoExperienciaGestor(setores,
+              responsavelId: col.id);
+        }
+      }
+      final avaliadas = todas.where((a) => a['gestor_em'] != null).toList();
+      final templateIds = avaliadas
+          .map((a) => a['template_id'] as int?)
+          .whereType<int>()
+          .toSet()
+          .toList();
+      final extras = await Future.wait([
+        _api.buscarPesosTemplates(templateIds),
+        _api.listarNineBoxLegendas(),
+      ]);
       if (!mounted) return;
       setState(() {
         _avaliacoes = todas.where((a) => a['gestor_em'] == null).toList();
+        _avaliadas = avaliadas;
+        _pesos = extras[0] as Map<int, Map<String, int>>;
+        _legendas = extras[1] as Map<String, String>;
         _loading = false;
       });
     } catch (e) {
@@ -334,23 +380,24 @@ class _AvaliarPeriodoExperienciaGestorScreenState
     if (_erro != null) {
       return Center(child: Text(_erro!, style: AppTextStyles.corpoCinza));
     }
-    if (_avaliacoes.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-              'Nenhuma avaliação de período de experiência pendente no momento.',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.corpoCinza),
-        ),
-      );
-    }
     return RefreshIndicator(
       onRefresh: _carregar,
       color: _indigo,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-        children: _avaliacoes.map((avaliacao) {
+        children: [
+          _quadroFixo(),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+                _avaliacoes.isEmpty
+                    ? 'Nenhuma avaliação pendente no momento'
+                    : '${_avaliacoes.length} ${_avaliacoes.length == 1 ? 'avaliação pendente' : 'avaliações pendentes'}',
+                style: AppTextStyles.corpoMedio
+                    .copyWith(fontWeight: FontWeight.w600)),
+          ),
+          ..._avaliacoes.map((avaliacao) {
           final colab = avaliacao['colaboradores'] as Map?;
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -402,7 +449,50 @@ class _AvaliarPeriodoExperienciaGestorScreenState
               ),
             ),
           );
-        }).toList(),
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _abrirDetalhe(Map<String, dynamic> avaliacao) {
+    showDialog(
+      context: context,
+      builder: (_) => DetalheColaboradorAvaliacaoDialog(
+          avaliacao: avaliacao, pesos: _pesos, legendas: _legendas),
+    );
+  }
+
+  /// Matriz 9Box fixa no topo (igual à Matriz 9Box e à Avaliação de
+  /// Desempenho) com quem o gestor já avaliou no período de experiência.
+  Widget _quadroFixo() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Matriz 9Box · Período de Experiência',
+              style: AppTextStyles.corpoMedio
+                  .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(
+              _avaliadas.isEmpty
+                  ? 'Nenhuma avaliação concluída ainda. Quando você avaliar, os colaboradores aparecem na matriz.'
+                  : 'Toque num nome para ver as notas e o detalhe.',
+              style: AppTextStyles.corpoMinimo),
+          const SizedBox(height: 14),
+          Grid9Box(
+            avaliacoes: _avaliadas,
+            pesos: _pesos,
+            legendas: _legendas,
+            onTapColaborador: _abrirDetalhe,
+          ),
+        ],
       ),
     );
   }

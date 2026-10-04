@@ -30,7 +30,8 @@ class _Matriz9BoxScreenState extends State<Matriz9BoxScreen> {
     setState(() => _loading = true);
     try {
       final setores = await _api.buscarSetoresEfetivosDoGestor();
-      final avaliacoes = await _api.listarAvaliacoesMatrizEquipe(setores);
+      final avaliacoes = await _api.listarAvaliacoesMatrizEquipe(setores,
+          responsavelId: _api.colaboradorAtual?.id);
       final ids = avaliacoes
           .map((a) => a['template_id'] as int?)
           .whereType<int>()
@@ -57,7 +58,8 @@ class _Matriz9BoxScreenState extends State<Matriz9BoxScreen> {
     showDialog(
       context: context,
       builder: (_) =>
-          DetalheColaboradorAvaliacaoDialog(avaliacao: avaliacao, pesos: _pesos),
+          DetalheColaboradorAvaliacaoDialog(
+              avaliacao: avaliacao, pesos: _pesos, legendas: _legendas),
     );
   }
 

@@ -13,6 +13,7 @@ import 'package:gentepole/screens/feedback/elogiar_screen.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
+import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -67,6 +68,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
+  Map<String, dynamic>? _pesquisaExperienciaPendente;
   List<Map<String, dynamic>> _feedbacksPresenciaisPendentes = [];
 
   // Saldo de Polens (gamificação) — null enquanto carrega, pra não piscar "0"
@@ -88,6 +90,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarNovosColaboradoresSemana();
     _carregarCelebracoesRecebidas();
     _carregarPesquisasPendentes();
+    _carregarPesquisaExperiencia();
     _carregarFeedbacksPresenciaisPendentes();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
@@ -244,6 +247,19 @@ class _FeedScreenState extends State<FeedScreen> {
       final n = await _api.buscarNovosColaboradoresSemana();
       if (!mounted) return;
       setState(() => _novosColaboradoresSemana = n);
+    } catch (_) {}
+  }
+
+  /// A pesquisa de Período de Experiência dispara pela data de admissão (não
+  /// por envio), então não vem em [buscarPesquisasDisponiveis] — busca à
+  /// parte pro card aparecer no feed junto das outras pesquisas pendentes.
+  Future<void> _carregarPesquisaExperiencia() async {
+    final colab = _api.colaboradorAtual;
+    if (colab == null) return;
+    try {
+      final p = await _api.buscarPesquisaPeriodoExperienciaPendente(colab);
+      if (!mounted) return;
+      setState(() => _pesquisaExperienciaPendente = p);
     } catch (_) {}
   }
 
@@ -904,6 +920,8 @@ class _FeedScreenState extends State<FeedScreen> {
       _buildHumorCard(),
       if (_celebracoesRecebidas.isNotEmpty) _buildCelebracoesRecebidasCard(),
       if (_feedbacksPresenciaisPendentes.isNotEmpty) _buildFeedbackPresencialPendenteCard(),
+      if (_pesquisaExperienciaPendente != null)
+        _buildPesquisaExperienciaCard(),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
       _InlineComposer(
@@ -1217,6 +1235,73 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   // ── Pesquisas pendentes (nudge) ───────────────────────────────────────────────
+
+  Widget _buildPesquisaExperienciaCard() {
+    final p = _pesquisaExperienciaPendente!;
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PesquisaRespostaScreen(
+              pesquisaId: p['id'] as int,
+              titulo: p['titulo'] as String? ?? 'Período de Experiência',
+              anonima: p['anonima'] as bool? ?? false,
+              pedirOptIn: p['pedir_opt_in'] as bool? ?? false,
+            ),
+          ),
+        );
+        _carregarPesquisaExperiencia();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.magenta.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.magenta.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.magenta.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.hourglass_bottom_outlined,
+                  color: AppColors.magenta),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Responda a pesquisa do seu período de experiência',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Conte como está sendo seu começo na Pole',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.cinzaTexto,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.magenta),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildPesquisasPendentesCard() {
     final qtd = _pesquisasPendentes.length;

@@ -20,7 +20,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   @override
   void initState() {
     super.initState();
-    _futureEquipe = _api.buscarMinhaEquipe();
+    _futureEquipe = _api.buscarMinhaEquipeVisao();
     _buscaCtrl.addListener(() => setState(() => _busca = _buscaCtrl.text));
   }
 
@@ -173,7 +173,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                           color: AppColors.magenta,
                           onRefresh: () async {
                             setState(() {
-                              _futureEquipe = _api.buscarMinhaEquipe();
+                              _futureEquipe = _api.buscarMinhaEquipeVisao();
                             });
                           },
                           child: ListView(

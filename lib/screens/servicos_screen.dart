@@ -571,7 +571,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             icone: Icons.explore_outlined,
                             titulo: 'Período de Experiência',
                             subtitulo:
-                                'Autoavaliação do seu período de experiência',
+                                'Responda a pesquisa do seu período de experiência',
                             cor: const Color(0xFF6366F1),
                             emBreve: false,
                             onTap: () => Navigator.push(

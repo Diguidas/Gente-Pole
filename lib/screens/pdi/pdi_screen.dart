@@ -378,7 +378,9 @@ class _PdiScreenState extends State<PdiScreen> {
                     style: AppTextStyles.corpoMedio),
               ),
               if (acao['prazo'] != null)
-                Text(acao['prazo'] as String, style: AppTextStyles.corpoMinimo),
+                Text(
+                    'Prazo: ${(acao['prazo'] as String).split('T').first.split('-').reversed.join('/')}',
+                    style: AppTextStyles.corpoMinimo),
             ],
           ),
           Padding(
