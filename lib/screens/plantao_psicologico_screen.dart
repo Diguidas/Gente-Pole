@@ -68,7 +68,7 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           fontSize: 18)),
                   const SizedBox(height: 4),
-                  Text('Apoio emocional e saúde mental para você',
+                  Text('Apoio emocional e saúde mental',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.poppins(
                           color: Colors.white.withOpacity(0.85), fontSize: 13)),
@@ -85,30 +85,28 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
                 children: [
                   _Secao(titulo: 'O que é o Plantão Psicológico?'),
                   _Texto(
-                    'O Plantão Psicológico é um espaço de escuta e apoio emocional '
-                    'disponibilizado pela Pole Alimentos em parceria com a Amar.elo — '
-                    'plataforma especializada em saúde mental.',
+                    'É um serviço de apoio emocional oferecido pela Pole Alimentos em '
+                    'parceria com a Amar.elo Saúde Mental, disponível para todos os '
+                    'colaboradores.',
                   ),
                   const SizedBox(height: 16),
                   _Secao(titulo: 'Como funciona?'),
                   _Texto(
-                    'Você tem acesso a sessões de até 50 minutos com psicólogos '
-                    'devidamente habilitados, de forma online e completamente confidencial. '
-                    'O atendimento acontece por videochamada, de onde você estiver.',
+                    'Sessões online de até 50 minutos com psicólogos licenciados, por '
+                    'videochamada, em horário agendado por você.',
                   ),
                   const SizedBox(height: 16),
                   _Secao(titulo: 'Para quem é?'),
                   _Texto(
-                    'Este benefício é para todos os colaboradores da Pole Alimentos '
-                    'que estejam passando por momentos difíceis, sentindo ansiedade, '
-                    'estresse, dificuldades no trabalho ou na vida pessoal — ou que '
-                    'simplesmente queiram cuidar da sua saúde mental.',
+                    'Para todos os colaboradores da Pole Alimentos que estejam passando '
+                    'por ansiedade, estresse ou qualquer outra necessidade de apoio '
+                    'emocional.',
                   ),
                   const SizedBox(height: 16),
                   _Secao(titulo: 'É sigiloso?'),
                   _Texto(
-                    'Sim. Todo o atendimento é sigiloso, seguindo o Código de Ética '
-                    'dos Psicólogos. A empresa não tem acesso ao conteúdo das sessões.',
+                    'Sim. O atendimento é totalmente confidencial, seguindo o Código de '
+                    'Ética Profissional do Psicólogo.',
                   ),
                 ],
               ),
@@ -121,7 +119,7 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _Secao(titulo: 'Contatos e suporte'),
+                  _Secao(titulo: 'Contatos'),
                   _ContatoItem(
                     icone: Icons.business_outlined,
                     label: 'RH Pole',
@@ -130,7 +128,7 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
                   const SizedBox(height: 10),
                   _ContatoItem(
                     icone: Icons.support_agent_outlined,
-                    label: 'Time da Amar.elo',
+                    label: 'Equipe Amar.elo',
                     valor: '(85) 8204-3858',
                   ),
                 ],
@@ -159,15 +157,6 @@ class PlantaoPsicologicoScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              'Ao clicar, você será redirecionado para o site da Amar.elo.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                  fontSize: 11, color: Colors.grey.shade500),
             ),
 
             const SizedBox(height: 24),

@@ -1,3 +1,4 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
@@ -69,7 +70,10 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
     final avaliacao = item['avaliacoes'] as Map;
     final colab = avaliacao['colaboradores'] as Map?;
     final funcao = colab?['cargo'] as String? ?? '';
-    final perguntas = await _api.listarPerguntasFuncao(funcao);
+    final perguntas = await _api.perguntasDaAvaliacao(
+        Map<String, dynamic>.from(avaliacao),
+        funcao: funcao,
+        setor: colab?['setor'] as String?);
     if (!mounted) return;
     if (perguntas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -295,7 +299,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
               clipBehavior: Clip.antiAlias,
               child: ListTile(
                 onTap: () => _abrirAvaliacao(item),
-                leading: CircleAvatar(
+                leading: FotoClicavel(url: colab?['foto_url'] as String?, nome: colab?['nome'] as String?, child: CircleAvatar(
                   backgroundColor: AppColors.laranja.withOpacity(0.12),
                   backgroundImage: (colab?['foto_url'] as String?)?.isNotEmpty == true
                       ? NetworkImage(colab!['foto_url'] as String)
@@ -307,7 +311,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                               : '?',
                           style: const TextStyle(color: AppColors.laranja))
                       : null,
-                ),
+                )),
                 title: Text(colab?['nome'] as String? ?? '',
                     style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
                 subtitle: Text(colab?['cargo'] as String? ?? '', style: AppTextStyles.corpoMinimo),

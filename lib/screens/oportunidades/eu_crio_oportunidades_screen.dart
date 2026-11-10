@@ -38,6 +38,7 @@ class _EuCrioOportunidadesScreenState
   List<Map<String, dynamic>> _indicacoesPendentes = [];
   Set<int> _vagasJaCandidatadas = {};
   Map<int, String> _vagasJaIndicadas = {};
+  Map<int, Map<String, dynamic>> _pedidosPorVaga = {};
   bool _loading = true;
   String? _erro;
 
@@ -45,6 +46,24 @@ class _EuCrioOportunidadesScreenState
   void initState() {
     super.initState();
     _carregar();
+  }
+
+  /// Pedido mais recente por vaga (a lista já vem do mais novo pro mais
+  /// antigo). Falha aqui não pode derrubar a tela.
+  Future<Map<int, Map<String, dynamic>>> _carregarPedidosGestor() async {
+    final meuId = _api.colaboradorAtual?.id;
+    if (meuId == null) return {};
+    try {
+      final lista = await _api.listarPedidosCandidaturaColab(meuId);
+      final mapa = <int, Map<String, dynamic>>{};
+      for (final p in lista) {
+        final vagaId = int.tryParse(p['vaga_id'].toString());
+        if (vagaId != null) mapa.putIfAbsent(vagaId, () => p);
+      }
+      return mapa;
+    } catch (_) {
+      return {};
+    }
   }
 
   Future<void> _carregar() async {
@@ -58,9 +77,11 @@ class _EuCrioOportunidadesScreenState
         _api.buscarIndicacoesPendentes(),
         _api.buscarVagasJaCandidatadas(),
         _api.buscarIndicacoesDoColaborador(),
+        _carregarPedidosGestor(),
       ]);
       if (mounted) {
         setState(() {
+          _pedidosPorVaga = results[4] as Map<int, Map<String, dynamic>>;
           _vagas = results[0] as List<VagaModel>;
           _indicacoesPendentes =
               results[1] as List<Map<String, dynamic>>;
@@ -278,6 +299,8 @@ class _EuCrioOportunidadesScreenState
                                                 .contains(e.value.id),
                                             nomeIndicado:
                                                 _vagasJaIndicadas[e.value.id],
+                                            pedidoGestor:
+                                                _pedidosPorVaga[e.value.id],
                                             onTap: () =>
                                                 _abrirOpcoes(e.value),
                                           ),
@@ -506,13 +529,36 @@ class _CardVaga extends StatelessWidget {
   final VoidCallback onTap;
   final bool jaCandidatado;
   final String? nomeIndicado;
+  final Map<String, dynamic>? pedidoGestor;
 
   const _CardVaga({
     required this.vaga,
     required this.onTap,
     this.jaCandidatado = false,
     this.nomeIndicado,
+    this.pedidoGestor,
   });
+
+  /// Rótulo e cor do pedido de candidatura que passa pelo gestor.
+  (String, Color)? get _chipPedido {
+    final p = pedidoGestor;
+    if (p == null) return null;
+    switch (p['status']) {
+      case 'pendente':
+        return ('Aguardando aprovação do gestor', const Color(0xFFF59E0B));
+      case 'aprovada':
+        return ('Aprovada pelo gestor', const Color(0xFF10B981));
+      case 'reprovada':
+        final motivo = (p['motivo_reprovacao'] as String?)?.trim();
+        return (
+          motivo == null || motivo.isEmpty
+              ? 'Reprovada pelo gestor'
+              : 'Reprovada pelo gestor: $motivo',
+          const Color(0xFFDC2626)
+        );
+    }
+    return null;
+  }
 
   String get _salario {
     if (!vaga.salarioAExibir) return 'Salário a combinar';
@@ -604,6 +650,25 @@ class _CardVaga extends StatelessWidget {
                       ],
                     ],
                   ),
+                  if (_chipPedido != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.how_to_reg_outlined,
+                            size: 12, color: _chipPedido!.$2),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(_chipPedido!.$1,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: _chipPedido!.$2),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (nomeIndicado != null) ...[
                     const SizedBox(height: 2),
                     Row(
@@ -875,6 +940,7 @@ class _CandidatarMeSheetState extends State<_CandidatarMeSheet> {
   bool _enviando = false;
   String? _erro;
   bool _sucesso = false;
+  bool _aguardaGestor = false;
 
   Future<void> _confirmar() async {
     final colaborador = widget.api.colaboradorAtual;
@@ -886,15 +952,23 @@ class _CandidatarMeSheetState extends State<_CandidatarMeSheet> {
     });
 
     try {
-      await widget.api.inscreverColaboradorNaVaga(
-        colaboradorId: colaborador.id,
+      final resultado = await widget.api.solicitarCandidaturaColab(
         vagaId: widget.vaga.id,
-        nome: colaborador.nome,
-        cpf: colaborador.cpf ?? '',
-        email: '',
-        telefone: '',
+        vagaTitulo: widget.vaga.titulo,
+        colaborador: colaborador,
       );
-      if (mounted) setState(() => _sucesso = true);
+      if (resultado == 'ja_existe') {
+        if (mounted) {
+          setState(() => _erro = 'Você já está inscrito nesta vaga.');
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _aguardaGestor = resultado == 'pendente';
+          _sucesso = true;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -1065,12 +1139,14 @@ class _CandidatarMeSheetState extends State<_CandidatarMeSheet> {
         const SizedBox(height: 16),
         const Icon(Icons.check_circle_rounded, color: AppColors.sucesso, size: 52),
         const SizedBox(height: 16),
-        Text('Candidatura enviada!',
+        Text(_aguardaGestor ? 'Pedido enviado!' : 'Candidatura enviada!',
             style: GoogleFonts.poppins(
                 fontWeight: FontWeight.w700, fontSize: 18)),
         const SizedBox(height: 8),
         Text(
-          'Sua candidatura para "${widget.vaga.titulo}" foi registrada. O RH entrará em contato.',
+          _aguardaGestor
+              ? 'Seu pedido para "${widget.vaga.titulo}" foi enviado ao seu gestor. Quando ele aprovar, a candidatura segue para o RH.'
+              : 'Sua candidatura para "${widget.vaga.titulo}" foi registrada. O RH entrará em contato.',
           textAlign: TextAlign.center,
           style: GoogleFonts.poppins(
               fontSize: 13, color: Colors.grey.shade600),
@@ -1120,6 +1196,30 @@ class _IndicarSheetState extends State<_IndicarSheet> {
   bool _enviando  = false;
   String? _erro;
   bool _sucesso   = false;
+  bool _cpfNaoEncontrado = false;
+
+  /// CPF sem cadastro no portal: indica só com nome e currículo, guardando a
+  /// vaga de origem (igual ao portal).
+  Future<void> _indicarSemCadastro() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _IndicarCurriculoSheet(
+        api: widget.api,
+        vagaOrigemTitulo: widget.vaga.titulo,
+      ),
+    );
+    if (ok == true && mounted) {
+      Navigator.pop(context);
+      messenger.showSnackBar(const SnackBar(
+        content: Text(
+            'Indicação registrada no Banco de Talentos! O RH vai avaliar o currículo.'),
+        backgroundColor: Color(0xFF10B981),
+      ));
+    }
+  }
 
   @override
   void dispose() {
@@ -1164,13 +1264,16 @@ class _IndicarSheetState extends State<_IndicarSheet> {
 
   Future<void> _buscar() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _buscando = true; _erro = null; _candidatoEncontrado = null; });
+    setState(() { _buscando = true; _erro = null; _cpfNaoEncontrado = false; _candidatoEncontrado = null; });
     try {
       final cpf = _cpfCtrl.text.replaceAll(RegExp(r'\D'), '');
       final candidato = await widget.api.buscarCandidatoPorCpf(cpf);
       if (!mounted) return;
       if (candidato == null) {
-        setState(() => _erro = 'Nenhum candidato encontrado com este CPF.\nVerifique se ele já se cadastrou no portal.');
+        setState(() {
+          _cpfNaoEncontrado = true;
+          _erro = 'Nenhum candidato encontrado com este CPF. Ele precisa ter se cadastrado no portal da Pole.';
+        });
       } else {
         setState(() => _candidatoEncontrado = candidato);
       }
@@ -1192,6 +1295,7 @@ class _IndicarSheetState extends State<_IndicarSheet> {
         candidatoId:   candidato['id'] as int,
         vagaId:        widget.vaga.id,
         colaboradorId: colaborador.id,
+        matriculaIndicador: colaborador.matricula,
       );
       if (mounted) setState(() => _sucesso = true);
     } catch (e) {
@@ -1403,6 +1507,20 @@ class _IndicarSheetState extends State<_IndicarSheet> {
                   style: GoogleFonts.poppins(fontSize: 13, color: Colors.red.shade700)),
             ),
           ],
+          if (_cpfNaoEncontrado) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton(
+                onPressed: _indicarSemCadastro,
+                child: Text('Não tem cadastro? Indique só com nome e currículo',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFF59E0B))),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1506,7 +1624,9 @@ class _CardIndicarCurriculo extends StatelessWidget {
 
 class _IndicarCurriculoSheet extends StatefulWidget {
   final ApiService api;
-  const _IndicarCurriculoSheet({required this.api});
+  /// Quando a indicação nasce dentro de uma vaga, guarda o título da vaga.
+  final String? vagaOrigemTitulo;
+  const _IndicarCurriculoSheet({required this.api, this.vagaOrigemTitulo});
 
   @override
   State<_IndicarCurriculoSheet> createState() =>
@@ -1515,15 +1635,46 @@ class _IndicarCurriculoSheet extends StatefulWidget {
 
 class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
   final _nomeIndicadoCtrl = TextEditingController();
-  String? _tagSelecionada;
+  final Set<String> _tagsSelecionadas = {};
+  String? _filial;
+  List<Map<String, dynamic>> _filiais = [];
   PlatformFile? _curriculoSelecionado;
   String? _erro;
   bool _enviando = false;
 
   @override
+  void initState() {
+    super.initState();
+    _filial = widget.api.colaboradorAtual?.filialEfetiva;
+    _carregarFiliais();
+  }
+
+  Future<void> _carregarFiliais() async {
+    try {
+      final lista = await widget.api.listarFiliais();
+      if (!mounted) return;
+      setState(() => _filiais = lista);
+    } catch (_) {/* sem lista: dropdown mostra só a filial do colaborador */}
+  }
+
+  @override
   void dispose() {
     _nomeIndicadoCtrl.dispose();
     super.dispose();
+  }
+
+  /// Filiais do dropdown; garante que a filial do próprio colaborador esteja
+  /// na lista mesmo se a consulta de filiais falhar.
+  List<MapEntry<String, String>> _filialItens() {
+    final itens = <MapEntry<String, String>>[
+      for (final f in _filiais)
+        MapEntry(f['chave'] as String, f['nome'] as String),
+    ];
+    final minha = widget.api.colaboradorAtual?.filialEfetiva;
+    if (minha != null && !itens.any((i) => i.key == minha)) {
+      itens.insert(0, MapEntry(minha, 'Filial $minha'));
+    }
+    return itens;
   }
 
   Future<void> _escolherCurriculo() async {
@@ -1546,8 +1697,8 @@ class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
       setState(() => _erro = 'Informe o nome da pessoa indicada.');
       return;
     }
-    if (_tagSelecionada == null) {
-      setState(() => _erro = 'Selecione uma área/tag.');
+    if (_tagsSelecionadas.isEmpty) {
+      setState(() => _erro = 'Selecione ao menos uma área/tag.');
       return;
     }
     if (_curriculoSelecionado == null || _curriculoSelecionado!.bytes == null) {
@@ -1565,11 +1716,13 @@ class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
       );
       await widget.api.indicarSemCadastro(
         nomeIndicado: _nomeIndicadoCtrl.text.trim(),
-        tag: _tagSelecionada!,
+        tags: _tagsSelecionadas.toList(),
+        filial: _filial,
         curriculoUrl: curriculoUrl,
         curriculoNome: _curriculoSelecionado!.name,
         indicadoPorId: colaborador.id,
         indicadoPorNome: colaborador.nome,
+        vagaOrigemTitulo: widget.vagaOrigemTitulo,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -1635,7 +1788,7 @@ class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
                 ),
               ),
               const SizedBox(height: 14),
-              Text('Área/tag',
+              Text('Áreas/tags (pode marcar mais de uma)',
                   style: GoogleFonts.poppins(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
@@ -1645,15 +1798,40 @@ class _IndicarCurriculoSheetState extends State<_IndicarCurriculoSheet> {
                 spacing: 8,
                 runSpacing: 8,
                 children: _labelTagIndicacao.entries.map((e) {
-                  final selecionado = _tagSelecionada == e.key;
-                  return ChoiceChip(
+                  final selecionado = _tagsSelecionadas.contains(e.key);
+                  return FilterChip(
                     label:
                         Text(e.value, style: GoogleFonts.poppins(fontSize: 12)),
                     selected: selecionado,
                     selectedColor: const Color(0xFF10B981).withOpacity(.18),
-                    onSelected: (_) => setState(() => _tagSelecionada = e.key),
+                    onSelected: (v) => setState(() => v
+                        ? _tagsSelecionadas.add(e.key)
+                        : _tagsSelecionadas.remove(e.key)),
                   );
                 }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Text('Filial',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _filialItens().any((i) => i.key == _filial) ? _filial : null,
+                isExpanded: true,
+                onChanged: (v) => setState(() => _filial = v),
+                style: GoogleFonts.poppins(fontSize: 13.5, color: Colors.black87),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none),
+                ),
+                items: _filialItens()
+                    .map((i) => DropdownMenuItem(value: i.key, child: Text(i.value)))
+                    .toList(),
               ),
               const SizedBox(height: 14),
               InkWell(

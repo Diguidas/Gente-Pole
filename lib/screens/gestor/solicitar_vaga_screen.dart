@@ -28,11 +28,17 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
 
   // Etapa 2: detalhes da requisição
   bool _ehSubstituicao = false;
+  bool _sigilosa = false;
   ColaboradorModel? _colaboradorSubstituido;
+  // Quantidade > 1: seleção múltipla de substituídos (limitada à quantidade).
+  List<ColaboradorModel> _substitutos = [];
   List<ColaboradorModel> _equipe = [];
   // Demitidos que já foram indicados como substituídos em alguma vaga
   // (inclusive já preenchida) — não voltam a aparecer no picker.
   Set<int> _idsJaSubstituidosAlgumaVez = {};
+  // Ativos já indicados como substituídos numa vaga ainda em aberto — também
+  // não voltam a aparecer no picker (igual ao web).
+  Set<int> _idsJaSubstitutos = {};
   bool _carregandoEquipe = false;
   final _motivoCtrl = TextEditingController();
   bool _enviando = false;
@@ -46,6 +52,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
   // Campos da vaga
   final _centroCustoCtrl = TextEditingController();
   List<Map<String, dynamic>> _filiais = [];
+  List<Map<String, String>> _centrosCusto = [];
   String? _filialSelecionada;
 
   // Liderança da vaga (aumento de quadro): um colaborador por nível da
@@ -74,6 +81,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     super.initState();
     _carregarTemplates();
     _carregarFiliais();
+    _carregarCentrosCusto();
   }
 
   @override
@@ -83,6 +91,13 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     _centroCustoCtrl.dispose();
     _observacaoTICtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarCentrosCusto() async {
+    try {
+      final lista = await _api.listarCentrosCustoParaVaga();
+      if (mounted) setState(() => _centrosCusto = lista);
+    } catch (_) {/* fallback: campo de texto livre */}
   }
 
   Future<void> _carregarFiliais() async {
@@ -116,8 +131,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         : ApiService.normalizarFuncao(
             ApiService.funcaoEfetivaDoTemplate(_templateSelecionado!));
     final lista = _equipe
-        .where((c) =>
-            !c.demitido || !_idsJaSubstituidosAlgumaVez.contains(c.id))
+        .where((c) => c.demitido
+            ? !_idsJaSubstituidosAlgumaVez.contains(c.id)
+            : !_idsJaSubstitutos.contains(c.id))
         // Requisitante: só quem tem o cargo da função do template.
         .where((c) =>
             !c.origemRequisitante ||
@@ -136,10 +152,13 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           funcionalidade: 'vagas_gestor');
       final jaSubstituidos = await _api
           .listarColaboradoresJaIndicadosComoSubstituto(incluirEncerradas: true);
+      final jaSubstitutosEmAberto =
+          await _api.listarColaboradoresJaIndicadosComoSubstituto();
       if (mounted) {
         setState(() {
           _equipe = lista;
           _idsJaSubstituidosAlgumaVez = jaSubstituidos;
+          _idsJaSubstitutos = jaSubstitutosEmAberto;
           _carregandoEquipe = false;
         });
       }
@@ -153,7 +172,103 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _templateSelecionado = t;
       _ehSubstituicao = false;
       _colaboradorSubstituido = null;
+      _substitutos = [];
     });
+  }
+
+  /// Substituição completa: 1 colaborador (quantidade 1) ou exatamente
+  /// [_quantidade] colaboradores (quantidade > 1).
+  bool get _substituicaoCompleta => _quantidade > 1
+      ? _substitutos.length == _quantidade
+      : _colaboradorSubstituido != null;
+
+  void _ajustarQuantidade(int nova) {
+    setState(() {
+      final antiga = _quantidade;
+      _quantidade = nova;
+      if (nova > 1 && antiga == 1 && _colaboradorSubstituido != null) {
+        _substitutos = [_colaboradorSubstituido!];
+        _colaboradorSubstituido = null;
+      } else if (nova == 1 && _substitutos.isNotEmpty) {
+        _colaboradorSubstituido = _substitutos.first;
+        _substitutos = [];
+      } else if (_substitutos.length > nova) {
+        _substitutos = _substitutos.sublist(0, nova);
+      }
+    });
+  }
+
+  Future<void> _abrirSeletorSubstitutos() async {
+    final lista = _equipeDoSetorDaVaga;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setStateDialog) {
+        return AlertDialog(
+          title: Text('Colaboradores a substituir',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
+          content: SizedBox(
+            width: 380,
+            height: 380,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_substitutos.length} de $_quantidade selecionados',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.cinzaTexto)),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: lista.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final c = lista[i];
+                      final selecionado = _substitutos.any((s) => s.id == c.id);
+                      final desabilitado =
+                          !selecionado && _substitutos.length >= _quantidade;
+                      return CheckboxListTile(
+                        dense: true,
+                        value: selecionado,
+                        activeColor: AppColors.magenta,
+                        onChanged: desabilitado
+                            ? null
+                            : (_) {
+                                setStateDialog(() {
+                                  if (selecionado) {
+                                    _substitutos
+                                        .removeWhere((s) => s.id == c.id);
+                                  } else {
+                                    _substitutos.add(c);
+                                  }
+                                });
+                                if (mounted) setState(() {});
+                              },
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: Text(
+                            '${c.cargo != null && c.cargo!.isNotEmpty ? '${c.nome} – ${c.cargo}' : c.nome}${c.demitido ? ' (desligado)' : ''}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: desabilitado
+                                    ? AppColors.cinzaTexto
+                                    : AppColors.dark)),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.magenta),
+              child:
+                  Text('Concluir', style: GoogleFonts.poppins(color: Colors.white)),
+            ),
+          ],
+        );
+      }),
+    );
+    if (mounted) setState(() {});
   }
 
   void _voltarParaTemplates() {
@@ -161,6 +276,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       _templateSelecionado = null;
       _ehSubstituicao = false;
       _colaboradorSubstituido = null;
+      _substitutos = [];
       _motivoCtrl.clear();
       _quantidade = 1;
       _horarioEntrada = null;
@@ -187,6 +303,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     setState(() {
       _ehSubstituicao = substituicao;
       _colaboradorSubstituido = null;
+      _substitutos = [];
     });
     if (substituicao && _equipe.isEmpty) _carregarEquipe();
   }
@@ -333,11 +450,9 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
     final t = _templateSelecionado!;
     setState(() => _enviando = true);
 
-    final motivo = _motivoCtrl.text.trim();
-    String descricao = t['descricao'] as String? ?? '';
-    if (motivo.isNotEmpty) {
-      descricao += '${descricao.isNotEmpty ? '\n\n' : ''}Motivo: $motivo';
-    }
+    // O motivo é justificativa interna: igual ao web, não vai para a descrição
+    // (pública) da vaga.
+    final String descricao = t['descricao'] as String? ?? '';
 
     // Upload do documento se houver
     String? docUrl;
@@ -366,6 +481,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       tipoVaga: _quantidade > 1 ? 'MULTIPLA' : (t['tipo_vaga'] as String? ?? 'UNICA'),
       requisitadoPorId: _api.colaboradorAtual?.id,
       statusRequisicao: 'AGUARDANDO_APROVACAO_RH',
+      sigilosa: _sigilosa,
       createdAt: DateTime.now(),
       templateId: t['id'] as int?,
       quantidadeVagas: _quantidade,
@@ -374,7 +490,19 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
       docAprovacaoUrl: docUrl,
       centroCusto: _centroCustoCtrl.text.trim().isEmpty ? null : _centroCustoCtrl.text.trim(),
       filial: _filialSelecionada,
-      colaboradorSubstituidoId: _ehSubstituicao ? _colaboradorSubstituido?.id : null,
+      colaboradorSubstituidoId: _ehSubstituicao
+          ? (_quantidade > 1
+              ? (_substitutos.isEmpty ? null : _substitutos.first.id)
+              : _colaboradorSubstituido?.id)
+          : null,
+      // Igual ao web: a lista é gravada sempre, inclusive com 1 colaborador.
+      colaboradoresSubstituidosIds: _ehSubstituicao
+          ? (_quantidade > 1
+              ? _substitutos.map((c) => c.id).toList()
+              : (_colaboradorSubstituido == null
+                  ? null
+                  : [_colaboradorSubstituido!.id]))
+          : null,
       vagaGestorId: _ehSubstituicao ? null : _liderancaSelecionada['gestor']?['id'] as int?,
       vagaSupervisorId: _ehSubstituicao ? null : _liderancaSelecionada['supervisor']?['id'] as int?,
       vagaCoordenadorId: _ehSubstituicao ? null : _liderancaSelecionada['coordenador']?['id'] as int?,
@@ -829,13 +957,32 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 onTap: () => _onTipoAlterado(true),
               ),
             ),
+        const SizedBox(height: 8),
+        CheckboxListTile(
+          value: _sigilosa,
+          onChanged: (v) => setState(() => _sigilosa = v ?? false),
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeColor: AppColors.magenta,
+          title: Text('Vaga sigilosa (não divulgar publicamente)',
+              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+              'Não aparece no portal de vagas nem no Eu Crio Oportunidades. '
+              'Aprovadores e responsáveis pela seleção são notificados.',
+              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
+        ),
           ],
         ),
         const SizedBox(height: 20),
 
         // Picker de colaborador (só se substituição)
         if (_ehSubstituicao) ...[
-          _secao('Quem será substituído?', obrigatorio: true),
+          _secao(
+              _quantidade > 1
+                  ? 'Colaboradores a substituir (${_substitutos.length} de $_quantidade selecionados)'
+                  : 'Quem será substituído?',
+              obrigatorio: true),
           const SizedBox(height: 12),
           if (_carregandoEquipe)
             const Center(
@@ -853,6 +1000,43 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
               child: Text(
                 'Nenhum colaborador encontrado no setor desta vaga.',
                 style: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
+              ),
+            )
+          else if (_quantidade > 1)
+            InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: _abrirSeletorSubstitutos,
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(
+                    color: _substitutos.isNotEmpty
+                        ? AppColors.magenta
+                        : const Color(0xFFE5E7EB),
+                    width: _substitutos.isNotEmpty ? 1.5 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(
+                      _substitutos.isEmpty
+                          ? 'Selecione...'
+                          : _substitutos.map((c) => c.nome).join(', '),
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: _substitutos.isEmpty
+                              ? AppColors.cinzaTexto
+                              : AppColors.dark),
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down_rounded,
+                      color: AppColors.cinzaTexto),
+                ]),
               ),
             )
           else
@@ -919,7 +1103,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
             children: [
               IconButton(
                 onPressed: _quantidade > 1
-                    ? () => setState(() => _quantidade--)
+                    ? () => _ajustarQuantidade(_quantidade - 1)
                     : null,
                 icon: const Icon(Icons.remove_circle_outline_rounded),
                 color: AppColors.magenta,
@@ -936,7 +1120,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 ),
               ),
               IconButton(
-                onPressed: () => setState(() => _quantidade++),
+                onPressed: () => _ajustarQuantidade(_quantidade + 1),
                 icon: const Icon(Icons.add_circle_outline_rounded),
                 color: AppColors.magenta,
               ),
@@ -1057,11 +1241,13 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
         // Informações da vaga
         _secao('Informações da vaga', obrigatorio: true),
         const SizedBox(height: 10),
-        _campoTexto(
-          ctrl: _centroCustoCtrl,
-          label: 'Centro de custo',
-          icone: Icons.account_balance_outlined,
-        ),
+        _centrosCusto.isEmpty
+            ? _campoTexto(
+                ctrl: _centroCustoCtrl,
+                label: 'Centro de custo',
+                icone: Icons.account_balance_outlined,
+              )
+            : _dropdownCentroCusto(),
         if (!_ehSubstituicao) ...[
           const SizedBox(height: 10),
           GestureDetector(
@@ -1138,7 +1324,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
           width: double.infinity,
           height: 54,
           child: ElevatedButton(
-            onPressed: (_ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty) ||
+            onPressed: (_ehSubstituicao && !_substituicaoCompleta) ||
                     (!_ehSubstituicao && _docAprovacao == null) ||
                     _horarioEntrada == null ||
                     _horarioSaida == null ||
@@ -1155,8 +1341,10 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
               elevation: 0,
             ),
             child: Text(
-              _ehSubstituicao && _colaboradorSubstituido == null && _equipeDoSetorDaVaga.isNotEmpty
-                  ? 'Selecione quem será substituído'
+              _ehSubstituicao && !_substituicaoCompleta
+                  ? (_quantidade > 1
+                      ? 'Selecione $_quantidade colaboradores a substituir'
+                      : 'Selecione quem será substituído')
                   : 'Continuar',
               style: GoogleFonts.poppins(
                   fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
@@ -1499,6 +1687,45 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                     fontSize: 13, fontWeight: FontWeight.w600, color: cor)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _dropdownCentroCusto() {
+    final atual = _centroCustoCtrl.text.trim();
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _centrosCusto.any((c) => c['cod'] == atual) ? atual : null,
+        isExpanded: true,
+        onChanged: (v) => setState(() => _centroCustoCtrl.text = v ?? ''),
+        style: GoogleFonts.poppins(fontSize: 14, color: AppColors.dark),
+        decoration: InputDecoration(
+          labelText: 'Centro de custo',
+          labelStyle:
+              GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
+          prefixIcon: const Icon(Icons.account_balance_outlined,
+              size: 18, color: AppColors.cinzaTexto),
+          filled: true,
+          fillColor: Colors.white,
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
+        items: _centrosCusto.map((c) {
+          final setor = c['setor'] ?? '';
+          return DropdownMenuItem(
+            value: c['cod'],
+            child: Text(
+              setor.isEmpty ? c['cod']! : '${c['cod']} · $setor',
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
       ),
     );
   }

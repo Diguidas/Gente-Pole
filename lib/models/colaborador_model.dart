@@ -9,6 +9,8 @@ class ColaboradorModel {
   final String? dataAdmissao;
   final int? supervisorId;
   final String? fotoUrl;
+  /// Nome que gosta de ser chamado (opcional).
+  final String? apelido;
   final String? clienteSap;
   /// Código de centro de custo de 10 dígitos (ex: "2001401016").
   /// Estrutura: [4 filial][2 segmento][4 setor]
@@ -35,7 +37,7 @@ class ColaboradorModel {
     this.dataNascimento,
     this.dataAdmissao,
     this.supervisorId,
-    this.fotoUrl, this.clienteSap,
+    this.fotoUrl, this.apelido, this.clienteSap,
     this.codCentro,
     this.empresa,
     this.ehGestor = false,
@@ -56,6 +58,7 @@ class ColaboradorModel {
       dataAdmissao: json['data_admissao'],
       supervisorId: json['supervisor_id'],
       fotoUrl: json['foto_url'],
+      apelido: json['apelido'],
       clienteSap: json['cliente_sap'],
       codCentro: json['cod_centro'],
       empresa: json['empresa'],
@@ -78,8 +81,11 @@ class ColaboradorModel {
   String? get codSegmento =>
       (codCentro != null && codCentro!.length == 10) ? codCentro!.substring(0, 6) : null;
 
-  /// Retorna o primeiro nome do colaborador
-  String get primeiroNome => nome.split(' ').first;
+  /// Nome de exibição curto: o apelido ("nome que gosta de ser chamado")
+  /// quando existe; senão o primeiro nome.
+  String get primeiroNome => (apelido != null && apelido!.trim().isNotEmpty)
+      ? apelido!.trim()
+      : nome.split(' ').first;
 
   /// Formata data de admissão para exibição (yyyy-mm-dd → dd/mm/yyyy)
   String? get dataAdmissaoFormatada {

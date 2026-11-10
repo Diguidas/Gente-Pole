@@ -438,7 +438,7 @@ class _CardPedidoState extends State<_CardPedido> {
                         children: [
                           Text(
                               pedido.isExclusivo
-                                  ? '${pedido.descricaoExclusivo} × ${pedido.quantidadeExclusivo}'
+                                  ? pedido.rotuloExclusivo
                                   : 'Pedido nº ${pedido.ordem}',
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.poppins(

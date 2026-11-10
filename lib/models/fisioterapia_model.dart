@@ -15,6 +15,8 @@ class FisioterapiaCaso {
   final DateTime? dataAlta;
   final String? assinaturaAltaUrl;
   final DateTime? criadoEm;
+  /// Caso aberto pela aba "Emergência" do SESMT (encaixe imediato).
+  final bool emergencia;
 
   // Vem do join com `colaboradores` — só preenchido quando o select pede.
   final String? nomeColaborador;
@@ -33,6 +35,7 @@ class FisioterapiaCaso {
     this.dataAlta,
     this.assinaturaAltaUrl,
     this.criadoEm,
+    this.emergencia = false,
     this.nomeColaborador,
     this.matriculaColaborador,
     this.setorColaborador,
@@ -54,6 +57,7 @@ class FisioterapiaCaso {
       assinaturaAltaUrl: json['assinatura_alta_url'],
       criadoEm:
           json['criado_em'] != null ? DateTime.parse(json['criado_em']) : null,
+      emergencia: json['emergencia'] as bool? ?? false,
       nomeColaborador: colab?['nome'],
       matriculaColaborador: colab?['matricula'],
       setorColaborador: colab?['setor'],
@@ -73,6 +77,9 @@ class FisioterapiaSessao {
   final String horario;
   final String status; // 'AGENDADO' | 'VEIO' | 'NAO_VEIO' | 'CANCELADO'
   final String? evolucao;
+  /// Horário usado num encaixe de emergência de outro colaborador — o SESMT
+  /// vai remarcar esta sessão.
+  final bool cedidaEmergencia;
 
   FisioterapiaSessao({
     required this.id,
@@ -81,6 +88,7 @@ class FisioterapiaSessao {
     required this.horario,
     this.status = 'AGENDADO',
     this.evolucao,
+    this.cedidaEmergencia = false,
   });
 
   factory FisioterapiaSessao.fromJson(Map<String, dynamic> json) =>
@@ -91,6 +99,7 @@ class FisioterapiaSessao {
         horario: (json['horario'] as String).substring(0, 5),
         status: json['status'] ?? 'AGENDADO',
         evolucao: json['evolucao'],
+        cedidaEmergencia: json['cedida_emergencia'] as bool? ?? false,
       );
 }
 

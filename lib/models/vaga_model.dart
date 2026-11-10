@@ -9,6 +9,7 @@ class VagaModel {
   final double? faixaSalarialMax;
   final bool salarioAExibir;
   final bool testePratico;
+  final bool sigilosa;
   final String status;
   final String tipoVaga;
   final int? requisitadoPorId;
@@ -25,6 +26,9 @@ class VagaModel {
   final String? liderancaDiretaMatricula;
   final String? filial;
   final int? colaboradorSubstituidoId;
+  /// Substituição de vários colaboradores (quantidade > 1). O primeiro também
+  /// vai em [colaboradorSubstituidoId] (compatibilidade).
+  final List<int>? colaboradoresSubstituidosIds;
   final int? vagaGestorId;
   final int? vagaSupervisorId;
   final int? vagaCoordenadorId;
@@ -42,6 +46,7 @@ class VagaModel {
     this.faixaSalarialMax,
     required this.salarioAExibir,
     required this.testePratico,
+    this.sigilosa = false,
     required this.status,
     required this.tipoVaga,
     this.requisitadoPorId,
@@ -57,6 +62,7 @@ class VagaModel {
     this.liderancaDiretaMatricula,
     this.filial,
     this.colaboradorSubstituidoId,
+    this.colaboradoresSubstituidosIds,
     this.vagaGestorId,
     this.vagaSupervisorId,
     this.vagaCoordenadorId,
@@ -76,6 +82,7 @@ class VagaModel {
       faixaSalarialMax: (json['faixa_salarial_max'] as num?)?.toDouble(),
       salarioAExibir: json['salario_a_exibir'] == true,
       testePratico: json['teste_pratico'] == true,
+      sigilosa: json['sigilosa'] == true,
       status: json['status'] ?? 'ABERTA',
       tipoVaga: json['tipo_vaga'] ?? 'UNICA',
       requisitadoPorId: json['requisitado_por_id'] as int?,
@@ -90,6 +97,10 @@ class VagaModel {
       liderancaDiretaMatricula: json['lideranca_direta_matricula'] as String?,
       filial: json['filial'] as String?,
       colaboradorSubstituidoId: json['colaborador_substituido_id'] as int?,
+      colaboradoresSubstituidosIds:
+          (json['colaboradores_substituidos_ids'] as List?)
+              ?.map((e) => (e as num).toInt())
+              .toList(),
       vagaGestorId: json['vaga_gestor_id'] as int?,
       vagaSupervisorId: json['vaga_supervisor_id'] as int?,
       vagaCoordenadorId: json['vaga_coordenador_id'] as int?,
@@ -112,6 +123,7 @@ class VagaModel {
       'faixa_salarial_max': faixaSalarialMax,
       'salario_a_exibir': salarioAExibir,
       'teste_pratico': testePratico,
+      if (sigilosa) 'sigilosa': true,
       'status': 'ENCERRADA', // vaga começa fechada até RH aprovar
       'tipo_vaga': tipoVaga,
       'requisitado_por_id': requisitadoPorId,
@@ -126,6 +138,9 @@ class VagaModel {
       if (filial != null) 'filial': filial,
       if (colaboradorSubstituidoId != null)
         'colaborador_substituido_id': colaboradorSubstituidoId,
+      if (colaboradoresSubstituidosIds != null &&
+          colaboradoresSubstituidosIds!.isNotEmpty)
+        'colaboradores_substituidos_ids': colaboradoresSubstituidosIds,
       if (vagaGestorId != null) 'vaga_gestor_id': vagaGestorId,
       if (vagaSupervisorId != null) 'vaga_supervisor_id': vagaSupervisorId,
       if (vagaCoordenadorId != null) 'vaga_coordenador_id': vagaCoordenadorId,

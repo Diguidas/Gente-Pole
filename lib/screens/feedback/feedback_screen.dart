@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import 'enviar_feedback_screen.dart';
+import 'feedback_gestor_colab_screen.dart';
 import 'feedbacks_recebidos_screen.dart';
 
 class FeedbackScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class FeedbackScreen extends StatefulWidget {
 class _FeedbackScreenState extends State<FeedbackScreen> {
   final _api = ApiService();
   int _naoLidos = 0;
+  int _naoLidosGestor = 0;
 
   @override
   void initState() {
@@ -23,7 +25,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
   Future<void> _carregarBadge() async {
     final n = await _api.contarFeedbacksNaoLidos();
-    if (mounted) setState(() => _naoLidos = n);
+    final g = await _api.contarFeedbacksGestorNaoLidos();
+    if (mounted) {
+      setState(() {
+        _naoLidos = n;
+        _naoLidosGestor = g;
+      });
+    }
   }
 
   @override
@@ -136,6 +144,27 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                                 ),
                               );
                               // Recarrega badge ao voltar
+                              _carregarBadge();
+                            },
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Card — Feedback do gestor / pedir feedback
+                          _cardOpcao(
+                            icone: Icons.supervisor_account_outlined,
+                            titulo: 'Feedback do meu gestor',
+                            subtitulo: 'Veja o que seu gestor disse e peça um retorno',
+                            cor: AppColors.laranja,
+                            badge: _naoLidosGestor,
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const FeedbackGestorColabScreen(),
+                                ),
+                              );
                               _carregarBadge();
                             },
                           ),

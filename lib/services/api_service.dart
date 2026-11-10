@@ -17,6 +17,12 @@ import '../core/pontos_bus.dart';
 import '../models/colaborador_model.dart';
 import '../models/aniversariante_model.dart';
 import '../core/error_reporter.dart';
+import '../core/nome_foto.dart' show nomeCurto;
+import 'documentos_cadastrais_service.dart';
+
+/// Chave dos pesos de um ciclo no mesmo mapa dos pesos de template (ids de
+/// template são positivos; os de ciclo ficam negativos).
+int chavePesoCiclo(int cicloId) => -cicloId;
 
 /// Serviço central de API.
 /// TODA comunicação com o banco passa por aqui.
@@ -171,6 +177,21 @@ class ApiService {
     if (empresa == null) return false;
     if (!await acessoLiberado(matricula, empresa)) return false;
     try {
+      // Confere a data de nascimento digitada (AAAA-MM-DD) com o cadastro antes
+      // de criar a senha — igual ao web. (A trava definitiva precisa existir
+      // também dentro da função criar_usuario_auth, no banco.)
+      final colab = await _client
+          .from('colaboradores')
+          .select('data_nascimento')
+          .eq('matricula', matricula)
+          .eq('empresa', empresa)
+          .maybeSingle();
+      final nascBd = (colab?['data_nascimento'] as String? ?? '');
+      if (dataNascimento.isEmpty ||
+          nascBd.isEmpty ||
+          !nascBd.startsWith(dataNascimento)) {
+        return false;
+      }
       await _client.rpc('criar_usuario_auth', params: {
         'p_matricula': matricula,
         'p_empresa': empresa,
@@ -218,7 +239,12 @@ class ApiService {
           .eq('empresa', empresa)
           .maybeSingle();
       if (colaborador == null) return false;
-      if (colaborador['data_nascimento'] != dataNascimento) return false;
+      final nascBd = (colaborador['data_nascimento'] as String? ?? '');
+      if (dataNascimento.isEmpty ||
+          nascBd.isEmpty ||
+          !nascBd.startsWith(dataNascimento)) {
+        return false;
+      }
       if (!await acessoLiberado(matricula, empresa)) return false;
 
       final auth = await _client
@@ -267,9 +293,59 @@ class ApiService {
         .order('eh_hoje', ascending: false)
         .order('dia_nascimento', ascending: true);
 
-    return (data as List)
-        .map((e) => AniversarianteModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final linhas = await _comApelidos(
+        List<Map<String, dynamic>>.from(data as List));
+    return linhas.map((e) => AniversarianteModel.fromJson(e)).toList();
+  }
+
+  /// Views não expõem `apelido`: busca em `colaboradores` pelo `id` de cada
+  /// linha e injeta a chave `apelido` (quando a pessoa tiver).
+  Future<List<Map<String, dynamic>>> _comApelidos(
+      List<Map<String, dynamic>> linhas) async {
+    final ids = linhas.map((l) => l['id']).where((i) => i != null).toSet().toList();
+    if (ids.isEmpty) return linhas;
+    try {
+      final res = await _client
+          .from('colaboradores')
+          .select('id, apelido')
+          .inFilter('id', ids)
+          .not('apelido', 'is', null);
+      final mapa = {for (final r in res) r['id'].toString(): r['apelido']};
+      for (final l in linhas) {
+        final a = mapa[l['id']?.toString()];
+        if (a != null) l['apelido'] = a;
+      }
+    } catch (_) {}
+    return linhas;
+  }
+
+  /// Salva o "nome que gosta de ser chamado" (vazio remove) e atualiza o
+  /// colaborador da sessão.
+  Future<void> salvarApelido(String? apelido) async {
+    final atual = colaboradorAtual;
+    if (atual == null) return;
+    final limpo = apelido?.trim() ?? '';
+    await _client
+        .from('colaboradores')
+        .update({'apelido': limpo.isEmpty ? null : limpo}).eq('id', atual.id);
+    colaboradorAtual = ColaboradorModel(
+      id: atual.id,
+      matricula: atual.matricula,
+      nome: atual.nome,
+      setor: atual.setor,
+      cargo: atual.cargo,
+      cpf: atual.cpf,
+      dataNascimento: atual.dataNascimento,
+      dataAdmissao: atual.dataAdmissao,
+      supervisorId: atual.supervisorId,
+      fotoUrl: atual.fotoUrl,
+      apelido: limpo.isEmpty ? null : limpo,
+      clienteSap: atual.clienteSap,
+      codCentro: atual.codCentro,
+      empresa: atual.empresa,
+      ehGestor: atual.ehGestor,
+      branch: atual.branch,
+    );
   }
 
   // ─── Gamificação: pontos e ranking ────────────────────────────────────────
@@ -284,6 +360,51 @@ class ApiService {
         .eq('id', 1)
         .maybeSingle();
     return row?['ativo'] as bool? ?? true;
+  }
+
+  // ─── Performance: materiais, visual e Tô na Trilha ────────────────────────
+
+  /// Materiais de apoio (links) da tela Performance. [gestor] = false filtra
+  /// os marcados como "só gestores" — o app do colaborador nunca os mostra,
+  /// mesmo que a pessoa seja gestor.
+  Future<List<Map<String, dynamic>>> listarMateriaisPerformance({required bool gestor}) async {
+    final res = await _client
+        .from('performance_materiais')
+        .select()
+        .order('ordem')
+        .order('criado_em');
+    final lista = List<Map<String, dynamic>>.from(res);
+    return gestor ? lista : lista.where((m) => m['publico_alvo'] != 'gestor').toList();
+  }
+
+  /// Mapa chave → URL do banner e dos ícones dos botões da Performance
+  /// (banner, periodo_experiencia, avaliacao, avaliar_colegas, pdi, feedback,
+  /// programa_carreira, to_na_trilha_banner).
+  Future<Map<String, String>> listarPerformanceVisual() async {
+    try {
+      final res = await _client.from('performance_visual').select('chave, imagem_url');
+      return {for (final r in res) r['chave'] as String: r['imagem_url'] as String};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listarToNaTrilhaItens() async {
+    final res = await _client
+        .from('to_na_trilha_itens')
+        .select()
+        .order('ordem')
+        .order('id');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<String> obterToNaTrilhaDescricao() async {
+    final r = await _client
+        .from('to_na_trilha_config')
+        .select('valor')
+        .eq('chave', 'descricao')
+        .maybeSingle();
+    return (r?['valor'] as String?) ?? '';
   }
 
   // ─── Folha: contracheque ───────────────────────────────────────────────
@@ -327,6 +448,18 @@ class ApiService {
   /// Competências (mês/ano) em que esse colaborador tem ao menos um evento
   /// de folha lançado, mais recente primeiro. Usada pra listar dinamicamente
   /// os meses disponíveis em vez de fixar um mês só.
+  /// Competências (mês/ano) desativadas pelo DP, no formato 'ano-mes'
+  /// (ex: '2026-9'). Sem registro = visível.
+  Future<Set<String>> listarCompetenciasFolhaOcultas() async {
+    final res = await _client
+        .from('folha_competencia_visibilidade')
+        .select('mes, ano')
+        .eq('visivel', false);
+    return List<Map<String, dynamic>>.from(res)
+        .map((r) => '${r['ano']}-${r['mes']}')
+        .toSet();
+  }
+
   Future<List<Map<String, dynamic>>> listarCompetenciasContracheque() async {
     final matricula = colaboradorAtual?.matricula;
     if (matricula == null) return [];
@@ -341,7 +474,10 @@ class ApiService {
       final ano = l['ano'] as int;
       competencias['$ano-$mes'] = {'mes': mes, 'ano': ano};
     }
-    final lista = competencias.values.toList();
+    final ocultas = await listarCompetenciasFolhaOcultas();
+    final lista = competencias.values
+        .where((c) => !ocultas.contains('${c['ano']}-${c['mes']}'))
+        .toList();
     lista.sort((a, b) {
       final anoCmp = (b['ano'] as int).compareTo(a['ano'] as int);
       return anoCmp != 0 ? anoCmp : (b['mes'] as int).compareTo(a['mes'] as int);
@@ -359,6 +495,8 @@ class ApiService {
   }) async {
     final matricula = colaboradorAtual?.matricula;
     if (matricula == null) return [];
+    // Mês desativado pelo DP: nenhum contracheque dele fica disponível.
+    if ((await listarCompetenciasFolhaOcultas()).contains('$ano-$mes')) return [];
 
     final execucoesOk = await _client
         .from('folha_execucoes')
@@ -494,6 +632,26 @@ class ApiService {
     return row?['total_pontos'] as int? ?? 0;
   }
 
+  /// Posicao do colaborador no ranking da filial (quantos tem mais pontos + 1)
+  /// e total de pessoas no ranking da filial — igual ao web.
+  Future<({int posicao, int totalFilial})> buscarMinhaPosicaoRanking({
+    required String branch,
+    required int meusPontos,
+  }) async {
+    final maiores = await _client
+        .from('vw_ranking_pontos')
+        .select('colaborador_id')
+        .eq('branch', branch)
+        .gt('total_pontos', meusPontos)
+        .count();
+    final total = await _client
+        .from('vw_ranking_pontos')
+        .select('colaborador_id')
+        .eq('branch', branch)
+        .count();
+    return (posicao: maiores.count + 1, totalFilial: total.count);
+  }
+
   /// Ranking de pontos da mesma filial do colaborador logado — nunca mostra
   /// gente de outra filial.
   Future<List<Map<String, dynamic>>> buscarRankingPontosDaMinhaFilial() async {
@@ -579,11 +737,14 @@ class ApiService {
           .from('parabens')
           .update({
             'resposta': respostaLimpa,
-            'respondido_em': DateTime.now().toIso8601String(),
+            'respondido_em': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', parabensId);
 
-      final meuPrimeiroNome = colaboradorAtual?.primeiroNome ?? 'Alguém';
+      final colabAtual = colaboradorAtual;
+      final meuPrimeiroNome = colabAtual == null
+          ? 'Alguém'
+          : nomeCurto(colabAtual.nome, colabAtual.apelido);
       await _client.from('feed_posts').insert({
         'autor_id': meuId,
         'tipo': 'resposta_parabens',
@@ -714,6 +875,7 @@ class ApiService {
         case 'todos':
           return true;
         case 'setor':
+        case 'setores': // o painel web grava 'setores'
           return _parseList(item['setores_alvo']).contains(colab.setor);
         case 'colaboradores':
           final colabs = _parseList(item['colaboradores_alvo']);
@@ -917,7 +1079,10 @@ class ApiService {
     }
     // O setor de lotação só vale quando não há nenhum setor atribuído; senão
     // quem é lotado num setor mas gere outro veria a equipe errada.
-    if (setores.isEmpty && colab.setor != null && colab.setor!.isNotEmpty) {
+    if (setores.isEmpty &&
+        colab.setor != null &&
+        colab.setor!.isNotEmpty &&
+        colab.setor != '—') {
       setores.add(colab.setor!);
     }
     return setores.toList();
@@ -1201,7 +1366,7 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
-  /// Funcionalidades do módulo Gestão de Equipe — mesmos 7 itens e ids do painel web
+  /// Funcionalidades do módulo Gestão de Equipe — mesmos 10 itens e ids do painel web
   /// (`ApiService.funcionalidadesGestor` em gentepole_admin), pra bloqueio
   /// individual por pessoa (`gestor_permissoes`) valer igual nos dois apps.
   static const funcionalidadesGestor = [
@@ -1213,6 +1378,8 @@ class ApiService {
     {'id': 'feedback_gestor', 'label': 'Feedback'},
     {'id': 'exames_gestor', 'label': 'Exames'},
     {'id': 'solicitacoes_gestor', 'label': 'Solicitações'},
+    {'id': 'facilites_gestor', 'label': 'Facilites'},
+    {'id': 'candidaturas_gestor', 'label': 'Candidaturas'},
   ];
 
   /// Funcionalidades do módulo Gestão de Equipe bloqueadas pro colaborador logado —
@@ -1445,6 +1612,7 @@ class ApiService {
           'ENTREV_GESTOR',
           'PROPOSTA',
           'APROVADO',
+          'REPROVADO',
         ])
         .order('created_at', ascending: false);
 
@@ -1744,7 +1912,7 @@ class ApiService {
     return (res as List).isNotEmpty;
   }
 
-  /// Status do ciclo atual: quantas sessões grátis já usou, limite do ciclo,
+  /// Status do ciclo atual: quantas sessões do ciclo já usou, limite do ciclo,
   /// custo da extra, saldo de PoleCoins e se a PRÓXIMA sessão sairia paga —
   /// pra mostrar o contador e confirmar cobrança antes de agendar.
   Future<Map<String, dynamic>> buscarStatusCicloMassoterapia() async {
@@ -1756,16 +1924,27 @@ class ApiService {
         'custo_polecoins_extra': 0,
         'saldo_polecoins': 0,
         'proxima_paga': false,
+        'bloqueado': false,
       };
     }
     final res = await _client.rpc(
       'status_ciclo_massoterapia',
       params: {'p_colaborador_id': colaborador.id},
     );
-    return Map<String, dynamic>.from(res as Map);
+    final status = Map<String, dynamic>.from(res as Map);
+    // RPC nova devolve `polecoins_ativo`; versão antiga não — usa o
+    // interruptor geral da gamificação como fallback.
+    if (status['polecoins_ativo'] is! bool) {
+      try {
+        status['polecoins_ativo'] = await gamificacaoAtiva();
+      } catch (_) {
+        status['polecoins_ativo'] = true;
+      }
+    }
+    return status;
   }
 
-  /// Config geral de massoterapia (janela de dias, limite grátis por ciclo e
+  /// Config geral de massoterapia (janela de dias, limite de sessões por ciclo e
   /// custo em PoleCoins da sessão extra) — linha única configurada pelo admin.
   Future<Map<String, dynamic>> buscarConfigGeralMassoterapia() async {
     final data = await _client
@@ -1825,8 +2004,19 @@ class ApiService {
     final janelaDias = config['janela_dias'] as int? ?? 14;
     final periodo = _periodoCicloMassoterapia(hoje, janelaDias);
 
+    // Setor em grupo universal: os dias vêm do grupo (RPC), não de
+    // filial/segmento/setor. Setor sem grupo não tem dias de massoterapia.
+    List<int>? diasDoGrupo;
+    if (setor != null && setor.isNotEmpty) {
+      final r = await _client
+          .rpc('massoterapia_dias_do_setor', params: {'p_setor': setor});
+      diasDoGrupo = r == null
+          ? <int>[]
+          : (r as List).map((e) => (e as num).toInt()).toList();
+    }
+
     final chaves = [setor, segmento, filial].whereType<String>().toList();
-    final regras = chaves.isEmpty
+    final regras = chaves.isEmpty || diasDoGrupo != null
         ? <Map<String, dynamic>>[]
         : List<Map<String, dynamic>>.from(await _client
             .from('massoterapia_dias_config')
@@ -1843,6 +2033,7 @@ class ApiService {
     }
 
     bool ativoNoDia(int diaSemana) =>
+        (diasDoGrupo != null ? diasDoGrupo.contains(diaSemana) : null) ??
         buscar('setor', setor, diaSemana) ??
         buscar('segmento', segmento, diaSemana) ??
         buscar('filial', filial, diaSemana) ??
@@ -1859,6 +2050,24 @@ class ApiService {
       }
     }
     return dias;
+  }
+
+  /// Últimas faltas (não veio) do colaborador logado, com a situação da
+  /// justificativa (view v_massoterapia_faltas).
+  Future<List<Map<String, dynamic>>> listarMinhasFaltasMassoterapia() async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return [];
+    try {
+      final res = await _client
+          .from('v_massoterapia_faltas')
+          .select('id, data, horario, falta_justificada, justificativa')
+          .eq('colaborador_id', id)
+          .order('data', ascending: false)
+          .limit(5);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Todos os agendamentos com status AGENDADO nas próximas 4 semanas.
@@ -1912,17 +2121,25 @@ class ApiService {
   }
 
   /// Cria um agendamento para o colaborador logado, respeitando o limite
-  /// grátis por ciclo — se estourado, debita PoleCoins (ou recusa por saldo
+  /// do ciclo — se estourado, debita PoleCoins (ou recusa por saldo
   /// insuficiente). Toda a regra roda atômica na RPC `agendar_massoterapia_com_limite`.
   /// Retorna `ok=false` se o slot já estiver ocupado, o setor estiver lotado,
   /// ou o saldo de PoleCoins for insuficiente (`motivo == 'saldo_insuficiente'`).
-  Future<({bool ok, bool pagoComPolecoins, String? motivo})> agendarMassoterapia({
+  /// `motivo` também pode ser 'bloqueado' (com [bloqueioFim], 'yyyy-MM-dd') ou
+  /// 'grupo_lotado' (vagas do grupo do dia esgotadas).
+  Future<({bool ok, bool pagoComPolecoins, String? motivo, String? bloqueioFim})>
+      agendarMassoterapia({
     required String data,
     required String horario,
   }) async {
     final colaborador = colaboradorAtual;
     if (colaborador == null) {
-      return (ok: false, pagoComPolecoins: false, motivo: null);
+      return (
+        ok: false,
+        pagoComPolecoins: false,
+        motivo: null,
+        bloqueioFim: null
+      );
     }
     try {
       final res = await _client.rpc(
@@ -1938,9 +2155,33 @@ class ApiService {
         ok: map['ok'] as bool? ?? false,
         pagoComPolecoins: map['pago_com_polecoins'] as bool? ?? false,
         motivo: map['motivo'] as String?,
+        bloqueioFim: map['bloqueio_fim']?.toString(),
       );
     } catch (_) {
-      return (ok: false, pagoComPolecoins: false, motivo: null);
+      return (
+        ok: false,
+        pagoComPolecoins: false,
+        motivo: null,
+        bloqueioFim: null
+      );
+    }
+  }
+
+  /// Vagas do grupo de setores do colaborador numa [data] (RPC
+  /// `massoterapia_vagas_grupo`). `modo == 'setor'` = regra antiga (vagas por
+  /// setor); `modo == 'grupo'` traz `grupo`, `vagas_grupo`, `usadas`, `restantes`.
+  /// Em caso de erro devolve `{'modo': 'setor'}` (mantém o fluxo antigo).
+  Future<Map<String, dynamic>> buscarVagasGrupoMassoterapia(String data) async {
+    final colaborador = colaboradorAtual;
+    if (colaborador == null) return {'modo': 'setor'};
+    try {
+      final res = await _client.rpc(
+        'massoterapia_vagas_grupo',
+        params: {'p_colab': colaborador.id, 'p_data': data},
+      );
+      return Map<String, dynamic>.from(res as Map);
+    } catch (_) {
+      return {'modo': 'setor'};
     }
   }
 
@@ -1977,7 +2218,21 @@ class ApiService {
         .eq('colaborador_id', colab.id)
         .inFilter('nivel', _niveisComAcessoDeGestor)
         .limit(1);
-    return (data as List).isNotEmpty;
+    if ((data as List).isNotEmpty) return true;
+    // Igual ao web: perfil 'gestor' ou 'admin' em usuarios_admin (ativo).
+    try {
+      final adm = await _client
+          .from('usuarios_admin')
+          .select('roles')
+          .eq('matricula', colab.matricula)
+          .eq('empresa', colab.empresa ?? '')
+          .eq('ativo', true)
+          .maybeSingle();
+      final roles = (adm?['roles']?.toString() ?? '').toLowerCase();
+      return roles.contains('gestor') || roles.contains('admin');
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Verdadeiro quando este colaborador está associado como requisitante de
@@ -2182,6 +2437,87 @@ class ApiService {
     return lista.map((e) => ColaboradorModel.fromJson(e)).toList();
   }
 
+  /// Centros de custo (cod_centro distintos) da equipe que o usuário lidera ou
+  /// responde (inclui setores em que é requisitante de vaga) + o do próprio
+  /// usuário — alimenta o dropdown de "Solicitar vaga". Cada item:
+  /// {'cod': cod_centro, 'setor': setor}. Vazio se nada for encontrado.
+  Future<List<Map<String, String>>> listarCentrosCustoParaVaga() async {
+    final porCodigo = <String, String>{};
+    void add(String? cod, String? setor) {
+      final c = cod?.trim() ?? '';
+      if (c.isEmpty) return;
+      porCodigo.putIfAbsent(c, () => setor?.trim() ?? '');
+    }
+
+    final eu = colaboradorAtual;
+    if (eu == null) return [];
+
+    // Mesma consulta do web (listarCentrosCustoDoLider): subordinados da
+    // hierarquia + colaboradores dos setores de gestor_setores + setores dos
+    // pares de requisitante; sem nada disso, lista vazia (campo livre).
+    try {
+      final hier = await _client
+          .from('colaborador_hierarquia')
+          .select('colaborador_id')
+          .eq('responsavel_id', eu.id);
+      final subordinados = <int>{
+        for (final h in (hier as List))
+          if (h['colaborador_id'] is int) h['colaborador_id'] as int,
+      };
+      if (subordinados.isNotEmpty) {
+        final cols = await _client
+            .from('colaboradores')
+            .select('cod_centro, setor')
+            .eq('demitido', false)
+            .inFilter('id', subordinados.toList());
+        for (final c in (cols as List)) {
+          add(c['cod_centro']?.toString(), c['setor']?.toString());
+        }
+      }
+    } catch (_) {}
+    try {
+      final extras = await _client
+          .from('gestor_setores')
+          .select('setor')
+          .eq('matricula_gestor', eu.matricula);
+      final setores = (extras as List)
+          .map((e) => e['setor']?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (setores.isNotEmpty) {
+        final cols = await _client
+            .from('colaboradores')
+            .select('cod_centro, setor')
+            .eq('demitido', false)
+            .inFilter('setor', setores);
+        for (final c in (cols as List)) {
+          add(c['cod_centro']?.toString(), c['setor']?.toString());
+        }
+      }
+    } catch (_) {}
+    try {
+      final pares = await listarParesRequisitante();
+      final setoresPar = pares.map((p) => p.setor).toSet().toList();
+      if (setoresPar.isNotEmpty) {
+        final cols = await _client
+            .from('colaboradores')
+            .select('cod_centro, setor')
+            .eq('demitido', false)
+            .inFilter('setor', setoresPar);
+        for (final c in (cols as List)) {
+          add(c['cod_centro']?.toString(), c['setor']?.toString());
+        }
+      }
+    } catch (_) {}
+    if (porCodigo.isEmpty) return []; // sem equipe → campo de texto livre
+    add(eu.codCentro, eu.setor);
+    final lista = porCodigo.entries
+        .map((e) => {'cod': e.key, 'setor': e.value})
+        .toList()
+      ..sort((a, b) => a['cod']!.compareTo(b['cod']!));
+    return lista;
+  }
+
   /// "Minha Equipe": coordenador pra cima vê toda a equipe abaixo; supervisor,
   /// encarregado e líder só a equipe direta.
   Future<List<ColaboradorModel>> buscarMinhaEquipeVisao() async {
@@ -2191,6 +2527,30 @@ class ApiService {
       apenasLiderDireto: !veTudo,
       funcionalidade: 'minha_equipe_gestor',
     );
+  }
+
+  /// Hierarquia já resolvida de UM colaborador (nível + nome do responsável)
+  /// — usada em "Dados do colaborador" na Minha Equipe.
+  Future<List<Map<String, dynamic>>> buscarHierarquiaResolvidaDoColaborador(
+      int colaboradorId) async {
+    final res = await _client
+        .from('colaborador_hierarquia')
+        .select(
+            'nivel, responsavel_id, colaboradores!colaborador_hierarquia_responsavel_id_fkey(nome)')
+        .eq('colaborador_id', colaboradorId);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Campos cadastrais extras (e-mail, horário de trabalho) de um
+  /// colaborador da equipe, que não vêm no [ColaboradorModel].
+  Future<Map<String, dynamic>?> buscarDadosExtrasColaborador(
+      int colaboradorId) async {
+    final res = await _client
+        .from('colaboradores')
+        .select('email, horario_trabalho')
+        .eq('id', colaboradorId)
+        .maybeSingle();
+    return res == null ? null : Map<String, dynamic>.from(res);
   }
 
   /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando
@@ -2219,7 +2579,24 @@ class ApiService {
   /// Busca a mensagem institucional da empresa para o aniversariante.
   /// Retorna o registro ativo mais recente da tabela
   /// [mensagens_empresa_aniversario], ou null se não houver nenhum.
-  Future<Map<String, dynamic>?> buscarMensagemEmpresaAniversario() async {
+  ///
+  /// [tipo] ('natalicio' | 'empresa') filtra pela coluna `tipo`; sem registro
+  /// do tipo (ou coluna ainda ausente) cai pra qualquer mensagem ativa.
+  Future<Map<String, dynamic>?> buscarMensagemEmpresaAniversario(
+      {String? tipo}) async {
+    if (tipo != null) {
+      try {
+        final porTipo = await _client
+            .from('mensagens_empresa_aniversario')
+            .select('titulo, corpo')
+            .eq('ativo', true)
+            .eq('tipo', tipo)
+            .order('id', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (porTipo != null) return porTipo;
+      } catch (_) {/* coluna tipo ausente: fallback abaixo */}
+    }
     final res = await _client
         .from('mensagens_empresa_aniversario')
         .select('titulo, corpo')
@@ -2276,7 +2653,6 @@ class ApiService {
     final results = await Future.wait([
       query.order('descricao', ascending: true),
       _client.from('lojinha_fotos').select('material, foto_url'),
-      _client.from('lojinha_regras').select('id, dias_semana, materiais'),
     ]);
 
     final fotos = <String, String>{
@@ -2284,16 +2660,9 @@ class ApiService {
         (f['material'] as String): (f['foto_url'] as String),
     };
 
-    // Nova estrutura: uma regra → N materiais. Expande para mapa material → dias
-    final diasPorMaterial = <String, List<int>>{};
-    for (final r in (results[2] as List)) {
-      final dias = (r['dias_semana'] as List?)?.cast<int>();
-      final materiais = (r['materiais'] as List?)?.cast<String>() ?? [];
-      for (final mat in materiais) {
-        if (dias != null) diasPorMaterial[mat] = dias;
-      }
-    }
-
+    // Produtos regulares (SAP) não são afetados pelas regras de
+    // disponibilidade (dias da semana): essas regras valem só para os
+    // exclusivos — igual ao web.
     return (results[0] as List).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
       final matSemZeros = (m['material'] as String).replaceAll(
@@ -2301,7 +2670,7 @@ class ApiService {
         '',
       );
       m['foto_url'] = fotos[matSemZeros];
-      m['dias_semana'] = diasPorMaterial[matSemZeros];
+      m['dias_semana'] = null;
       m['limite_qtd'] = null;
       m['periodo_limite'] = null;
       return LojinhaProdutoModel.fromJson(m);
@@ -2356,12 +2725,13 @@ class ApiService {
     final data = await _client
         .from('lojinha_config')
         .select(
-            'limite_qtd, periodo_dias, limite_pedidos_sap, limite_pedidos_exclusivo, periodo_dias_pedidos')
+            'limite_qtd, limite_qtd_exclusivo, periodo_dias, limite_pedidos_sap, limite_pedidos_exclusivo, periodo_dias_pedidos')
         .eq('id', 1)
         .maybeSingle();
     if (data == null) {
       return {
         'limite_qtd': null,
+        'limite_qtd_exclusivo': null,
         'periodo_dias': null,
         'limite_pedidos_sap': null,
         'limite_pedidos_exclusivo': null,
@@ -2409,8 +2779,62 @@ class ApiService {
     );
   }
 
+  /// Quantos itens o colaborador comprou nos últimos [periodoDias] dias,
+  /// separado por tipo: SAP (regulares) x exclusivo — usado pelos limites de
+  /// itens `limite_qtd` (SAP) e `limite_qtd_exclusivo`.
+  Future<({int sap, int exclusivo})> buscarComprasRecentesPorTipoColab(
+    String colaboradorId,
+    int periodoDias,
+  ) async {
+    final desde = DateTime.now().subtract(Duration(days: periodoDias - 1));
+    final dataStr =
+        '${desde.year}-${desde.month.toString().padLeft(2, '0')}-${desde.day.toString().padLeft(2, '0')}';
+    final data = await _client
+        .from('lojinha_compras')
+        .select('quantidade_total, quantidade_exclusivo')
+        .eq('colaborador_id', colaboradorId)
+        .gte('data', dataStr);
+    final list = data as List;
+    var total = 0;
+    var excl = 0;
+    for (final r in list) {
+      total += (r['quantidade_total'] as int?) ?? 0;
+      excl += (r['quantidade_exclusivo'] as int?) ?? 0;
+    }
+    return (sap: total - excl, exclusivo: excl);
+  }
+
+  /// Regras de disponibilidade: em quais dias/horários/filiais cada produto
+  /// EXCLUSIVO pode ser comprado (o catálogo regular, vindo do SAP, não é
+  /// afetado por essas regras no web).
+  Future<List<Map<String, dynamic>>> listarRegrasLojinha() async {
+    final data = await _client
+        .from('lojinha_regras')
+        .select(
+            'id, nome, tipo, dias_semana, materiais, filiais, hora_inicio, hora_fim, horarios_dia')
+        .order('nome');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Mapa material → regra, usado ao montar o catálogo de exclusivos — só
+  /// considera regras do tipo 'exclusivo'.
+  Future<Map<String, Map<String, dynamic>>> regrasLojinhaPorMaterial() async {
+    final regras = await listarRegrasLojinha();
+    final mapa = <String, Map<String, dynamic>>{};
+    for (final r in regras) {
+      if ((r['tipo'] as String? ?? 'exclusivo') != 'exclusivo') continue;
+      final materiais = (r['materiais'] as List?)?.cast<String>() ?? [];
+      for (final mat in materiais) {
+        mapa[mat] = r;
+      }
+    }
+    return mapa;
+  }
+
   /// Dados do funcionário no SAP: limites + histórico de pedidos
   /// (mesclado com compras de produtos exclusivos, que não passam pelo SAP)
+  /// O limite disponível já desconta as compras exclusivas do ciclo (dia 21
+  /// a dia 20), que o SAP não enxerga.
   Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
     final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (cpf == null || cpf.isEmpty) return null;
@@ -2432,23 +2856,32 @@ class ApiService {
       final exclusivos = await buscarComprasExclusivasLojinha(matricula);
       if (exclusivos.isEmpty) return dados;
 
+      // Desconto das compras exclusivas do ciclo atual (desde o dia 21) no
+      // limite disponível — o SAP não enxerga essas compras.
+      final hoje = DateTime.now();
+      final inicioCiclo = hoje.day >= 21
+          ? DateTime(hoje.year, hoje.month, 21)
+          : DateTime(hoje.year, hoje.month - 1, 21);
+      var descontoCiclo = 0.0;
+      for (final c in exclusivos) {
+        final dt =
+            DateTime.tryParse(c['criado_em']?.toString() ?? '')?.toLocal();
+        if (dt == null || dt.isBefore(inicioCiclo)) continue;
+        descontoCiclo += ((c['preco'] as num?)?.toDouble() ?? 0) *
+            ((c['quantidade'] as num?)?.toInt() ?? 0);
+      }
+      final limiteDispAjustado =
+          (dados.limiteDisp - descontoCiclo).clamp(0.0, double.infinity).toDouble();
+
       return LojinhaFuncionarioModel(
         limiteTotal: dados.limiteTotal,
-        limiteDisp: dados.limiteDisp,
+        limiteDisp: limiteDispAjustado,
         bloqueio: dados.bloqueio,
         centro: dados.centro,
         mensagem: dados.mensagem,
         pedidos: [
           ...dados.pedidos,
-          ...exclusivos.map(
-            (c) => LojinhaPedidoResumoModel.exclusivo(
-              data: c['data'] as String,
-              descricao: c['descricao'] as String,
-              quantidade: c['quantidade'] as int,
-              preco: c['preco'] as double,
-              criadoEm: c['criado_em'] as String?,
-            ),
-          ),
+          ..._agruparExclusivosPorPedido(exclusivos),
         ],
       );
     } catch (_) {
@@ -2463,7 +2896,7 @@ class ApiService {
   ) async {
     final compras = await _client
         .from('lojinha_compras_itens')
-        .select('material, quantidade, data, criado_em')
+        .select('material, quantidade, data, criado_em, pedido_id')
         .eq('colaborador_id', matricula)
         .order('criado_em', ascending: false);
     final comprasList = List<Map<String, dynamic>>.from(compras as List);
@@ -2489,9 +2922,38 @@ class ApiService {
         'quantidade': c['quantidade'],
         'data': c['data'],
         'criado_em': c['criado_em'],
+        'pedido_id': c['pedido_id'],
         'descricao': info?['nome'] as String? ?? 'Produto exclusivo',
         'preco': (info?['preco'] as num?)?.toDouble() ?? 0.0,
       };
+    }).toList();
+  }
+
+  /// Junta os itens exclusivos do mesmo carrinho (mesmo `pedido_id`) num único
+  /// pedido da lista, como no web. Compras antigas, sem `pedido_id`, continuam
+  /// uma por uma (não dá pra saber retroativamente o que era do mesmo carrinho).
+  List<LojinhaPedidoResumoModel> _agruparExclusivosPorPedido(
+      List<Map<String, dynamic>> exclusivos) {
+    final grupos = <String, List<Map<String, dynamic>>>{};
+    for (final c in exclusivos) {
+      final chave = (c['pedido_id'] as String?) ??
+          'avulso_${c['criado_em']}_${c['material']}';
+      grupos.putIfAbsent(chave, () => []).add(c);
+    }
+    return grupos.values.map((itensDoGrupo) {
+      final primeiro = itensDoGrupo.first;
+      return LojinhaPedidoResumoModel.exclusivoAgrupado(
+        data: primeiro['data'] as String,
+        itens: [
+          for (final c in itensDoGrupo)
+            (
+              descricao: c['descricao'] as String,
+              quantidade: c['quantidade'] as int,
+              preco: c['preco'] as double,
+            )
+        ],
+        criadoEm: primeiro['criado_em'] as String?,
+      );
     }).toList();
   }
 
@@ -2613,15 +3075,26 @@ class ApiService {
   }
 
   Future<List<LojinhaProdutoModel>> buscarExclusivosLojinha() async {
-    final data = await _client
-        .from('lojinha_exclusivos')
-        .select('id, material, nome, descricao, foto_url, preco, estoque')
-        .eq('ativo', true)
-        .order('ordem', ascending: true);
-    return (data as List)
-        .map(
-          (j) => LojinhaProdutoModel.fromExclusivo(j as Map<String, dynamic>),
-        )
+    final results = await Future.wait<dynamic>([
+      _client
+          .from('lojinha_exclusivos')
+          .select('id, material, nome, descricao, foto_url, preco, estoque')
+          .eq('ativo', true)
+          .order('ordem', ascending: true),
+      regrasLojinhaPorMaterial(),
+    ]);
+    final regrasPorMaterial =
+        results[1] as Map<String, Map<String, dynamic>>;
+    final branch = colaboradorAtual?.branch;
+    return (results[0] as List)
+        .map((e) {
+          final j = e as Map<String, dynamic>;
+          final mat =
+              (j['material'] as String? ?? '').replaceAll(RegExp(r'^0+'), '');
+          final regra = regrasPorMaterial[mat] ?? regrasPorMaterial[j['material']];
+          return LojinhaProdutoModel.fromExclusivo(j, regra: regra);
+        })
+        .where((p) => p.disponivelParaFilial(branch))
         .toList();
   }
 
@@ -2667,14 +3140,18 @@ class ApiService {
             .toList();
       }
 
-      // Itens exclusivos → Supabase (independente do resultado SAP).
+      // Itens exclusivos → Supabase, SÓ depois do SAP dar ok (igual ao web):
+      // se o SAP falhar, nada de exclusivo é debitado nem registrado.
       // `comprar_exclusivo` debita o estoque e registra a compra numa única
       // transação atômica no banco — só registra se realmente havia
       // estoque suficiente (ver migrations/2026-07-04g_comprar_exclusivo_atomico.sql).
-      if (itensExclusivos.isNotEmpty) {
+      if (itensExclusivos.isNotEmpty && ok) {
         final matricula = colaborador.matricula;
         final colabNome = colaborador.nome;
         final semEstoque = <String>[];
+        // Mesmo pedido_id para todos os exclusivos desse checkout: é o que
+        // agrupa os itens num único card em "Meus pedidos".
+        final pedidoId = '${matricula}_${hoje.microsecondsSinceEpoch}';
         for (final item in itensExclusivos) {
           final sucesso =
               await _client.rpc(
@@ -2685,6 +3162,7 @@ class ApiService {
                       'p_colaborador_id': matricula,
                       'p_colaborador_nome': colabNome,
                       'p_data': dataStr,
+                      'p_pedido_id': pedidoId,
                     },
                   )
                   as bool;
@@ -2704,9 +3182,12 @@ class ApiService {
       // Registra total em lojinha_compras (para controle de limite global)
       if (ok) {
         final qtdTotal = itens.fold<int>(0, (s, i) => s + i.quantidade);
+        final qtdExclusivo =
+            itensExclusivos.fold<int>(0, (s, i) => s + i.quantidade);
         await _client.from('lojinha_compras').insert({
           'colaborador_id': colaborador.matricula,
           'quantidade_total': qtdTotal,
+          'quantidade_exclusivo': qtdExclusivo,
           'data': dataStr,
           'teve_regular': itensRegulares.isNotEmpty,
           'teve_exclusivo': itensExclusivos.isNotEmpty,
@@ -2878,6 +3359,9 @@ class ApiService {
         codCentro: colaboradorAtual!.codCentro,
         empresa: colaboradorAtual!.empresa,
         fotoUrl: urlFinal,
+        apelido: colaboradorAtual!.apelido,
+        branch: colaboradorAtual!.branch,
+        ehGestor: colaboradorAtual!.ehGestor,
       );
 
       return urlFinal;
@@ -3005,6 +3489,22 @@ class ApiService {
         .eq('destinatario_id', meuId)
         .eq('lido', false);
     return (res as List).length;
+  }
+
+  /// Feedbacks formais do gestor ainda não visualizados (badge em Performance).
+  Future<int> contarFeedbacksGestorNaoLidos() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return 0;
+    try {
+      final res = await _client
+          .from('avaliacao_feedbacks')
+          .select('id')
+          .eq('colaborador_id', meuId)
+          .filter('visualizado_em', 'is', null);
+      return (res as List).length;
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Marca um feedback como lido.
@@ -3285,6 +3785,7 @@ class ApiService {
     required int pesquisaId,
     required bool anonima,
     required Map<int, dynamic> respostas,
+    Map<int, String>? motivosNao,
   }) async {
     final meuId = colaboradorAtual?.id;
     try {
@@ -3324,6 +3825,11 @@ class ApiService {
         // não tem coluna própria, então grava como JSON no valor_texto,
         // igual ao app admin (ver responderPesquisaColab de lá).
         if (e.value is Map) mapa['valor_texto'] = jsonEncode(e.value);
+        // Motivo de um "Não" (pedir_motivo_se_nao) — igual ao web.
+        final motivo = motivosNao?[e.key];
+        if (e.value == false && motivo != null && motivo.trim().isNotEmpty) {
+          mapa['valor_texto'] = motivo.trim();
+        }
         return mapa;
       }).toList();
 
@@ -3357,8 +3863,10 @@ class ApiService {
         .eq('status', 'ABERTA')
         .eq('status_requisicao', 'APROVADA')
         .order('created_at', ascending: false);
+    // Vaga sigilosa não aparece no Eu Crio Oportunidades.
     return (data as List)
         .map((e) => VagaModel.fromJson(e as Map<String, dynamic>))
+        .where((v) => !v.sigilosa)
         .toList();
   }
 
@@ -3414,6 +3922,113 @@ class ApiService {
     });
   }
 
+  // ─── Candidatura de colaborador: aprovação do gestor direto ─────────────
+  // Mesma tabela/regra do painel web (`candidaturas_gestor_aprovacao`, ids
+  // como texto).
+
+  bool _ehJaInscrito(Object e) => e.toString().contains('já inscrito');
+
+  /// Pede a candidatura do colaborador a uma vaga. Com gestor, cria pedido
+  /// pendente e devolve 'pendente' (a candidatura real só nasce na aprovação);
+  /// sem gestor (ou se ele mesmo é o gestor), inscreve direto ('direto').
+  /// 'ja_existe' se já há pedido pendente/aprovado pra essa vaga.
+  Future<String> solicitarCandidaturaColab({
+    required int vagaId,
+    required String vagaTitulo,
+    required ColaboradorModel colaborador,
+  }) async {
+    final existente = await _client
+        .from('candidaturas_gestor_aprovacao')
+        .select('id')
+        .eq('vaga_id', vagaId.toString())
+        .eq('colaborador_id', colaborador.id.toString())
+        .inFilter('status', ['pendente', 'aprovada']);
+    if ((existente as List).isNotEmpty) return 'ja_existe';
+
+    final gestor = await buscarGestorDoSetor(
+      colaborador.setor ?? '',
+      colaborador.empresa ?? '',
+      colaboradorId: colaborador.id,
+    );
+    if (gestor == null || gestor.id == colaborador.id) {
+      try {
+        await inscreverColaboradorNaVaga(
+          colaboradorId: colaborador.id,
+          vagaId: vagaId,
+          nome: colaborador.nome,
+          cpf: colaborador.cpf ?? '',
+          email: '',
+          telefone: '',
+        );
+      } catch (e) {
+        if (_ehJaInscrito(e)) return 'ja_existe';
+        rethrow;
+      }
+      return 'direto';
+    }
+    await _client.from('candidaturas_gestor_aprovacao').insert({
+      'vaga_id': vagaId.toString(),
+      'vaga_titulo': vagaTitulo,
+      'colaborador_id': colaborador.id.toString(),
+      'colaborador_nome': colaborador.nome,
+      'colaborador_cpf': colaborador.cpf,
+      'gestor_id': gestor.id.toString(),
+    });
+    return 'pendente';
+  }
+
+  /// Pedidos de candidatura aguardando a decisão deste gestor.
+  Future<List<Map<String, dynamic>>> listarCandidaturasPendentesGestor(
+      int gestorId) async {
+    final res = await _client
+        .from('candidaturas_gestor_aprovacao')
+        .select()
+        .eq('gestor_id', gestorId.toString())
+        .eq('status', 'pendente')
+        .order('criado_em');
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Pedidos do próprio colaborador (qualquer status), mais recentes primeiro.
+  Future<List<Map<String, dynamic>>> listarPedidosCandidaturaColab(
+      int colaboradorId) async {
+    final res = await _client
+        .from('candidaturas_gestor_aprovacao')
+        .select()
+        .eq('colaborador_id', colaboradorId.toString())
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  /// Aprova (cria a candidatura real pro RH) ou reprova (com motivo).
+  Future<void> decidirCandidaturaGestor({
+    required Map<String, dynamic> pedido,
+    required bool aprovado,
+    String? motivo,
+  }) async {
+    if (aprovado) {
+      // Só marca 'aprovada' se a candidatura real existe. Já inscrito = já
+      // existe, segue (igual ao web); falha de verdade aborta.
+      try {
+        await inscreverColaboradorNaVaga(
+          colaboradorId: int.parse(pedido['colaborador_id'].toString()),
+          vagaId: int.parse(pedido['vaga_id'].toString()),
+          nome: pedido['colaborador_nome'] as String,
+          cpf: (pedido['colaborador_cpf'] as String?) ?? '',
+          email: '',
+          telefone: '',
+        );
+      } catch (e) {
+        if (!_ehJaInscrito(e)) rethrow;
+      }
+    }
+    await _client.from('candidaturas_gestor_aprovacao').update({
+      'status': aprovado ? 'aprovada' : 'reprovada',
+      'motivo_reprovacao': aprovado ? null : motivo?.trim(),
+      'decidido_em': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', pedido['id']);
+  }
+
   /// Busca um candidato pelo CPF (só dígitos). Retorna null se não encontrado.
   Future<Map<String, dynamic>?> buscarCandidatoPorCpf(String cpf) async {
     final data = await _client
@@ -3430,6 +4045,7 @@ class ApiService {
     required int candidatoId,
     required int vagaId,
     required int colaboradorId,
+    String? matriculaIndicador,
   }) async {
     // Verifica se já existe candidatura para esse candidato+vaga
     final existente = await _client
@@ -3439,15 +4055,22 @@ class ApiService {
         .eq('vaga_id', vagaId)
         .maybeSingle();
 
+    // Igual ao web: a indicação nasce 'pendente' (o indicador confirma depois
+    // em "Eu crio oportunidades"), que é o que dispara os pontos.
+    final indicacao = {
+      'indicado_por_id': colaboradorId,
+      'tipo_origem': 'INDICACAO',
+      if (matriculaIndicador != null && matriculaIndicador.isNotEmpty)
+        'matricula_indicador': matriculaIndicador,
+      'status_indicacao': 'pendente',
+    };
+
     if (existente != null) {
       // Já tem candidatura — atualiza o indicador
       if (existente['indicado_por_id'] != null) throw Exception('já indicado');
       await _client
           .from('candidaturas')
-          .update({
-            'indicado_por_id': colaboradorId,
-            'tipo_origem': 'INDICACAO',
-          })
+          .update(indicacao)
           .eq('id', existente['id'] as int);
     } else {
       // Sem candidatura ainda — cria vinculada ao indicador
@@ -3456,8 +4079,7 @@ class ApiService {
         'vaga_id': vagaId,
         'status': 'INSCRITO',
         'salario_esperado': 0,
-        'tipo_origem': 'INDICACAO',
-        'indicado_por_id': colaboradorId,
+        ...indicacao,
       });
     }
   }
@@ -3537,6 +4159,23 @@ class ApiService {
 
   /// Busca a imagem única do cardápio (ex: foto do quadro semanal). Retorna
   /// null se ainda não houver imagem cadastrada.
+  /// Textos do cardápio entre [inicio] e [fim] (inclusive), chaveados por
+  /// 'yyyy-MM-dd'. Dias sem cadastro não aparecem no mapa.
+  Future<Map<String, String>> buscarCardapioDias(
+      DateTime inicio, DateTime fim) async {
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final res = await _client
+        .from('cardapio_dias')
+        .select('data, texto')
+        .gte('data', iso(inicio))
+        .lte('data', iso(fim));
+    return {
+      for (final r in (res as List))
+        (r['data'] as String).substring(0, 10): (r['texto'] as String? ?? '')
+    };
+  }
+
   Future<String?> buscarCardapioImagem() async {
     final res = await _client
         .from('cardapio_config')
@@ -3662,12 +4301,18 @@ class ApiService {
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
 
+    // Janela de datas: hoje ate +90 dias (igual ao web).
+    final limiteDias = hoje.add(const Duration(days: 90));
+    final limiteDiasStr =
+        '${limiteDias.year}-${limiteDias.month.toString().padLeft(2, '0')}-${limiteDias.day.toString().padLeft(2, '0')}';
+
     final data = await _client
         .from('nutricionista_config_dias')
         .select('data')
         .eq('ativo', true)
         .eq('filial', filial)
         .gte('data', hojeStr)
+        .lte('data', limiteDiasStr)
         .order('data', ascending: true);
 
     return (data as List).map((e) => e['data'] as String).toList();
@@ -3675,9 +4320,9 @@ class ApiService {
 
   Future<List<NutricionistaAgendamentoModel>>
   buscarAgendamentosNutricionista() async {
-    // Busca os agendamentos dos próximos 30 dias para montar a grade de horários.
+    // Busca os agendamentos dos próximos 90 dias para montar a grade de horários.
     final hoje = _brasilia();
-    final limite = hoje.add(const Duration(days: 30));
+    final limite = hoje.add(const Duration(days: 90));
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
     final limiteStr =
@@ -3699,6 +4344,25 @@ class ApiService {
               NutricionistaAgendamentoModel.fromJson(e as Map<String, dynamic>),
         )
         .toList();
+  }
+
+  /// Pre-checagem (mesma query do web): ja existe agendamento nao cancelado
+  /// do colaborador logado nessa data?
+  Future<bool> jaTemAgendamentoNutricionistaNoDia(String data) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      final existing = await _client
+          .from('nutricionista_agendamentos')
+          .select('id')
+          .eq('colaborador_id', meuId)
+          .eq('data', data)
+          .neq('status', 'CANCELADO')
+          .maybeSingle();
+      return existing != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> agendarNutricionista({
@@ -3891,6 +4555,34 @@ class ApiService {
         .toList();
   }
 
+  // ─── Consulta médica ─────────────────────────────────────────────────────────
+  // O colaborador solicita e o SESMT marca dia e hora (tela do painel admin).
+
+  Future<List<Map<String, dynamic>>> listarMinhasConsultasMedicas() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final res = await _client
+        .from('consultas_medicas')
+        .select()
+        .eq('colaborador_id', meuId)
+        .order('criado_em', ascending: false);
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  Future<bool> solicitarConsultaMedica(String motivo) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null || motivo.trim().isEmpty) return false;
+    try {
+      await _client.from('consultas_medicas').insert({
+        'colaborador_id': meuId,
+        'motivo': motivo.trim(),
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ─── Conexões do Bem ─────────────────────────────────────────────────────────
   // Cole após os métodos de nutricionista
 
@@ -3989,19 +4681,32 @@ class ApiService {
   ///
   /// Filtra por destinatário: o colaborador vê posts dirigidos a 'todos',
   /// ao seu setor, ou diretamente a ele.
+  /// Tamanho da página do feed (linhas lidas do banco por chamada).
+  static const _tamanhoPaginaFeed = 20;
+
+  /// true quando a última página lida do banco veio cheia — ou seja, ainda
+  /// pode haver mais posts. O filtro por destinatário roda depois da busca e
+  /// pode reduzir a lista devolvida, então a tela não deve decidir "tem mais"
+  /// pelo tamanho da lista filtrada.
+  bool feedTemMaisPaginas = true;
+
   Future<List<FeedPostModel>> buscarFeed({int pagina = 0}) async {
     final colab = colaboradorAtual;
     if (colab == null) return [];
 
-    // Traz posts aprovados visíveis + os próprios posts (qualquer status)
+    // Traz posts aprovados visíveis + os próprios posts (qualquer status).
+    // Páginas sem sobreposição (passo = tamanho da página).
+    final inicio = pagina * _tamanhoPaginaFeed;
     final data = await _client
         .from('feed_posts')
         .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
         .or('status.eq.aprovado,autor_id.eq.${colab.id}')
         .order('criado_em', ascending: false)
-        .range(pagina * 20, pagina * 20 + 39);
+        .range(inicio, inicio + _tamanhoPaginaFeed - 1);
+    final linhas = data as List;
+    feedTemMaisPaginas = linhas.length >= _tamanhoPaginaFeed;
 
-    final posts = (data as List)
+    final posts = linhas
         .map((e) => FeedPostModel.fromJson(e as Map<String, dynamic>))
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
@@ -4021,7 +4726,17 @@ class ApiService {
           // Posts de terceiros só aparecem se aprovados
           if (!p.isAprovado) return false;
           if (p.destinatario == 'todos') return true;
-          if (p.destinatario == '@setor:${colab.setor}') return true;
+          // '@setor:A' ou vários setores ('@setor:A,B') — o composer grava os
+          // dois formatos (app e web).
+          if (p.destinatario.startsWith('@setor:')) {
+            final setores = p.destinatario
+                .substring('@setor:'.length)
+                .split(',')
+                .map((e) => e.trim());
+            if (colab.setor != null && setores.contains(colab.setor)) {
+              return true;
+            }
+          }
           // Suporta '@colaborador:42', '@colaborador:42|NOME' e vários
           // destinatários ('@colaborador:42,57|NOME1, NOME2')
           if (p.destinatario.startsWith('@colaborador:')) {
@@ -4065,12 +4780,21 @@ class ApiService {
           imagemUrl: c['foto_url'] as String?,
           destinatario: 'todos',
           criadoEm: _parseComunicadoTs(c['criado_em'] as String),
+          enqueteId: (c['enquete_id'] as num?)?.toInt(),
         );
       }).toList();
 
       final tudo = [...posts, ...comunicados];
       tudo.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
-      return tudo.take(40).toList();
+      // Comunicados das últimas 24h ficam fixados no topo
+      final agoraUtc = DateTime.now().toUtc();
+      bool fixado(FeedPostModel p) =>
+          p.tipo == 'comunicado' &&
+          agoraUtc.difference(p.criadoEm.subtract(const Duration(hours: 3))) <
+              const Duration(hours: 24);
+      final fixados = tudo.where(fixado).toList();
+      final demais = tudo.where((p) => !fixado(p)).toList();
+      return [...fixados, ...demais].take(40).toList();
     }
 
     return posts;
@@ -4535,6 +5259,46 @@ class ApiService {
     return List<Map<String, dynamic>>.from(data as List);
   }
 
+  /// O destinatário responde a um elogio recebido. A resposta fica na própria
+  /// linha de `elogios`; quem responde nunca recebe o remetente de um elogio
+  /// anônimo (a tela só mostra "Anônimo").
+  Future<bool> responderElogio({
+    required int elogioId,
+    required String resposta,
+  }) async {
+    try {
+      await _client
+          .from('elogios')
+          .update({
+            'resposta': resposta.trim(),
+            'respondido_em': DateTime.now().toIso8601String(),
+          })
+          .eq('id', elogioId);
+      return true;
+    } catch (e, st) {
+      ErrorReporter.report(e, st, contexto: 'Responder elogio');
+      return false;
+    }
+  }
+
+  /// Elogios enviados pelo colaborador que já foram respondidos.
+  /// Silencioso se a coluna `resposta` ainda não existir.
+  Future<List<Map<String, dynamic>>> listarRespostasAosMeusElogios(
+    int autorId,
+  ) async {
+    try {
+      final data = await _client
+          .from('elogios')
+          .select('id, texto, resposta, respondido_em, colaborador_id')
+          .eq('autor_id', autorId)
+          .not('resposta', 'is', null)
+          .order('respondido_em', ascending: false);
+      return List<Map<String, dynamic>>.from(data as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Gestor de um colaborador — usado pra "Pedir feedback ao meu gestor" e
   /// nas Solicitações. Prioriza a hierarquia resolvida pela Administração de
   /// Setor do painel web (`colaborador_hierarquia`, quando [colaboradorId] é
@@ -4571,17 +5335,30 @@ class ApiService {
       }
     }
 
-    final data = await _client
+    // Fallback igual ao do web: quem tem o perfil 'gestor' em usuarios_admin
+    // (ativo, mesma empresa) e está lotado no mesmo setor.
+    final gestores = await _client
+        .from('usuarios_admin')
+        .select('matricula, roles')
+        .eq('ativo', true)
+        .eq('empresa', empresa);
+    final matriculasGestores = List<Map<String, dynamic>>.from(gestores)
+        .where((g) =>
+            (g['roles']?.toString() ?? '').toLowerCase().contains('gestor'))
+        .map((g) => g['matricula'] as String)
+        .toList();
+    if (matriculasGestores.isEmpty) return null;
+    final colabs = await _client
         .from('colaboradores')
         .select()
-        .eq('setor', setor)
+        .inFilter('matricula', matriculasGestores)
         .eq('empresa', empresa)
-        .eq('eh_gestor', true)
+        .eq('setor', setor)
         .eq('demitido', false)
-        .limit(1)
-        .maybeSingle();
-    if (data == null) return null;
-    return ColaboradorModel.fromJson(data);
+        .limit(1);
+    final lista = List<Map<String, dynamic>>.from(colabs);
+    if (lista.isEmpty) return null;
+    return ColaboradorModel.fromJson(lista.first);
   }
 
   /// Os itens fixos (por slot) de avaliação por estrelas, configurados pelo RH.
@@ -4646,13 +5423,39 @@ class ApiService {
         'anonimo': anonimo,
         if (anexoUrl != null) 'anexo_url': anexoUrl,
         if (anexoUrl != null) 'anexo_nome': anexoNomeArquivo,
-        'criado_em': DateTime.now().toIso8601String(),
+        'criado_em': DateTime.now().toUtc().toIso8601String(),
       });
       return true;
     } catch (e, st) {
       ErrorReporter.report(e, st, contexto: 'Enviar ouvidoria');
       return false;
     }
+  }
+
+  /// Relatos de ouvidoria do próprio colaborador (inclui anônimos). Nunca
+  /// traz `anotacao_encerramento` (nota interna do RH). Se a coluna
+  /// `resposta_colaborador` ainda não existir, repete a consulta sem ela.
+  Future<List<Map<String, dynamic>>> listarMeusRelatosOuvidoria() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    const base =
+        'id, assunto, tipo, ocorrido, anonimo, status, criado_em, anexo_nome';
+    for (final cols in [
+      // Conjunto completo (igual ao web): anexo e data de encerramento.
+      '$base, anexo_url, encerrado_em, resposta_colaborador, resposta_colaborador_em',
+      '$base, resposta_colaborador, resposta_colaborador_em',
+      base,
+    ]) {
+      try {
+        final data = await _client
+            .from('ouvidoria')
+            .select(cols)
+            .eq('colaborador_id', meuId)
+            .order('criado_em', ascending: false);
+        return List<Map<String, dynamic>>.from(data as List);
+      } catch (_) {/* tenta o próximo conjunto de colunas */}
+    }
+    return [];
   }
 
   // ─── Pesquisas — recusa ─────────────────────────────────────────────────
@@ -4703,19 +5506,247 @@ class ApiService {
   /// (setor nulo, aberto pelo RH) e/ou o ciclo que o gestor abriu para o
   /// setor. Prioriza o ciclo específico do setor quando os dois existem.
   Future<Map<String, dynamic>?> buscarCicloAbertoParaSetor(String setor) async {
-    final data = await _client
+    // Ciclos por participante ficam de fora: valem só pros colaboradores
+    // listados (ver [buscarCicloAbertoParaColaborador]).
+    final abertos = await _carregarCiclosAbertosComEscopo();
+    return _escolherCicloAberto(abertos, null, setor);
+  }
+
+  /// Ciclos abertos com o escopo já resolvido: participantes (se houver),
+  /// setores (coluna `setores` + `setor` do gestor) ou geral.
+  Future<List<({Map<String, dynamic> ciclo, Set<int> participantes, Set<String> setores})>>
+      _carregarCiclosAbertosComEscopo() async {
+    final ciclos = List<Map<String, dynamic>>.from(await _client
         .from('avaliacao_ciclos')
         .select()
         .eq('status', 'aberto')
-        .or('setor.eq.$setor,setor.is.null')
-        .order('setor', ascending: false, nullsFirst: false)
-        .order('criado_em', ascending: false);
-    final lista = List<Map<String, dynamic>>.from(data as List);
-    if (lista.isEmpty) return null;
-    return lista.firstWhere(
-      (c) => c['setor'] == setor,
-      orElse: () => lista.first,
-    );
+        .order('criado_em', ascending: false) as List);
+    if (ciclos.isEmpty) return [];
+    final parts = await _client
+        .from('avaliacao_ciclo_participantes')
+        .select('ciclo_id, colaborador_id')
+        .inFilter('ciclo_id', ciclos.map((c) => c['id']).toList());
+    final porCiclo = <int, Set<int>>{};
+    for (final p in parts as List) {
+      porCiclo
+          .putIfAbsent((p['ciclo_id'] as num).toInt(), () => {})
+          .add((p['colaborador_id'] as num).toInt());
+    }
+    return [
+      for (final c in ciclos)
+        (
+          ciclo: c,
+          participantes: porCiclo[(c['id'] as num).toInt()] ?? <int>{},
+          setores: {
+            if ((c['setor'] as String?)?.isNotEmpty ?? false)
+              c['setor'] as String,
+            ...((c['setores'] as List?)?.cast<String>() ?? const <String>[]),
+          },
+        )
+    ];
+  }
+
+  /// Escolhe o ciclo que vale para um colaborador. Prioridade: ciclo só dele
+  /// (participantes) > ciclo do setor dele > ciclo geral. [colaboradorId]
+  /// nulo ignora os ciclos por participante.
+  Map<String, dynamic>? _escolherCicloAberto(
+    List<({Map<String, dynamic> ciclo, Set<int> participantes, Set<String> setores})>
+        abertos,
+    int? colaboradorId,
+    String? setor,
+  ) {
+    // `abertos` já vem do mais recente pro mais antigo.
+    if (colaboradorId != null) {
+      for (final a in abertos) {
+        if (a.participantes.contains(colaboradorId)) return a.ciclo;
+      }
+    }
+    for (final a in abertos) {
+      if (a.participantes.isEmpty && setor != null && a.setores.contains(setor)) {
+        return a.ciclo;
+      }
+    }
+    for (final a in abertos) {
+      if (a.participantes.isEmpty && a.setores.isEmpty) return a.ciclo;
+    }
+    return null;
+  }
+
+  /// Ciclo aberto que vale para um colaborador (ver [_escolherCicloAberto]).
+  Future<Map<String, dynamic>?> buscarCicloAbertoParaColaborador({
+    required int colaboradorId,
+    required String? setor,
+  }) async {
+    final abertos = await _carregarCiclosAbertosComEscopo();
+    return _escolherCicloAberto(abertos, colaboradorId, setor);
+  }
+
+  /// Ciclos abertos restritos a colaboradores específicos.
+  Future<List<Map<String, dynamic>>> listarCiclosAbertosPorParticipantes() async {
+    final abertos = await _carregarCiclosAbertosComEscopo();
+    return [
+      for (final a in abertos)
+        if (a.participantes.isNotEmpty) a.ciclo
+    ];
+  }
+
+  /// Cria um ciclo (o gestor abre só para o próprio setor; pesos devem somar
+  /// 100). Porta de `criarCicloAvaliacao` do gentepole_admin.
+  Future<int> criarCicloAvaliacao({
+    required String nome,
+    DateTime? dataInicio,
+    DateTime? dataFim,
+    String? setor,
+    String? criadoPor,
+    String tipoAvaliacao = 'gestor', // 'gestor' | '180' | '360'
+    List<String> setores = const [],
+    List<int> participantesIds = const [],
+    int pesoGestor = 100,
+    int pesoColaborador = 0,
+    int pesoEquipe = 0,
+  }) async {
+    if (pesoGestor + pesoColaborador + pesoEquipe != 100) {
+      throw ArgumentError('Os pesos precisam somar 100%.');
+    }
+    if (setor == null && (dataInicio == null || dataFim == null)) {
+      throw ArgumentError('Informe a data de início e a data de fim do ciclo.');
+    }
+    if (dataInicio != null && dataFim != null && dataFim.isBefore(dataInicio)) {
+      throw ArgumentError(
+          'A data de fim não pode ser anterior à data de início.');
+    }
+    final res = await _client
+        .from('avaliacao_ciclos')
+        .insert({
+          'nome': nome,
+          'data_inicio': dataInicio?.toIso8601String().substring(0, 10),
+          'data_fim': dataFim?.toIso8601String().substring(0, 10),
+          'setor': setor,
+          'criado_por': criadoPor,
+          'tipo_avaliacao': tipoAvaliacao,
+          'setores': setores.isEmpty ? null : setores,
+          'peso_gestor': pesoGestor,
+          'peso_colaborador': pesoColaborador,
+          'peso_equipe': pesoEquipe,
+        })
+        .select('id')
+        .single();
+    final cicloId = res['id'] as int;
+    if (participantesIds.isNotEmpty) {
+      try {
+        await _client.from('avaliacao_ciclo_participantes').insert([
+          for (final id in participantesIds.toSet())
+            {'ciclo_id': cicloId, 'colaborador_id': id}
+        ]);
+      } catch (e) {
+        // Sem participantes o ciclo viraria geral: desfaz pra não vazar.
+        await _client.from('avaliacao_ciclos').delete().eq('id', cicloId);
+        rethrow;
+      }
+    }
+    return cicloId;
+  }
+
+  Future<void> alterarStatusCiclo(int cicloId, String status) async {
+    await _client
+        .from('avaliacao_ciclos')
+        .update({'status': status}).eq('id', cicloId);
+  }
+
+  /// Templates de avaliação (`avaliacao_templates`). [setorColaborador] /
+  /// [funcaoColaborador] mantêm só templates daquele setor/função ou
+  /// genéricos (nulo). Porta de `listarAvaliacaoTemplates` do admin.
+  Future<List<Map<String, dynamic>>> listarAvaliacaoTemplates({
+    bool apenasAtivos = false,
+    String tipo = 'desempenho',
+    String? setorColaborador,
+    String? funcaoColaborador,
+  }) async {
+    var query = _client.from('avaliacao_templates').select().eq('tipo', tipo);
+    if (apenasAtivos) query = query.eq('ativo', true);
+    final data = await query.order('nome');
+    var lista = List<Map<String, dynamic>>.from(data as List);
+    if (setorColaborador != null) {
+      lista = lista.where((t) {
+        final s = t['setor'] as String?;
+        return s == null || s == setorColaborador;
+      }).toList();
+    }
+    if (funcaoColaborador != null) {
+      lista = lista.where((t) {
+        final f = t['funcao'] as String?;
+        return f == null || f == funcaoColaborador;
+      }).toList();
+    }
+    return lista;
+  }
+
+  Future<List<Map<String, dynamic>>> listarPerguntasDoTemplate(
+      int templateId) async {
+    final data = await _client
+        .from('avaliacao_perguntas')
+        .select()
+        .eq('template_id', templateId)
+        .eq('ativo', true)
+        .order('ordem');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  /// Registra a escolha do gestor pra essa avaliação — [templateId] nulo
+  /// significa "usar as perguntas padrão da função/setor". Libera as
+  /// perguntas (`perguntas_liberadas = true`) pro colaborador e colegas.
+  Future<void> definirTemplateDaAvaliacao(int avaliacaoId, int? templateId) async {
+    await _client.from('avaliacoes').update({
+      'template_id': templateId,
+      'perguntas_liberadas': true,
+    }).eq('id', avaliacaoId);
+  }
+
+  /// Pesos definidos no ciclo (ciclos novos). Chaves via [chavePesoCiclo]
+  /// pra conviver no mesmo mapa dos pesos de template; ciclos antigos (pesos
+  /// nulos) ficam de fora e caem no peso do template.
+  Future<Map<int, Map<String, int>>> buscarPesosCiclos(
+      List<int> cicloIds) async {
+    if (cicloIds.isEmpty) return {};
+    final data = await _client
+        .from('avaliacao_ciclos')
+        .select('id, peso_gestor, peso_colaborador, peso_equipe')
+        .inFilter('id', cicloIds)
+        .not('peso_gestor', 'is', null);
+    return {
+      for (final c in data as List)
+        chavePesoCiclo(c['id'] as int): {
+          'gestor': c['peso_gestor'] as int,
+          'colaborador': c['peso_colaborador'] as int,
+          'equipe': c['peso_equipe'] as int,
+        }
+    };
+  }
+
+  /// Convida automaticamente os colegas de setor (exceto o próprio
+  /// colaborador) a avaliar como "equipe" num ciclo 360. Idempotente.
+  Future<void> gerarAvaliadoresEquipeAutomatico({
+    required int avaliacaoId,
+    required int colaboradorId,
+    required String setor,
+  }) async {
+    final data = await _client
+        .from('colaboradores')
+        .select('id')
+        .eq('setor', setor)
+        .eq('demitido', false);
+    final colegas = List<Map<String, dynamic>>.from(data as List)
+        .where((c) => c['id'] != colaboradorId)
+        .toList();
+    if (colegas.isEmpty) return;
+    final linhas = colegas
+        .map((c) => {
+              'avaliacao_id': avaliacaoId,
+              'avaliador_id': c['id'].toString(),
+            })
+        .toList();
+    await _client.from('avaliacao_equipe_avaliadores').upsert(linhas,
+        onConflict: 'avaliacao_id,avaliador_id', ignoreDuplicates: true);
   }
 
   /// Busca a avaliação do colaborador nesse ciclo (criando se ainda não
@@ -4735,7 +5766,7 @@ class ApiService {
     return await _client
         .from('avaliacoes')
         .select(
-          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)',
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)',
         )
         .eq('ciclo_id', cicloId)
         .eq('colaborador_id', colaboradorId)
@@ -4756,12 +5787,27 @@ class ApiService {
 
   /// Perguntas ativas cadastradas para a função (cargo) informada.
   Future<List<Map<String, dynamic>>> listarPerguntasFuncao(
-    String funcao,
-  ) async {
+    String funcao, {
+    String? setor,
+  }) async {
+    // Se há perguntas da função NAQUELE setor, usa só elas (grupo
+    // específico); senão cai nas genéricas da função (setor nulo).
+    if (setor != null && setor.trim().isNotEmpty) {
+      final doSetor = await _client
+          .from('avaliacao_perguntas')
+          .select()
+          .eq('funcao', funcao)
+          .eq('setor', setor)
+          .eq('ativo', true)
+          .order('ordem');
+      final lista = List<Map<String, dynamic>>.from(doSetor as List);
+      if (lista.isNotEmpty) return lista;
+    }
     final data = await _client
         .from('avaliacao_perguntas')
         .select()
         .eq('funcao', funcao)
+        .isFilter('setor', null)
         .eq('ativo', true)
         .order('ordem');
     return List<Map<String, dynamic>>.from(data as List);
@@ -4787,7 +5833,7 @@ class ApiService {
     final data = await _client
         .from('avaliacoes')
         .select(
-          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)',
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)',
         )
         .eq('tipo', 'periodo_experiencia')
         .eq('colaborador_id', colaboradorId)
@@ -4806,7 +5852,9 @@ class ApiService {
     required String funcao,
     String? setor,
   }) async {
-    return listarPerguntasFuncao(funcao);
+    final templateId = avaliacao['template_id'] as int?;
+    if (templateId != null) return listarPerguntasDoTemplate(templateId);
+    return listarPerguntasFuncao(funcao, setor: setor);
   }
 
   /// Todas as avaliações de período de experiência dos colaboradores dos
@@ -4822,7 +5870,7 @@ class ApiService {
     final data = await _client
         .from('avaliacoes')
         .select(
-          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)',
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)',
         )
         .eq('tipo', 'periodo_experiencia')
         .order('criado_em', ascending: false);
@@ -4896,17 +5944,20 @@ class ApiService {
   /// anexado.
   Future<void> indicarSemCadastro({
     required String nomeIndicado,
-    required String tag,
+    required List<String> tags,
+    String? filial,
     required String curriculoUrl,
     required String curriculoNome,
     required int indicadoPorId,
     required String indicadoPorNome,
     String? vagaOrigemTitulo,
   }) async {
-    await _client.from('banco_talentos').insert({
+    final registro = <String, dynamic>{
       'candidato_id': null,
       'nome_indicado': nomeIndicado,
-      'tag': tag,
+      'tag': tags.isNotEmpty ? tags.first : null, // compat: coluna antiga única
+      'tags': tags,
+      if (filial != null && filial.isNotEmpty) 'filial': filial,
       'curriculo_url': curriculoUrl,
       'curriculo_nome': curriculoNome,
       // Coluna `indicado_por_id` é `text` no Supabase (mesma tabela do web,
@@ -4919,7 +5970,15 @@ class ApiService {
       'areas': <String>[],
       'motivo': 'Indicação via Eu Crio Oportunidades (sem cadastro no portal)',
       'observacoes': '',
-    });
+    };
+    try {
+      await _client.from('banco_talentos').insert(registro);
+    } catch (_) {
+      // Colunas novas (tags/filial) ainda ausentes: grava só o formato antigo.
+      registro.remove('tags');
+      registro.remove('filial');
+      await _client.from('banco_talentos').insert(registro);
+    }
   }
 
   // ─── Solicitações ───────────────────────────────────────────────────────
@@ -4939,9 +5998,11 @@ class ApiService {
     'swile': 'dp',
     'comunicado_interno': 'endomkt',
     'treinamento': 'performance',
-    'moveis_administrativos': 'rh',
-    'rota': 'rh',
-    'uber': 'rh',
+    'moveis_administrativos': 'facilites',
+    'rota': 'facilites',
+    'uber': 'facilites',
+    'uber_fixo': 'facilites',
+    'reembolso_sesmt': 'dp',
   };
 
   Future<String> uploadAnexoSolicitacao(
@@ -4961,8 +6022,10 @@ class ApiService {
     bool requerAprovacaoGestor = false,
     int? gestorId,
     String? gestorNome,
+    Map<String, dynamic>? colunasExtras, // ex.: prazo_fim (Uber comum)
   }) async {
     await _client.from('solicitacoes').insert({
+      ...?colunasExtras,
       'tipo': tipo,
       'payload': payload,
       'aberto_por_id': abertoPorId,
@@ -5060,6 +6123,29 @@ class ApiService {
       'texto': texto,
       if (autorNome != null) 'autor_nome': autorNome,
     });
+  }
+
+  /// O solicitante escolhe Frete ou Uber Flash (cotação informada pelo
+  /// Facilites). Escolher o mais caro exige justificativa (validado na tela).
+  Future<void> escolherCotacaoRota({
+    required int id,
+    required String escolha, // 'frete' | 'uber_flash'
+    String? justificativa,
+  }) async {
+    await _client.from('solicitacoes').update({
+      'escolha_cotacao': escolha,
+      'escolha_justificativa': justificativa?.trim(),
+      'status': 'em_andamento',
+      'atualizado_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// Gestor pede o cancelamento de um Uber fixo ativo.
+  Future<void> solicitarCancelamentoUberFixo(int id) async {
+    await _client.from('solicitacoes').update({
+      'cancelamento_solicitado_em': DateTime.now().toUtc().toIso8601String(),
+      'atualizado_em': DateTime.now().toIso8601String(),
+    }).eq('id', id);
   }
 
   /// Salva as respostas (nota 1-3 + comentário) de uma origem
@@ -5212,7 +6298,7 @@ class ApiService {
     final data = await _client
         .from('avaliacao_equipe_avaliadores')
         .select(
-          '*, avaliacoes(*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url))',
+          '*, avaliacoes(*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url))',
         )
         .eq('avaliador_id', avaliadorId)
         .eq('respondido', false);
@@ -5225,20 +6311,38 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listarAvaliacoesEquipeGestor({
     required int cicloId,
     required String setor,
+    String? tipoAvaliacao,
   }) async {
     // Líder direto: só quem tem o gestor logado como responsável do nível
     // mais próximo (e com a funcionalidade liberada pra ele).
-    final equipe = await buscarEquipeGestorMultiSetor([setor],
+    final equipeCompleta = await buscarEquipeGestorMultiSetor([setor],
         responsavelId: colaboradorAtual?.id,
         apenasLiderDireto: true,
         funcionalidade: 'avaliar_equipe_gestor');
+    // Só entra quem tem ESTE como ciclo efetivo (ciclo por participante >
+    // ciclo do setor > geral).
+    final abertos = await _carregarCiclosAbertosComEscopo();
+    final equipe = equipeCompleta.where((c) {
+      final efetivo = _escolherCicloAberto(abertos, c['id'] as int?, setor);
+      return efetivo != null && efetivo['id'] == cicloId;
+    }).toList();
     final resultado = <Map<String, dynamic>>[];
     for (final colab in equipe) {
       final avaliacao = await buscarOuCriarAvaliacao(
         cicloId: cicloId,
         colaboradorId: colab['id'] as int,
       );
-      if (avaliacao != null) resultado.add(avaliacao);
+      if (avaliacao != null) {
+        resultado.add(avaliacao);
+        // Ciclo 360: convida automaticamente os colegas de setor.
+        if (tipoAvaliacao == '360') {
+          await gerarAvaliadoresEquipeAutomatico(
+            avaliacaoId: avaliacao['id'] as int,
+            colaboradorId: colab['id'] as int,
+            setor: setor,
+          );
+        }
+      }
     }
     return resultado;
   }
@@ -5253,7 +6357,8 @@ class ApiService {
     required String setor,
     required String funcao,
   }) async {
-    final ciclo = await buscarCicloAbertoParaSetor(setor);
+    final ciclo = await buscarCicloAbertoParaColaborador(
+        colaboradorId: colaboradorId, setor: setor);
     if (ciclo == null) return false;
     if ((ciclo['tipo_avaliacao'] as String? ?? 'gestor') == 'gestor') {
       return false;
@@ -5264,7 +6369,8 @@ class ApiService {
     );
     final liberadas = avaliacao?['perguntas_liberadas'] as bool? ?? false;
     if (avaliacao == null || !liberadas) return false;
-    final perguntas = await listarPerguntasFuncao(funcao);
+    final perguntas =
+        await perguntasDaAvaliacao(avaliacao, funcao: funcao, setor: setor);
     return perguntas.isNotEmpty;
   }
 
@@ -5310,8 +6416,23 @@ class ApiService {
     return await buscarPesquisaPeriodoExperienciaPendente(colab) != null;
   }
 
+  /// Último dia (de casa) em que ainda vale avaliar o período de experiência:
+  /// depois dos 91 dias a folha já efetiva o colaborador e a avaliação se perde.
+  /// (Mesmo valor do web: diasLimitePeriodoExperiencia.)
+  static const diasLimitePeriodoExperiencia = 91;
+
+  /// Janela em que o marco de [checkpoint] (45 ou 90 dias) está disponível:
+  /// de 10 dias antes até 30 dias depois do marco de 45; no de 90, só até o
+  /// limite de [diasLimitePeriodoExperiencia] dias de casa. Igual ao web.
+  static bool dentroDaJanelaExperiencia(int checkpoint, int diasDesdeAdmissao) {
+    final restantes = checkpoint - diasDesdeAdmissao;
+    final minimo =
+        checkpoint == 90 ? 90 - diasLimitePeriodoExperiencia : -30;
+    return restantes >= minimo && restantes <= 10;
+  }
+
   /// Pesquisa "Período de Experiência" pendente pro colaborador: dispara pela
-  /// data de admissão (10 dias antes até 30 dias depois dos marcos de 45 e 90
+  /// data de admissão (10 dias antes até 30 dias depois do marco de 45; no de 90, até 91 dias de casa
   /// dias) e vale como resposta única pras duas. Não depende de `ativa`, que
   /// só vira true via "Encaminhar" — e esse tipo não tem envio.
   Future<Map<String, dynamic>?> buscarPesquisaPeriodoExperienciaPendente(
@@ -5319,7 +6440,7 @@ class ApiService {
     final admissao = DateTime.tryParse(colab.dataAdmissao ?? '');
     if (admissao == null) return null;
     final dias = DateTime.now().difference(admissao).inDays;
-    final dentro = [45, 90].any((c) => c - dias >= -30 && c - dias <= 10);
+    final dentro = [45, 90].any((c) => dentroDaJanelaExperiencia(c, dias));
     if (!dentro) return null;
 
     final pesquisa = await _client
@@ -5348,9 +6469,9 @@ class ApiService {
     final admissao = DateTime.tryParse(colab.dataAdmissao ?? '');
     if (admissao == null) return 'Sua data de admissão não está cadastrada.';
     final dias = DateTime.now().difference(admissao).inDays;
-    final dentro = [45, 90].any((c) => c - dias >= -30 && c - dias <= 10);
+    final dentro = [45, 90].any((c) => dentroDaJanelaExperiencia(c, dias));
     if (!dentro) {
-      return 'Você está com $dias dias de admissão. A pesquisa abre 10 dias antes dos marcos de 45 e 90 dias e fica disponível até 30 dias depois deles.';
+      return 'Você está com $dias dias de admissão. A pesquisa abre 10 dias antes dos marcos de 45 e 90 dias e fica disponível até 30 dias depois do marco de 45 e até 91 dias de casa no de 90.';
     }
     final pesquisa = await _client
         .from('pesquisas')
@@ -5417,6 +6538,7 @@ class ApiService {
     required int colaboradorId,
     required String titulo,
     String? objetivo,
+    String? criadoPor,
   }) async {
     final res = await _client
         .from('pdi_grupos')
@@ -5424,6 +6546,7 @@ class ApiService {
           'colaborador_id': colaboradorId,
           'titulo': titulo,
           'objetivo': objetivo,
+          'criado_por': criadoPor,
         })
         .select('id')
         .single();
@@ -5436,6 +6559,7 @@ class ApiService {
     required int pdiGrupoId,
     required String titulo,
     required String tipo, // 'tecnico' | 'comportamental'
+    String? criadoPor,
   }) async {
     final res = await _client
         .from('pdi_planos')
@@ -5444,6 +6568,7 @@ class ApiService {
           'pdi_grupo_id': pdiGrupoId,
           'titulo': titulo,
           'tipo': tipo,
+          'criado_por': criadoPor,
         })
         .select('id')
         .single();
@@ -5480,6 +6605,34 @@ class ApiService {
         .delete()
         .eq('pdi_grupo_id', grupoId);
     await _client.from('pdi_grupos').delete().eq('id', grupoId);
+  }
+
+  /// Upload do termo de compromisso de um PDI (PDF) — o colaborador acessa e
+  /// baixa esse arquivo para assinar. Mesmo bucket/tabela do painel web.
+  Future<void> criarTermoCompromissoPdi({
+    required int pdiGrupoId,
+    required Uint8List bytes,
+    required String nomeArquivo,
+    String? criadoPor,
+  }) async {
+    final path =
+        'pdi_$pdiGrupoId/${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
+    await _client.storage.from('pdi-termos').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+    final url = _client.storage.from('pdi-termos').getPublicUrl(path);
+    await _client.from('pdi_termos_compromisso').insert({
+      'pdi_grupo_id': pdiGrupoId,
+      'arquivo_url': url,
+      'nome_arquivo': nomeArquivo,
+      'criado_por': criadoPor,
+    });
+  }
+
+  Future<void> excluirTermoCompromissoPdi(int termoId) async {
+    await _client.from('pdi_termos_compromisso').delete().eq('id', termoId);
   }
 
   Future<String?> buscarLinkUnipolePdi() async {
@@ -5584,7 +6737,8 @@ class ApiService {
         'colegasPendentes': 0,
       };
     }
-    final ciclo = await buscarCicloAbertoParaSetor(col.setor!);
+    final ciclo = await buscarCicloAbertoParaColaborador(
+        colaboradorId: col.id, setor: col.setor);
     if (ciclo == null) {
       return {
         'ciclo': null,
@@ -5748,7 +6902,7 @@ class ApiService {
         .select()
         .order('eh_hoje', ascending: false)
         .order('dia_admissao', ascending: true);
-    return List<Map<String, dynamic>>.from(res as List);
+    return _comApelidos(List<Map<String, dynamic>>.from(res as List));
   }
 
   /// Colaboradores admitidos na semana corrente (segunda a domingo) — vira
@@ -5768,7 +6922,7 @@ class ApiService {
 
     final res = await _client
         .from('colaboradores')
-        .select('id, nome, setor, foto_url, data_admissao')
+        .select('id, nome, apelido, setor, foto_url, data_admissao')
         .eq('demitido', false)
         .gte('data_admissao', fmt(inicioSemana))
         .lte('data_admissao', fmt(limiteSuperior))
@@ -5847,7 +7001,7 @@ class ApiService {
       if (admissao == null) continue;
       final diasDesdeAdmissao = hoje.difference(admissao).inDays;
       final diasRestantes = checkpointDias - diasDesdeAdmissao;
-      if (diasRestantes >= -30 && diasRestantes <= 10) {
+      if (dentroDaJanelaExperiencia(checkpointDias, diasDesdeAdmissao)) {
         resultado.add({
           ...c,
           'dias_restantes': diasRestantes,
@@ -6139,7 +7293,8 @@ class ApiService {
         itens.add(
           NotificacaoItem(
             chave: chave,
-            tipo: 'feedback',
+            refId: int.tryParse(s['id'].toString()),
+            tipo: 'feedback_solicitacao',
             titulo: 'Solicitação de feedback',
             subtitulo:
                 (s['mensagem'] as String?) ?? 'Alguém pediu um feedback seu',
@@ -6203,8 +7358,143 @@ class ApiService {
       debugPrint('Erro ao carregar aviso de experiência no sino: $e');
     }
 
+    // Avisos extras (porte de `listarAvisosExtrasColab` do gentepole_admin):
+    // elogios, solicitações, candidaturas e atualização cadastral — janela de
+    // 30 dias; dispensa pela mesma `chave` do painel web.
+    try {
+      final extras = await listarAvisosExtrasColab();
+      for (final a in extras) {
+        final chave = a['chave'] as String;
+        if (dispensadas.contains(chave)) continue;
+        itens.add(
+          NotificacaoItem(
+            chave: chave,
+            tipo: a['tipo'] as String,
+            titulo: a['titulo'] as String,
+            subtitulo: a['texto'] as String,
+            criadoEm: DateTime.now(),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar avisos extras no sino: $e');
+    }
+
     itens.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
     return itens;
+  }
+
+  /// Avisos extras do sino (últimos 30 dias): elogio recebido, resposta ao
+  /// elogio enviado, andamento/decisão de solicitação, candidaturas e pedido
+  /// de atualização cadastral. Cada item: {chave, texto, tipo, titulo}.
+  Future<List<Map<String, dynamic>>> listarAvisosExtrasColab() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final meuId = colab.id;
+    final avisos = <Map<String, dynamic>>[];
+    final desde = DateTime.now()
+        .subtract(const Duration(days: 30))
+        .toUtc()
+        .toIso8601String();
+    try {
+      final recebidos = await _client
+          .from('elogios')
+          .select('id, respondido_em, criado_em')
+          .eq('colaborador_id', meuId)
+          .gte('criado_em', desde);
+      for (final e in recebidos as List) {
+        if (e['respondido_em'] != null) continue;
+        avisos.add({
+          'chave': 'elogio:${e['id']}',
+          'texto': 'Você recebeu um elogio — vale responder!',
+          'tipo': 'elogio',
+          'titulo': 'Elogiar',
+        });
+      }
+    } catch (_) {}
+    try {
+      final enviados = await _client
+          .from('elogios')
+          .select('id, respondido_em')
+          .eq('autor_id', meuId)
+          .not('respondido_em', 'is', null)
+          .gte('respondido_em', desde);
+      for (final e in enviados as List) {
+        avisos.add({
+          'chave': 'elogio_resp:${e['id']}',
+          'texto': 'Alguém respondeu ao elogio que você enviou.',
+          'tipo': 'elogio',
+          'titulo': 'Elogiar',
+        });
+      }
+    } catch (_) {}
+    try {
+      final solic = await _client
+          .from('solicitacoes')
+          .select('id, tipo, status, atualizado_em')
+          .eq('aberto_por_id', meuId)
+          .not('status', 'in', '(pendente,pendente_gestor)')
+          .gte('atualizado_em', desde);
+      for (final s in solic as List) {
+        avisos.add({
+          'chave': 'solic:${s['id']}:${s['status']}',
+          'texto': s['status'] == 'aguardando_escolha'
+              ? 'O Facilites informou os valores da sua rota — escolha Frete ou Uber Flash.'
+              : 'Sua solicitação teve atualização: ${s['status']}.',
+          'tipo': 'solicitacao',
+          'titulo': 'Solicitações',
+        });
+      }
+    } catch (_) {}
+    try {
+      final pendentesGestor = await listarCandidaturasPendentesGestor(meuId);
+      for (final p in pendentesGestor) {
+        avisos.add({
+          'chave': 'cand_gestor:${p['id']}',
+          'texto':
+              '${p['colaborador_nome']} se candidatou à vaga ${p['vaga_titulo'] ?? ''} — aguarda sua aprovação.',
+          'tipo': 'candidatura_gestor',
+          'titulo': 'Candidaturas',
+        });
+      }
+      final meus = await listarPedidosCandidaturaColab(meuId);
+      for (final p in meus) {
+        if (p['status'] == 'pendente') continue;
+        avisos.add({
+          'chave': 'cand_colab:${p['id']}:${p['status']}',
+          'texto':
+              'Sua candidatura à vaga ${p['vaga_titulo'] ?? ''} foi ${p['status']} pelo gestor.',
+          'tipo': 'candidatura_colab',
+          'titulo': 'Eu Crio Oportunidades',
+        });
+      }
+    } catch (_) {}
+    try {
+      final svc = DocumentosCadastraisService.instance;
+      final pedidos = await svc.listarPedidosPendentes(meuId.toString());
+      for (final p in pedidos) {
+        avisos.add({
+          'chave': 'cad_pedido:${p['id']}',
+          'texto': 'O DP solicitou a atualização do seu cadastro.',
+          'tipo': 'cadastro',
+          'titulo': 'Atualização cadastral',
+        });
+      }
+      final chave = await svc.lembreteAnualPendente(
+        colaboradorId: meuId.toString(),
+        dataAdmissao: colab.dataAdmissao,
+      );
+      if (chave != null) {
+        avisos.add({
+          'chave': chave,
+          'texto':
+              'É hora de atualizar seu cadastro (aniversário de empresa): documentos e dependentes.',
+          'tipo': 'cadastro',
+          'titulo': 'Atualização cadastral',
+        });
+      }
+    } catch (_) {}
+    return avisos;
   }
 
   // ─── Chamados de TI (Azure DevOps) ───────────────────────────────────────
@@ -6240,17 +7530,21 @@ class ApiService {
     required String atribuidoPara, // e-mail/login do Azure DevOps
     int? tiMembroId,
     required String solicitanteEmail,
-    Uint8List? anexoBytes,
-    String? anexoNomeArquivo,
+    // Vários anexos, como no web (a edge function aceita `anexos`).
+    List<({Uint8List bytes, String nome})> anexos = const [],
   }) async {
     final colab = colaboradorAtual;
     if (colab == null) throw Exception('Colaborador não identificado.');
 
-    String? anexoUrl;
-    if (anexoBytes != null && anexoNomeArquivo != null) {
-      final path = '${DateTime.now().millisecondsSinceEpoch}_$anexoNomeArquivo';
-      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, anexoBytes);
-      anexoUrl = _client.storage.from('ti-chamados-anexos').getPublicUrl(path);
+    final anexosUp = <Map<String, String>>[];
+    for (final a in anexos) {
+      final path =
+          '${DateTime.now().millisecondsSinceEpoch}_${anexosUp.length}_${a.nome}';
+      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, a.bytes);
+      anexosUp.add({
+        'url': _client.storage.from('ti-chamados-anexos').getPublicUrl(path),
+        'nome': a.nome,
+      });
     }
 
     final res = await _client.functions.invoke(
@@ -6265,7 +7559,7 @@ class ApiService {
         'solicitanteNome': colab.nome,
         'solicitanteMatricula': colab.matricula,
         'solicitanteEmail': solicitanteEmail,
-        if (anexoUrl != null) 'anexoUrl': anexoUrl,
+        if (anexosUp.isNotEmpty) 'anexos': anexosUp,
         if (tiMembroId != null) 'tiMembroId': tiMembroId,
       },
     );
@@ -6337,21 +7631,25 @@ class ApiService {
     return Map<String, dynamic>.from(data['status'] as Map);
   }
 
-  /// Retorna a URL pública do anexo (se algum foi enviado).
-  Future<String?> comentarChamadoAzureTI({
+  /// Comenta no card do Azure, com vários anexos (como no web; a edge function
+  /// aceita `anexos`). Retorna os anexos enviados ({url, nome}).
+  Future<List<Map<String, String>>> comentarChamadoAzureTI({
     required int workItemId,
     required String texto,
-    Uint8List? anexoBytes,
-    String? anexoNomeArquivo,
+    List<({Uint8List bytes, String nome})> anexos = const [],
   }) async {
     final colab = colaboradorAtual;
     final autorNome = colab?.nome ?? 'Colaborador';
 
-    String? anexoUrl;
-    if (anexoBytes != null && anexoNomeArquivo != null) {
-      final path = '${DateTime.now().millisecondsSinceEpoch}_$anexoNomeArquivo';
-      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, anexoBytes);
-      anexoUrl = _client.storage.from('ti-chamados-anexos').getPublicUrl(path);
+    final anexosUp = <Map<String, String>>[];
+    for (final a in anexos) {
+      final path =
+          '${DateTime.now().millisecondsSinceEpoch}_${anexosUp.length}_${a.nome}';
+      await _client.storage.from('ti-chamados-anexos').uploadBinary(path, a.bytes);
+      anexosUp.add({
+        'url': _client.storage.from('ti-chamados-anexos').getPublicUrl(path),
+        'nome': a.nome,
+      });
     }
 
     final res = await _client.functions.invoke(
@@ -6360,15 +7658,37 @@ class ApiService {
         'workItemId': workItemId,
         'texto': texto.trim(),
         'autorNome': autorNome,
-        if (anexoUrl != null) 'anexoUrl': anexoUrl,
-        if (anexoNomeArquivo != null) 'anexoNomeArquivo': anexoNomeArquivo,
+        if (anexosUp.isNotEmpty) 'anexos': anexosUp,
       },
     );
     final data = res.data as Map<String, dynamic>?;
     if (data == null || data['ok'] != true) {
       throw Exception(data?['error'] ?? 'Erro ao comentar no chamado');
     }
-    return anexoUrl;
+    return anexosUp;
+  }
+
+  /// Reabre o próprio chamado que está em "Sem Retorno do Usuário": o card
+  /// vai para "Validação do Usuário" com a tag "Reaberto" (edge function
+  /// 'reabrir-chamado-azure'). Retorna o novo estado e as tags do card.
+  Future<({String estado, String tags})> reabrirChamadoAzureTI({
+    required int workItemId,
+  }) async {
+    final res = await _client.functions.invoke(
+      'reabrir-chamado-azure',
+      body: {
+        'workItemId': workItemId,
+        'autorNome': colaboradorAtual?.nome ?? 'Colaborador',
+      },
+    );
+    final data = res.data as Map<String, dynamic>?;
+    if (data == null || data['ok'] != true) {
+      throw Exception(data?['error'] ?? 'Erro ao reabrir o chamado');
+    }
+    return (
+      estado: data['estado'] as String? ?? 'Validação do Usuário',
+      tags: data['tags'] as String? ?? 'Reaberto',
+    );
   }
 
   /// Ids (Azure work item) dos chamados já avaliados — usado pra saber
@@ -6463,7 +7783,7 @@ class ApiService {
       final avs = await _client
           .from('avaliacoes')
           .select(
-              '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, cargo, setor, foto_url)')
+              '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)')
           .eq('ciclo_id', cicloId)
           .eq('status', 'concluida');
       resultado.addAll(List<Map<String, dynamic>>.from(avs as List).where((a) =>
@@ -6517,12 +7837,19 @@ class ApiService {
 class NotificacaoItem {
   final String chave;
   final String
-  tipo; // 'pesquisa' | 'mensagem' | 'parabens' | 'feedback' | 'experiencia'
+  tipo; // 'pesquisa' | 'mensagem' | 'parabens' | 'feedback' | 'experiencia' |
+  // 'feedback_solicitacao' | 'elogio' | 'solicitacao' | 'candidatura_gestor' |
+  // 'candidatura_colab' | 'cadastro'
   final String titulo;
   final String subtitulo;
   final DateTime criadoEm;
 
+  /// Id do registro de origem (ex: solicitação de feedback) — usado pelas
+  /// ações inline do sino (Atender/Recusar).
+  final int? refId;
+
   NotificacaoItem({
+    this.refId,
     required this.chave,
     required this.tipo,
     required this.titulo,

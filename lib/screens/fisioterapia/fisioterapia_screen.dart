@@ -6,7 +6,9 @@ import '../../services/api_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FisioterapiaScreen (colaborador)
-// Somente leitura: caso atual (patologia), sessões e exercícios prescritos.
+// Somente leitura: situação do tratamento e sessões (data, horário e situação).
+// Igual ao web: nada do prontuário aparece aqui (patologia, evolução,
+// exercícios) — é conteúdo clínico, visível só ao SESMT (privacidade/LGPD).
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FisioterapiaScreen extends StatefulWidget {
@@ -23,7 +25,6 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
   String? _erro;
   FisioterapiaCaso? _caso;
   List<FisioterapiaSessao> _sessoes = [];
-  List<FisioterapiaExercicio> _exercicios = [];
 
   @override
   void initState() {
@@ -39,19 +40,12 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
     try {
       final caso = await _api.buscarMeuCasoFisioterapia();
       List<FisioterapiaSessao> sessoes = [];
-      List<FisioterapiaExercicio> exercicios = [];
       if (caso != null) {
-        final resultados = await Future.wait([
-          _api.listarSessoesDoCasoFisioterapia(caso.id),
-          _api.listarExerciciosFisioterapia(caso.id),
-        ]);
-        sessoes = resultados[0] as List<FisioterapiaSessao>;
-        exercicios = resultados[1] as List<FisioterapiaExercicio>;
+        sessoes = await _api.listarSessoesDoCasoFisioterapia(caso.id);
       }
       setState(() {
         _caso = caso;
         _sessoes = sessoes;
-        _exercicios = exercicios;
         _loading = false;
       });
     } catch (e) {
@@ -61,14 +55,6 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
       });
     }
   }
-
-  String get _statusLabel => switch (_caso?.status) {
-        'em_espera' => 'Em espera',
-        'ativo' => 'Em tratamento',
-        'alta' => 'Alta',
-        'encerrado_sesmt' => 'Encerrado',
-        _ => '—',
-      };
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +101,7 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Fisioterapia', style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.w700)),
-                Text('Acompanhe seu tratamento',
+                Text('Suas sessões',
                     style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600)),
               ],
             ),
@@ -131,7 +117,7 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
                   ? const Center(child: CircularProgressIndicator(color: AppColors.laranja))
                   : _erro != null
                       ? _buildErro()
-                      : _caso == null
+                      : _sessoes.isEmpty
                           ? _buildSemCaso()
                           : _buildConteudo(),
             ),
@@ -180,11 +166,11 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
               child: const Icon(Icons.event_busy_rounded, size: 40, color: AppColors.laranja),
             ),
             const SizedBox(height: 20),
-            Text('Nenhum caso de fisioterapia',
+            Text('Nenhuma sessão',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
             const SizedBox(height: 8),
-            Text('Você ainda não possui um caso de fisioterapia cadastrado pelo SESMT.',
+            Text('Você ainda não tem sessões de fisioterapia agendadas.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade500)),
           ],
@@ -194,101 +180,14 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
   }
 
   Widget _buildConteudo() {
-    final caso = _caso!;
     return RefreshIndicator(
       color: AppColors.laranja,
       onRefresh: _carregar,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCasoBanner(caso),
-            const SizedBox(height: 24),
-            _buildSectionLabel('Exercícios prescritos'),
-            const SizedBox(height: 10),
-            _buildExercicios(),
-            const SizedBox(height: 24),
-            _buildSectionLabel('Sessões'),
-            const SizedBox(height: 10),
-            _buildSessoes(),
-          ],
-        ),
+        child: _buildSessoes(),
       ),
-    );
-  }
-
-  Widget _buildCasoBanner(FisioterapiaCaso caso) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: AppColors.gradientePrincipal,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Expanded(
-              child: Text(caso.patologia,
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(_statusLabel,
-                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
-            ),
-          ]),
-          if (caso.sessoesPrevistas != null) ...[
-            const SizedBox(height: 8),
-            Text('${caso.sessoesPrevistas} sessões previstas',
-                style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withOpacity(0.85))),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExercicios() {
-    if (_exercicios.isEmpty) {
-      return _buildVazioCard('Nenhum exercício prescrito ainda.');
-    }
-    return Column(
-      children: _exercicios.map((ex) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.laranja.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.fitness_center_rounded, color: AppColors.laranja, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(ex.descricao, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
-                    if (ex.frequencia != null)
-                      Text(ex.frequencia!, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -329,10 +228,6 @@ class _FisioterapiaScreenState extends State<FisioterapiaScreen> {
                   child: Text(label, style: GoogleFonts.poppins(fontSize: 10, color: cor, fontWeight: FontWeight.w600)),
                 ),
               ]),
-              if (s.evolucao != null && s.evolucao!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(s.evolucao!, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade600)),
-              ],
             ],
           ),
         );

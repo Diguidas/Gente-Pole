@@ -19,6 +19,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   List<String> _diasDisponiveis = []; // datas 'yyyy-MM-dd'
   MassoterapiaConfigSetorModel? _configSetor;
   Map<String, dynamic>? _statusCiclo;
+  List<Map<String, dynamic>> _minhasFaltas = [];
+  // Vagas por grupo de setores, por data ('yyyy-MM-dd'); modo 'setor' = antigo.
+  Map<String, Map<String, dynamic>> _vagasGrupo = {};
   bool _loading = true;
   String? _erro;
 
@@ -34,12 +37,16 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     super.dispose();
   }
 
-  // Agendamento atual do colaborador logado
+  // Agendamento do colaborador logado NO DIA selecionado (como no portal:
+  // dá para agendar em outros dias do ciclo). Sem dia selecionado, o
+  // primeiro agendamento dele nas próximas semanas.
   MassoterapiaAgendamentoModel? get _meuAgendamento {
     final meuId = _api.colaboradorAtual?.id;
     if (meuId == null) return null;
     try {
-      return _agendamentos.firstWhere((a) => a.colaboradorId == meuId);
+      return _agendamentos.firstWhere((a) =>
+          a.colaboradorId == meuId &&
+          (_dataSelecionada == null || a.data == _dataSelecionada));
     } catch (_) {
       return null;
     }
@@ -65,13 +72,28 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           filial: _api.colaboradorAtual?.filialEfetiva,
         ),
         _api.buscarStatusCicloMassoterapia(),
+        _api.listarMinhasFaltasMassoterapia(),
       ]);
+      // Vagas por grupo de setores (modo 'grupo') de cada dia de hoje em diante.
+      final dias = resultados[0] as List<String>;
+      final agoraBr = _brasilia();
+      final hojeBr =
+          '${agoraBr.year}-${agoraBr.month.toString().padLeft(2, '0')}-${agoraBr.day.toString().padLeft(2, '0')}';
+      final futurosDias = dias.where((d) => d.compareTo(hojeBr) >= 0).toList();
+      final vagasLista = await Future.wait(
+        futurosDias.map(_api.buscarVagasGrupoMassoterapia),
+      );
+      final vagasGrupo = <String, Map<String, dynamic>>{
+        for (var i = 0; i < futurosDias.length; i++) futurosDias[i]: vagasLista[i],
+      };
       if (!mounted) return;
       setState(() {
+        _vagasGrupo = vagasGrupo;
         _diasDisponiveis = resultados[0] as List<String>;
         _agendamentos = resultados[1] as List<MassoterapiaAgendamentoModel>;
         _configSetor = resultados[2] as MassoterapiaConfigSetorModel?;
         _statusCiclo = resultados[3] as Map<String, dynamic>;
+        _minhasFaltas = resultados[4] as List<Map<String, dynamic>>;
         // Pré-seleciona o primeiro dia (hoje ou futuro) que ainda tem vaga
         // de verdade — não adianta abrir num dia sem horário livre nem
         // vaga de setor, mesmo que seja o mais próximo cronologicamente.
@@ -190,6 +212,11 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   /// ainda restam no dia.
   int _vagasRestantesEm(String? data) {
     final porHorarios = _slotsLivresRestantesEm(data);
+    final g = data == null ? null : _vagasGrupo[data];
+    if (g != null && g['modo'] == 'grupo') {
+      final r = (g['restantes'] as num?)?.toInt() ?? 0;
+      return r < porHorarios ? (r < 0 ? 0 : r) : porHorarios;
+    }
     final vagasSetor = _configSetor?.vagasDia ?? 0;
     if (vagasSetor <= 0) return porHorarios;
     final porSetor = vagasSetor - _vagasUsadasMeuSetorEm(data);
@@ -199,6 +226,13 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   int get _vagasRestantes => _vagasRestantesEm(_dataSelecionada);
 
   bool get _setorLotado => _vagasRestantes <= 0;
+
+  /// Filial em modo "grupo": a data selecionada tem vagas por grupo de setores.
+  bool get _modoGrupo =>
+      _vagasGrupo[_dataSelecionada]?['modo'] == 'grupo';
+
+  /// Bloqueio de 45 dias por 3 faltas consecutivas sem justificativa.
+  bool get _estaBloqueado => _statusCiclo?['bloqueado'] == true;
 
   /// Se [data] ainda tem alguma vaga real pra agendar (considerando slots
   /// ocupados/passados e limite de setor) — usado pra pré-selecionar o
@@ -213,11 +247,31 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
       _mostrarErro('Você já tem um agendamento neste dia.');
       return;
     }
+    if (_estaBloqueado) {
+      _mostrarErro(
+        'Você está bloqueado de agendar até '
+        '${_formatarDataIso(_statusCiclo?['bloqueio_fim']?.toString())}.',
+      );
+      return;
+    }
     if (_setorLotado) {
-      _mostrarErro('Seu setor atingiu o limite de vagas para este dia.');
+      _mostrarErro(_modoGrupo
+          ? 'As vagas do seu grupo para este dia acabaram.'
+          : 'Seu setor atingiu o limite de vagas para este dia.');
       return;
     }
 
+    // PoleCoins desativado: excedente do ciclo e bloqueado (sem cobranca)
+    if (_statusCiclo?['polecoins_ativo'] == false &&
+        _statusCiclo?['limite_atingido'] == true) {
+      _mostrarErro('Limite de sessões do ciclo atingido.');
+      return;
+    }
+    final polecoinsAtivo = _statusCiclo?['polecoins_ativo'] != false;
+    if (_statusCiclo?['proxima_paga'] == true && !polecoinsAtivo) {
+      _mostrarErro('Você atingiu o limite de sessões deste ciclo.');
+      return;
+    }
     if (_statusCiclo?['proxima_paga'] == true) {
       final custo = _statusCiclo?['custo_polecoins_extra'] as int? ?? 0;
       final confirmar = await showDialog<bool>(
@@ -229,7 +283,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           ),
           content: Text(
-            'Você já usou suas sessões grátis neste ciclo. Essa sessão vai custar '
+            'Você já usou as sessões do seu ciclo. Essa sessão vai custar '
             '$custo PoleCoins. Confirma?',
             style: GoogleFonts.poppins(fontSize: 14),
           ),
@@ -261,15 +315,26 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     if (resultado.ok) {
       final mensagem = resultado.pagoComPolecoins
           ? 'Agendado para ${_formatarData(_dataSelecionada!)} às $_horarioSelecionado! '
-                'Você atingiu o limite de sessões grátis e essa foi paga com PoleCoins.'
+                'Você atingiu o limite de sessões do ciclo e essa foi paga com PoleCoins.'
           : 'Agendado para ${_formatarData(_dataSelecionada!)} às $_horarioSelecionado!';
       _mostrarSucesso(mensagem);
       _horarioSelecionado = null;
       await _carregar();
     } else if (resultado.motivo == 'saldo_insuficiente') {
       _mostrarErro(
-        'Você atingiu o limite de sessões grátis e não tem PoleCoins suficientes para pagar uma sessão extra.',
+        'Você atingiu o limite de sessões do ciclo e não tem PoleCoins suficientes para pagar uma sessão extra.',
       );
+    } else if (resultado.motivo == 'limite_ciclo_atingido') {
+      _mostrarErro('Limite de sessões do ciclo atingido.');
+    } else if (resultado.motivo == 'bloqueado') {
+      _mostrarErro(
+        'Você está bloqueado de agendar até '
+        '${_formatarDataIso(resultado.bloqueioFim)}.',
+      );
+      await _carregar();
+    } else if (resultado.motivo == 'grupo_lotado') {
+      _mostrarErro('As vagas do seu grupo para este dia acabaram.');
+      await _carregar();
     } else if (resultado.motivo == 'data_passada') {
       _mostrarErro('Não é possível agendar para uma data que já passou.');
     } else {
@@ -514,6 +579,16 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
             if (_meuAgendamento != null) _buildMeuAgendamentoBanner(),
             if (_meuAgendamento != null) const SizedBox(height: 20),
 
+            // Bloqueio e faltas aparecem mesmo sem dias disponíveis no ciclo.
+            if (_estaBloqueado) ...[
+              _buildBannerBloqueio(),
+              const SizedBox(height: 20),
+            ],
+            if (_minhasFaltas.isNotEmpty) ...[
+              _buildFaltasRecentes(),
+              const SizedBox(height: 20),
+            ],
+
             if (_diasDisponiveis.isEmpty)
               _buildSemMassoterapiaHoje()
             else ...[
@@ -523,25 +598,33 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
               _buildSeletorDatas(),
               const SizedBox(height: 24),
 
-              // Info de vagas do setor
-              if (_configSetor != null) _buildInfoVagasSetor(),
-              if (_configSetor != null) const SizedBox(height: 20),
+              // Info de vagas do grupo (modo grupo) ou do setor (modo antigo)
+              if (_modoGrupo) ...[
+                _buildInfoVagasGrupo(),
+                const SizedBox(height: 20),
+              ] else if (_configSetor != null) ...[
+                _buildInfoVagasSetor(),
+                const SizedBox(height: 20),
+              ],
 
               // Grade de horários (só se não tiver agendamento)
               if (_meuAgendamento == null ||
                   _meuAgendamento!.status == 'CANCELADO') ...[
                 if (_statusCiclo != null) _buildContadorCiclo(),
                 if (_statusCiclo != null) const SizedBox(height: 16),
-                _buildSectionLabel('Escolha o horário'),
-                const SizedBox(height: 10),
-                _buildGradeHorarios(),
-                const SizedBox(height: 24),
+              ],
+              _buildSectionLabel('Escolha o horário'),
+              const SizedBox(height: 10),
+              _buildGradeHorarios(),
+              const SizedBox(height: 24),
+              if (_meuAgendamento == null ||
+                  _meuAgendamento!.status == 'CANCELADO') ...[
                 _buildBotaoAgendar(),
                 const SizedBox(height: 28),
               ],
 
               // Lista de quem agendou no dia
-              _buildSectionLabel('Quem vai hoje'),
+              _buildSectionLabel('Quem vai neste dia'),
               const SizedBox(height: 10),
               _buildListaAgendados(),
             ],
@@ -796,6 +879,124 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
 
   // ── Info vagas do setor ──────────────────────────────────────────────────
 
+  Widget _buildBannerBloqueio() {
+    final cor = Colors.red.shade600;
+    final motivo = _statusCiclo?['bloqueio_motivo']?.toString();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cor.withOpacity(0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.block, color: cor, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Você está bloqueado de agendar massoterapia até '
+              '${_formatarDataIso(_statusCiclo?['bloqueio_fim']?.toString())}.'
+              '${motivo != null && motivo.isNotEmpty ? '\nMotivo: $motivo.' : ''}'
+              '\nSe foi um engano, apresente a justificativa ao Sesmt.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: cor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaltasRecentes() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Suas faltas recentes',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (final f in _minhasFaltas)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                '${_formatarDataIso(f['data']?.toString())} às '
+                '${(f['horario']?.toString() ?? '').padRight(5).substring(0, 5).trim()}'
+                ' — ${f['falta_justificada'] == true ? 'justificada' : 'sem justificativa (procure o Sesmt para justificar)'}',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: f['falta_justificada'] == true
+                      ? Colors.green.shade700
+                      : Colors.red.shade600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 'yyyy-MM-dd...' -> 'dd/MM/aaaa'.
+  String _formatarDataIso(String? iso) {
+    if (iso == null || iso.length < 10) return '';
+    return '${iso.substring(8, 10)}/${iso.substring(5, 7)}/${iso.substring(0, 4)}';
+  }
+
+  Widget _buildInfoVagasGrupo() {
+    final g = _vagasGrupo[_dataSelecionada]!;
+    final restam = _vagasRestantes;
+    final cor = restam == 0
+        ? Colors.red.shade600
+        : restam == 1
+        ? AppColors.magenta
+        : AppColors.laranja;
+    final grupo = g['grupo']?.toString() ?? '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cor.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.group_outlined, color: cor, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              restam == 0
+                  ? 'Não há mais vagas para seu grupo neste dia.'
+                  : restam == 1
+                  ? 'Última vaga do seu grupo neste dia!'
+                  : '$restam vagas para seu grupo neste dia',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: cor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (grupo.isNotEmpty)
+            Text(
+              grupo,
+              style: GoogleFonts.poppins(fontSize: 12, color: cor),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoVagasSetor() {
     final usadas = _vagasUsadasMeuSetor;
     final total = _configSetor!.vagasDia;
@@ -847,6 +1048,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   Widget _buildContadorCiclo() {
     final usadas = _statusCiclo!['usadas'] as int? ?? 0;
     final limite = _statusCiclo!['limite'] as int? ?? 0;
+    final polecoinsAtivo = _statusCiclo!['polecoins_ativo'] != false;
     final proximaPaga = _statusCiclo!['proxima_paga'] == true;
     final custo = _statusCiclo!['custo_polecoins_extra'] as int? ?? 0;
     final cor = proximaPaga ? AppColors.magenta : AppColors.laranja;
@@ -869,8 +1071,10 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           Expanded(
             child: Text(
               proximaPaga
-                  ? 'Você já usou suas sessões grátis. A próxima sai por $custo PoleCoins.'
-                  : 'Você já usou $usadas de $limite sessões grátis neste ciclo.',
+                  ? (polecoinsAtivo
+                      ? 'Você já usou as sessões do ciclo. A próxima sai por $custo PoleCoins.'
+                      : 'Você atingiu o limite de sessões deste ciclo.')
+                  : 'Você já usou $usadas de $limite sessões do ciclo.',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: cor,
@@ -888,7 +1092,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   Widget _buildGradeHorarios() {
     final ocupados = _slotsOcupados;
     final passados = _slotsPassados;
-    final bloqueado = _setorLotado;
+    final temMeu =
+        _meuAgendamento != null && _meuAgendamento!.status != 'CANCELADO';
+    final bloqueado = _setorLotado || temMeu || _estaBloqueado;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -940,12 +1146,17 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
             final passado = passados.contains(slot);
             final selecionado = slot == _horarioSelecionado;
             final disponivel = !ocupado && !passado && !bloqueado;
+            final meu = _meuAgendamento;
+            final isMeu = meu != null &&
+                meu.status != 'CANCELADO' &&
+                meu.data == _dataSelecionada &&
+                (meu.horario.length >= 5 ? meu.horario.substring(0, 5) : meu.horario) == slot;
 
             Color bgColor;
             Color txtColor;
             BoxBorder? border;
 
-            if (selecionado) {
+            if (selecionado || isMeu) {
               bgColor = AppColors.laranja;
               txtColor = Colors.white;
               border = null;
@@ -1006,7 +1217,8 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   // ── Botão agendar ────────────────────────────────────────────────────────
 
   Widget _buildBotaoAgendar() {
-    final habilitado = _horarioSelecionado != null && !_salvando;
+    final habilitado =
+        _horarioSelecionado != null && !_salvando && !_estaBloqueado;
     return SizedBox(
       width: double.infinity,
       height: 52,

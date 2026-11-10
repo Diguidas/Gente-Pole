@@ -2,9 +2,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../core/app_theme.dart';
+import '../core/nome_foto.dart';
 import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
 import '../widgets/avatar_colaborador.dart';
+import '../widgets/cracha_virtual_dialog.dart';
 
 class PessoasScreen extends StatefulWidget {
   const PessoasScreen({super.key});
@@ -19,6 +21,88 @@ class _PessoasScreenState extends State<PessoasScreen> {
   ColaboradorModel? _supervisor;
   bool _loadingSupervisor = false;
   bool _uploadandoFoto = false;
+  late final TextEditingController _apelidoCtrl =
+      TextEditingController(text: _api.colaboradorAtual?.apelido ?? '');
+  bool _salvandoApelido = false;
+
+  @override
+  void dispose() {
+    _apelidoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _salvarApelido() async {
+    setState(() => _salvandoApelido = true);
+    try {
+      await _api.salvarApelido(_apelidoCtrl.text);
+      if (!mounted) return;
+      setState(() => _salvandoApelido = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Nome salvo!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _salvandoApelido = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Não foi possível salvar o nome.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  }
+
+  Widget _campoApelido(ColaboradorModel c) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Nome que gosta de ser chamado(a)',
+                style: AppTextStyles.corpoCinza),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _apelidoCtrl,
+                    maxLength: 30,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      hintText: nomeCurto(c.nome),
+                      counterText: '',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: _salvandoApelido ? null : _salvarApelido,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.laranja,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: _salvandoApelido
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Salvar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
   // Hierarquia resolvida (gerente geral, gestor, coordenador...). Quando
   // existe, substitui o "Supervisor" legado (supervisor_id).
   List<Map<String, String>> _hierarquia = [];
@@ -238,7 +322,8 @@ class _PessoasScreenState extends State<PessoasScreen> {
                                 style: AppTextStyles.corpoCinza,
                               ),
                             ),
-                          const SizedBox(height: 20),
+                          _campoApelido(c),
+                          const SizedBox(height: 16),
                           const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
                           // Dados em lista
@@ -305,6 +390,54 @@ class _PessoasScreenState extends State<PessoasScreen> {
                               ),
                             ),
 
+                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                            child: InkWell(
+                              onTap: () {
+                                final id = _api.colaboradorAtual?.id;
+                                if (id != null) {
+                                  abrirCrachaVirtual(context, colaboradorId: id);
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.laranjaOp08,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.laranjaOp15,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(Icons.badge_outlined,
+                                          size: 18, color: AppColors.laranja),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Crachá virtual',
+                                              style: AppTextStyles.corpoMedio),
+                                          Text('Veja a frente e o verso do seu crachá',
+                                              style: AppTextStyles.corpoMinimo),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right_rounded,
+                                        color: AppColors.laranja, size: 20),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                           const Divider(height: 1, color: Color(0xFFF1F5F9)),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -532,7 +665,11 @@ class _PessoasScreenState extends State<PessoasScreen> {
   }
 
   Widget _avatar(ColaboradorModel c, {double raio = 22}) {
-    return AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: raio);
+    return FotoClicavel(
+      url: c.fotoUrl,
+      nome: c.nome,
+      child: AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: raio),
+    );
   }
 
   Widget _avatarEditavel(ColaboradorModel c) {

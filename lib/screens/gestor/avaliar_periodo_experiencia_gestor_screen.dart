@@ -1,3 +1,4 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
@@ -418,7 +419,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
               clipBehavior: Clip.antiAlias,
               child: ListTile(
                 onTap: () => _abrirAvaliacao(avaliacao),
-                leading: CircleAvatar(
+                leading: FotoClicavel(url: colab?['foto_url'] as String?, nome: colab?['nome'] as String?, child: CircleAvatar(
                   backgroundColor: _indigo.withOpacity(0.12),
                   backgroundImage: (colab?['foto_url'] as String?)?.isNotEmpty == true
                       ? NetworkImage(colab!['foto_url'] as String)
@@ -430,7 +431,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                               : '?',
                           style: const TextStyle(color: _indigo))
                       : null,
-                ),
+                )),
                 title: Text(colab?['nome'] as String? ?? '',
                     style:
                         AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),

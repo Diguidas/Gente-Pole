@@ -12,8 +12,10 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/plantao_psicologico_screen.dart';
 import 'package:gentepole/screens/ti/chamados_ti_screen.dart';
 import 'package:gentepole/screens/contracheque/contracheque_screen.dart';
-import 'package:gentepole/screens/veiculos/meus_veiculos_screen.dart';
+import 'package:gentepole/screens/locomocao/locomocao_screen.dart';
+import 'package:gentepole/screens/visitantes/visitantes_screen.dart';
 import 'package:gentepole/screens/solicitacoes/solicitacoes_screen.dart';
+import 'package:gentepole/screens/cadastro/atualizacao_cadastral_screen.dart';
 import '../services/api_service.dart';
 
 /// Serviços que podem ser marcados como atalho na barra de navegação.
@@ -129,10 +131,17 @@ final List<AtalhoDef> atalhosDisponiveis = [
   ),
   AtalhoDef(
     id: 'meus_veiculos',
-    label: 'Meus Veículos',
+    label: 'Locomoção',
     icon: Icons.directions_car_outlined,
     cor: const Color(0xFF334155),
-    builder: (_) => const MeusVeiculosScreen(),
+    builder: (_) => const LocomocaoScreen(),
+  ),
+  AtalhoDef(
+    id: 'visitantes',
+    label: 'Visitantes',
+    icon: Icons.badge_outlined,
+    cor: const Color(0xFF0D9488),
+    builder: (_) => const VisitantesScreen(),
   ),
   AtalhoDef(
     id: 'solicitacoes',
@@ -140,6 +149,13 @@ final List<AtalhoDef> atalhosDisponiveis = [
     icon: Icons.assignment_outlined,
     cor: const Color(0xFF2563EB),
     builder: (_) => const SolicitacoesScreen(),
+  ),
+  AtalhoDef(
+    id: 'atualizacao_cadastral',
+    label: 'Atualização cadastral',
+    icon: Icons.folder_shared_outlined,
+    cor: const Color(0xFF0369A1),
+    builder: (_) => const AtualizacaoCadastralScreen(),
   ),
 ];
 

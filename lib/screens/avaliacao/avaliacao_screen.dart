@@ -56,14 +56,9 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
         });
         return;
       }
-      if (col.setor == null || col.setor!.isEmpty) {
-        setState(() {
-          _cicloAberto = null;
-          _loading = false;
-        });
-        return;
-      }
-      final ciclo = await _api.buscarCicloAbertoParaSetor(col.setor!);
+      // Sem setor também busca o ciclo (geral ou por participantes), como no web.
+      final ciclo = await _api.buscarCicloAbertoParaColaborador(
+          colaboradorId: col.id, setor: col.setor);
       if (!mounted) return;
       if (ciclo == null) {
         setState(() {
@@ -78,11 +73,12 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
       );
       final perguntasLiberadas =
           avaliacao?['perguntas_liberadas'] as bool? ?? false;
-      // Só busca as perguntas depois que o gestor liberar a avaliação —
-      // antes disso não há o que responder ainda (mesma regra do web).
+      // Só busca as perguntas depois que o gestor definir (template ou
+      // padrão) — antes disso não há o que responder ainda.
       final perguntas = (avaliacao == null || !perguntasLiberadas)
           ? <Map<String, dynamic>>[]
-          : await _api.listarPerguntasFuncao(col.cargo ?? '');
+          : await _api.perguntasDaAvaliacao(avaliacao,
+              funcao: col.cargo ?? '', setor: col.setor);
       final respostas = avaliacao == null
           ? <Map<String, dynamic>>[]
           : await _api.listarRespostasAvaliacao(avaliacao['id'] as int);

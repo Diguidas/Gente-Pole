@@ -5,12 +5,12 @@ import '../../services/api_service.dart';
 import 'vagas_gestor_screen.dart';
 import 'matriz_9box_screen.dart';
 import 'minha_equipe_screen.dart';
-import 'avaliar_equipe_screen.dart';
-import 'avaliar_periodo_experiencia_gestor_screen.dart';
-import 'pdi_gestor_screen.dart';
 import 'solicitacoes_gestor_screen.dart';
-import 'feedback_gestor_screen.dart';
+import 'facilites_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
+import 'candidaturas_gestor_screen.dart';
+import 'requisitantes_screen.dart';
+import '../performance/performance_gestor_screen.dart';
 
 class GestorScreen extends StatefulWidget {
   /// true quando quem abriu é só requisitante de vaga (sem ser gestor/líder
@@ -178,6 +178,23 @@ class _GestorScreenState extends State<GestorScreen> {
                               ],
 
                               if (!widget.apenasVagas) ...[
+                              // Igual ao web: Requisitantes não tem bloqueio
+                              // próprio nem some com o bloqueio de Vagas.
+                              _BotaoGestor(
+                                icone: Icons.person_pin_circle_outlined,
+                                titulo: 'Requisitantes de vaga',
+                                subtitulo:
+                                    'Defina quem pode requisitar vagas por função',
+                                cor: const Color(0xFF0EA5E9),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const RequisitantesScreen(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
                               if (!_bloqueadas
                                   .contains('minha_equipe_gestor')) ...[
                                 _BotaoGestor(
@@ -196,73 +213,41 @@ class _GestorScreenState extends State<GestorScreen> {
                                 const SizedBox(height: 16),
                               ],
 
+                              // A Matriz 9Box faz parte de "Avaliar equipe": some junto
+                              // quando essa funcionalidade está bloqueada (igual ao web).
+                              if (!_bloqueadas
+                                  .contains('avaliar_equipe_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.grid_view_rounded,
+                                  titulo: 'Matriz 9Box',
+                                  subtitulo:
+                                      'Desempenho x potencial da sua equipe',
+                                  cor: AppColors.magenta,
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const Matriz9BoxScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
                               _BotaoGestor(
-                                icone: Icons.grid_view_rounded,
-                                titulo: 'Matriz 9Box',
-                                subtitulo: 'Desempenho x potencial da sua equipe',
-                                cor: AppColors.magenta,
+                                icone: Icons.trending_up_rounded,
+                                titulo: 'Performance',
+                                subtitulo:
+                                    'Avaliações, feedbacks, PDI e carreira da sua equipe',
+                                cor: const Color(0xFF5B2C9F),
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const Matriz9BoxScreen(),
+                                    builder: (_) =>
+                                        const PerformanceGestorScreen(),
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 16),
-
-                              if (!_bloqueadas
-                                  .contains('avaliar_equipe_gestor')) ...[
-                                _BotaoGestor(
-                                  icone: Icons.leaderboard_outlined,
-                                  titulo: 'Avaliar Equipe',
-                                  subtitulo:
-                                      'Avaliação 9-box dos colaboradores do setor',
-                                  cor: AppColors.laranja,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const AvaliarEquipeScreen(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-
-                              if (!_bloqueadas.contains(
-                                  'avaliar_periodo_experiencia_gestor')) ...[
-                                _BotaoGestor(
-                                  icone: Icons.explore_outlined,
-                                  titulo: 'Avaliar Período de Experiência',
-                                  subtitulo:
-                                      'Avalie novos colaboradores da equipe',
-                                  cor: const Color(0xFF6366F1),
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const AvaliarPeriodoExperienciaGestorScreen(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-
-                              if (!_bloqueadas.contains('pdi_gestor')) ...[
-                                _BotaoGestor(
-                                  icone: Icons.trending_up_outlined,
-                                  titulo: 'PDI da Equipe',
-                                  subtitulo:
-                                      'Crie e acompanhe os PDIs, junto com o RH',
-                                  cor: const Color(0xFF0EA5E9),
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const PdiGestorScreen(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
 
                               if (!_bloqueadas
                                   .contains('solicitacoes_gestor')) ...[
@@ -282,17 +267,19 @@ class _GestorScreenState extends State<GestorScreen> {
                                 const SizedBox(height: 16),
                               ],
 
-                              if (!_bloqueadas.contains('feedback_gestor')) ...[
+                              if (!_bloqueadas
+                                  .contains('facilites_gestor')) ...[
                                 _BotaoGestor(
-                                  icone: Icons.rate_review_outlined,
-                                  titulo: 'Feedback',
+                                  icone: Icons.apartment_outlined,
+                                  titulo: 'Facilites',
                                   subtitulo:
-                                      'Dê feedback à equipe e responda pedidos',
-                                  cor: const Color(0xFFE91E8C),
+                                      'Uber, Móveis Administrativos e Rota diária',
+                                  cor: const Color(0xFFF59E0B),
                                   onTap: () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => const FeedbackGestorScreen(),
+                                      builder: (_) =>
+                                          const FacilitesGestorScreen(),
                                     ),
                                   ),
                                 ),
@@ -310,6 +297,25 @@ class _GestorScreenState extends State<GestorScreen> {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => const ExamesGestorScreen(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!_bloqueadas
+                                  .contains('candidaturas_gestor')) ...[
+                                _BotaoGestor(
+                                  icone: Icons.how_to_reg_outlined,
+                                  titulo: 'Candidaturas',
+                                  subtitulo:
+                                      'Aprove quem da equipe quer se candidatar a vagas',
+                                  cor: const Color(0xFF0EA5E9),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const CandidaturasGestorScreen(),
                                     ),
                                   ),
                                 ),

@@ -235,7 +235,8 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                       final etapaAtual = coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...');
                       final indiceEtapa = _indiceEtapa(coluna, estado);
                       final progresso = (indiceEtapa + 1) / _etapasBoard.length;
-                      final corEtapa = _corEtapa(indiceEtapa, concluido);
+                      final semRetorno = tiSemRetorno(info);
+                      final corEtapa = semRetorno ? const Color(0xFFD97706) : _corEtapa(indiceEtapa, concluido);
                       final pedeAvaliacao = concluido && !_avaliados.contains(workItemId);
                       final temNovidade = c['notificacao_pendente'] as bool? ?? false;
 
@@ -281,6 +282,7 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                                       if (tipoSolicitacao?.isNotEmpty == true) _tagInfo(tipoSolicitacao!),
                                       if (departamento?.isNotEmpty == true) _tagInfo(departamento!),
                                       if (nivelUrgencia != null) _tagInfo(nivelUrgencia, cor: _corUrgencia(nivelUrgencia)),
+                                      if (tiTemTagReaberto(info)) _tagInfo('Reaberto', cor: const Color(0xFF7C3AED)),
                                     ],
                                   ),
                                   const SizedBox(height: 14),
@@ -320,6 +322,55 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                                       ],
                                     ),
                                   ),
+                                  if (semRetorno) ...[
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                            colors: [Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: const Color(0xFFD97706).withOpacity(.35)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(7),
+                                            decoration: const BoxDecoration(color: Color(0xFFD97706), shape: BoxShape.circle),
+                                            child: const Icon(Icons.notification_important_rounded, size: 18, color: Colors.white),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text('A TI está aguardando o seu retorno',
+                                                    style: AppTextStyles.corpoMedio
+                                                        .copyWith(fontWeight: FontWeight.w700, color: AppColors.dark)),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                    'Abra o chamado, veja as anotações e clique em "Reabrir card" para continuar o atendimento.',
+                                                    style: AppTextStyles.corpoMinimo.copyWith(height: 1.35)),
+                                                const SizedBox(height: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                      color: const Color(0xFFD97706), borderRadius: BorderRadius.circular(20)),
+                                                  child: Text('Ver e reabrir',
+                                                      style: AppTextStyles.corpoMinimo
+                                                          .copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                   if (pedeAvaliacao) ...[
                                     const SizedBox(height: 10),
                                     InkWell(

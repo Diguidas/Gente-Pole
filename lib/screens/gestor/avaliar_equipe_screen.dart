@@ -1,9 +1,16 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/seletor_nota_widget.dart';
+import 'avaliacao_template_picker_dialog.dart';
 
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
+const _tiposAvaliacao = {
+  'gestor': 'Só o gestor avalia',
+  '180': '180 (gestor e colaborador)',
+  '360': '360 (gestor, colaborador e equipe)',
+};
 
 /// "Avaliar Equipe" — o gestor avalia cada colaborador do seu setor no
 /// ciclo aberto (9-box). Porta a lógica de
@@ -20,6 +27,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
   final _api = ApiService();
   bool _loading = true;
   String? _erro;
+  String? _meuSetor;
   Map<String, dynamic>? _ciclo;
   List<Map<String, dynamic>> _avaliacoes = [];
 
@@ -36,33 +44,49 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
     });
     try {
       final col = _api.colaboradorAtual;
-      if (col == null || col.setor == null || col.setor!.isEmpty) {
+      // Igual ao web: só aborta se o colaborador não existe; o setor de
+      // lotação não é obrigatório (gestor pode ter setores só pela hierarquia).
+      if (col == null) {
         setState(() {
           _erro = 'Perfil não encontrado.';
           _loading = false;
         });
         return;
       }
+      _meuSetor = col.setor;
       // Todos os setores sob responsabilidade do gestor (próprio + atribuídos
       // + hierarquia), não só o setor em que ele está lotado.
       final setores = await _api.buscarSetoresEfetivosDoGestor();
       Map<String, dynamic>? ciclo;
       final avaliacoes = <Map<String, dynamic>>[];
       final idsVistos = <Object?>{};
+      // Ciclos direcionados a colaboradores específicos têm prioridade sobre o
+      // ciclo do setor; só aparecem pra quem lidera algum dos participantes.
+      final ciclosPorParticipante =
+          await _api.listarCiclosAbertosPorParticipantes();
       for (final setor in setores) {
-        final cicloSetor = await _api.buscarCicloAbertoParaSetor(setor);
-        if (cicloSetor == null) continue;
-        ciclo ??= cicloSetor;
-        final doSetor = await _api.listarAvaliacoesEquipeGestor(
-            cicloId: cicloSetor['id'] as int, setor: setor);
-        for (final a in doSetor) {
-          if (idsVistos.add(a['id'])) avaliacoes.add(a);
+        final cicloDoSetor = await _api.buscarCicloAbertoParaSetor(setor);
+        if (cicloDoSetor != null) ciclo ??= cicloDoSetor;
+        for (final cicloSetor in [
+          ...ciclosPorParticipante,
+          if (cicloDoSetor != null) cicloDoSetor,
+        ]) {
+          final doSetor = await _api.listarAvaliacoesEquipeGestor(
+            cicloId: cicloSetor['id'] as int,
+            setor: setor,
+            tipoAvaliacao: cicloSetor['tipo_avaliacao'] as String?,
+          );
+          if (doSetor.isNotEmpty) ciclo ??= cicloSetor;
+          for (final a in doSetor) {
+            if (idsVistos.add(a['id'])) avaliacoes.add(a);
+          }
         }
       }
       if (!mounted) return;
       if (ciclo == null) {
         setState(() {
           _ciclo = null;
+          _avaliacoes = [];
           _loading = false;
         });
         return;
@@ -79,6 +103,162 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _abrirCicloDoSetor() async {
+    final setor = _meuSetor;
+    if (setor == null) return;
+    final nomeCtrl = TextEditingController(text: 'Avaliação — $setor');
+    String tipoAvaliacao = 'gestor';
+    final criar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setStateDialog) {
+        return AlertDialog(
+          title: Text('Abrir ciclo para o meu setor',
+              style: AppTextStyles.tituloPequeno),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nomeCtrl,
+                  decoration: const InputDecoration(hintText: 'Nome do ciclo'),
+                ),
+                const SizedBox(height: 14),
+                Text('Tipo de avaliação',
+                    style: AppTextStyles.corpoMinimo
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: _tiposAvaliacao.entries.map((e) {
+                    final sel = tipoAvaliacao == e.key;
+                    return ChoiceChip(
+                      label: Text(e.value, style: AppTextStyles.corpoMinimo),
+                      selected: sel,
+                      selectedColor: AppColors.laranja.withOpacity(0.15),
+                      onSelected: (_) =>
+                          setStateDialog(() => tipoAvaliacao = e.key),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.laranja),
+              child: const Text('Abrir', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      }),
+    );
+    if (criar == true && nomeCtrl.text.trim().isNotEmpty) {
+      try {
+        await _api.criarCicloAvaliacao(
+          nome: nomeCtrl.text.trim(),
+          setor: setor,
+          criadoPor: _api.colaboradorAtual?.id.toString(),
+          tipoAvaliacao: tipoAvaliacao,
+          // Gestor não escolhe pesos: usa o padrão do tipo.
+          pesoGestor:
+              tipoAvaliacao == '360' ? 50 : tipoAvaliacao == '180' ? 70 : 100,
+          pesoColaborador:
+              tipoAvaliacao == '360' ? 30 : tipoAvaliacao == '180' ? 30 : 0,
+          pesoEquipe: tipoAvaliacao == '360' ? 20 : 0,
+        );
+        _carregar();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao abrir ciclo: $e'),
+          backgroundColor: AppColors.erro,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _fecharCicloDoSetor() async {
+    if (_ciclo == null) return;
+    try {
+      await _api.alterarStatusCiclo(_ciclo!['id'] as int, 'fechado');
+      _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erro ao fechar ciclo: $e'),
+        backgroundColor: AppColors.erro,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  /// Cabeçalho do ciclo efetivo com os botões de abrir/fechar o ciclo do
+  /// próprio setor (porta de `_cabecalhoCiclo` do web).
+  Widget _cabecalhoCiclo() {
+    final ehCicloDoMeuSetor = _ciclo != null && _ciclo!['setor'] == _meuSetor;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _ciclo == null
+                ? 'Nenhum ciclo aberto para o seu setor'
+                : 'Ciclo: ${_ciclo!['nome']}',
+            style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w700),
+          ),
+          Text(
+            _ciclo == null
+                ? 'Abra um ciclo para o seu setor ou aguarde o RH abrir um ciclo geral.'
+                : ehCicloDoMeuSetor
+                    ? 'Ciclo aberto por você, exclusivo para o setor $_meuSetor.'
+                    : 'Ciclo geral, aberto pelo RH.',
+            style: AppTextStyles.corpoMinimo,
+          ),
+          if (_ciclo != null) _textoPrazoCiclo(),
+          const SizedBox(height: 10),
+          if (_ciclo == null)
+            ElevatedButton.icon(
+              onPressed: _abrirCicloDoSetor,
+              icon: const Icon(Icons.lock_open_rounded, size: 15),
+              label: Text('Abrir ciclo do meu setor',
+                  style: AppTextStyles.corpoMinimo),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.laranja,
+                  foregroundColor: Colors.white,
+                  elevation: 0),
+            )
+          else if (ehCicloDoMeuSetor)
+            OutlinedButton.icon(
+              onPressed: _fecharCicloDoSetor,
+              icon: const Icon(Icons.lock_outline_rounded, size: 15),
+              label: Text('Fechar ciclo', style: AppTextStyles.corpoMinimo),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: _abrirCicloDoSetor,
+              icon: const Icon(Icons.add_rounded, size: 15),
+              label: Text('Abrir ciclo só do meu setor',
+                  style: AppTextStyles.corpoMinimo),
+            ),
+        ],
+      ),
+    );
   }
 
   /// Prazo do ciclo (`data_fim`) com contagem regressiva, em destaque quando
@@ -126,27 +306,50 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
     }
     final colab = avaliacao['colaboradores'] as Map?;
     final funcao = colab?['cargo'] as String? ?? '';
-    final perguntas = await _api.listarPerguntasFuncao(funcao);
+    final setorColab = colab?['setor'] as String?;
+    final avaliacaoId = avaliacao['id'] as int;
+    final perguntasJaLiberadas = avaliacao['perguntas_liberadas'] as bool? ?? false;
+    var templateId = avaliacao['template_id'] as int?;
+
+    List<Map<String, dynamic>> perguntas;
+    if (perguntasJaLiberadas) {
+      // O gestor já decidiu antes (template ou padrão) — reabre com
+      // exatamente o mesmo conjunto, sem perguntar de novo.
+      perguntas = await _api.perguntasDaAvaliacao(avaliacao,
+          funcao: funcao, setor: setorColab);
+    } else {
+      // Escolha do gestor: um template pronto, ou "usar perguntas padrão"
+      // explicitamente. Fechar sem decidir não avança — só depois dessa
+      // decisão o colaborador e os colegas ficam liberados a responder.
+      final escolha = await showDialog<Object?>(
+        context: context,
+        builder: (_) => AvaliacaoTemplatePickerDialog(
+            setorColaborador: setorColab, funcaoColaborador: funcao),
+      );
+      if (!mounted || escolha == null) return;
+
+      templateId = escolha is Map<String, dynamic> ? escolha['id'] as int : null;
+      await _api.definirTemplateDaAvaliacao(avaliacaoId, templateId);
+      perguntas = templateId != null
+          ? await _api.listarPerguntasDoTemplate(templateId)
+          : await _api.listarPerguntasFuncao(funcao, setor: setorColab);
+    }
     if (!mounted) return;
     if (perguntas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Nenhuma pergunta cadastrada para a função "$funcao".'),
+        content: Text(templateId != null
+            ? 'Esse template ainda não tem perguntas cadastradas.'
+            : 'Nenhuma pergunta cadastrada para a função "$funcao".'),
       ));
       return;
     }
 
-    // O web só libera as perguntas pro colaborador/colegas depois que o
-    // gestor escolhe um template (ou "usar perguntas padrão") ao abrir a
-    // avaliação pela 1ª vez. Este app não tem tela de templates, então o
-    // próprio ato do gestor abrir a avaliação aqui já equivale a "usar
-    // perguntas padrão" — libera direto, se ainda não estiver liberada.
-    final jaLiberada = avaliacao['perguntas_liberadas'] as bool? ?? false;
-    if (!jaLiberada) {
-      await _api.liberarPerguntasAvaliacao(avaliacao['id'] as int);
-    }
-
     final respostasAtuais = await _api.listarRespostasAvaliacao(avaliacao['id'] as int);
     if (!mounted) return;
+    final respostasColab = {
+      for (final r in respostasAtuais.where((r) => r['origem'] == 'colaborador'))
+        r['pergunta_id'] as int: r
+    };
     final respostasGestor = {
       for (final r in respostasAtuais.where((r) => r['origem'] == 'gestor'))
         r['pergunta_id'] as int: r
@@ -195,6 +398,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                   ...perguntas.map((p) {
                     final pid = p['id'] as int;
                     final dimensao = p['dimensao'] as String? ?? 'desempenho';
+                    final respColab = respostasColab[pid];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Column(
@@ -219,6 +423,29 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                               ),
                             ],
                           ),
+                          if (respColab != null) ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.cinzaClaro,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      'Autoavaliação: ${labelNota1a5(respColab['nota'] as int?)}',
+                                      style: AppTextStyles.corpoMinimo.copyWith(
+                                          fontWeight: FontWeight.w600)),
+                                  if ((respColab['comentario'] as String? ?? '')
+                                      .isNotEmpty)
+                                    Text(respColab['comentario'] as String,
+                                        style: AppTextStyles.corpoMinimo),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           SeletorNota1a5(
                               valor: notas[pid]!,
@@ -366,21 +593,29 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       return Center(child: Text(_erro!, style: AppTextStyles.corpoCinza));
     }
     if (_ciclo == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Nenhum ciclo de avaliação ativo no momento.',
-              textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
-        ),
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+        children: [
+          _cabecalhoCiclo(),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text('Nenhum ciclo de avaliação ativo no momento.',
+                textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
+          ),
+        ],
       );
     }
     if (_avaliacoes.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Nenhum colaborador no seu setor.',
-              textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
-        ),
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+        children: [
+          _cabecalhoCiclo(),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text('Nenhum colaborador no seu setor.',
+                textAlign: TextAlign.center, style: AppTextStyles.corpoCinza),
+          ),
+        ],
       );
     }
 
@@ -390,10 +625,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
-          Text('Ciclo: ${_ciclo!['nome']}',
-              style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
-          _textoPrazoCiclo(),
-          const SizedBox(height: 14),
+          _cabecalhoCiclo(),
           ..._avaliacoes.map((avaliacao) {
             final colab = avaliacao['colaboradores'] as Map?;
             final concluida = avaliacao['status'] == 'concluida';
@@ -416,7 +648,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: ListTile(
                   onTap: () => _abrirAvaliacao(avaliacao),
-                  leading: CircleAvatar(
+                  leading: FotoClicavel(url: colab?['foto_url'] as String?, nome: colab?['nome'] as String?, child: CircleAvatar(
                     backgroundColor: AppColors.laranja.withOpacity(0.12),
                     backgroundImage: (colab?['foto_url'] as String?)?.isNotEmpty == true
                         ? NetworkImage(colab!['foto_url'] as String)
@@ -428,7 +660,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                                 : '?',
                             style: const TextStyle(color: AppColors.laranja))
                         : null,
-                  ),
+                  )),
                   title: Text(colab?['nome'] as String? ?? '',
                       style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
                   subtitle: Text(colab?['cargo'] as String? ?? '', style: AppTextStyles.corpoMinimo),

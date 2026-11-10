@@ -26,6 +26,10 @@ class FeedPostModel {
   /// Explicação do RH quando o post foi rejeitado.
   final String? motivoRejeicao;
 
+  /// Enquete anexada a um comunicado (`comunicados.enquete_id`); aparece
+  /// dentro do card do comunicado, e não como card solto.
+  final int? enqueteId;
+
   const FeedPostModel({
     required this.id,
     this.autorId,
@@ -40,6 +44,7 @@ class FeedPostModel {
     required this.criadoEm,
     this.status = 'aprovado',
     this.motivoRejeicao,
+    this.enqueteId,
   });
 
   factory FeedPostModel.fromJson(Map<String, dynamic> json) {

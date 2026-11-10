@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -139,6 +140,7 @@ class _PdiGestorScreenState extends State<PdiGestorScreen> {
         colaboradorId: colab.id,
         titulo: dados.$1,
         objetivo: dados.$2,
+        criadoPor: _api.colaboradorAtual?.id.toString(),
       );
       if (!mounted) return;
       await Navigator.push(
@@ -487,6 +489,7 @@ class _PdiDetalheScreenState extends State<_PdiDetalheScreen> {
           pdiGrupoId: widget.grupoId,
           titulo: tituloCtrl.text.trim(),
           tipo: tipo,
+          criadoPor: _api.colaboradorAtual?.id.toString(),
         );
         await _carregar();
       } catch (e) {
@@ -611,6 +614,104 @@ class _PdiDetalheScreenState extends State<_PdiDetalheScreen> {
     if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _enviarTermoCompromisso() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+    try {
+      await _api.criarTermoCompromissoPdi(
+        pdiGrupoId: widget.grupoId,
+        bytes: bytes,
+        nomeArquivo: file.name,
+        criadoPor: _api.colaboradorAtual?.id.toString(),
+      );
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      _erroSnack(context, 'Erro ao enviar termo: $e');
+    }
+  }
+
+  Future<void> _excluirTermo(int termoId) async {
+    if (!await _confirmar('Excluir termo',
+        'Excluir este termo de compromisso? Não dá para desfazer.')) {
+      return;
+    }
+    try {
+      await _api.excluirTermoCompromissoPdi(termoId);
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      _erroSnack(context, 'Erro ao excluir termo: $e');
+    }
+  }
+
+  /// Termo de compromisso do PDI: o gestor anexa (PDF) e o colaborador baixa.
+  Widget _blocoTermo(Map<String, dynamic> g) {
+    final termos = (g['pdi_termos_compromisso'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        [];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Termo de compromisso',
+              style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          if (termos.isEmpty)
+            Text('Nenhum termo anexado ainda.', style: AppTextStyles.corpoCinza),
+          ...termos.map((t) => Row(children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _abrirUrl(t['arquivo_url'] as String),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(children: [
+                        const Icon(Icons.description_outlined,
+                            size: 16, color: AppColors.laranja),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(t['nome_arquivo'] as String? ?? 'termo.pdf',
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.corpoNormal.copyWith(
+                                  color: AppColors.laranja,
+                                  decoration: TextDecoration.underline)),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Excluir termo',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () => _excluirTermo(int.parse(t['id'].toString())),
+                ),
+              ])),
+          TextButton.icon(
+            onPressed: _enviarTermoCompromisso,
+            icon: const Icon(Icons.upload_file_rounded, size: 18),
+            label: const Text('Enviar termo de compromisso (PDF)'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.laranja),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final g = _grupo;
@@ -658,6 +759,7 @@ class _PdiDetalheScreenState extends State<_PdiDetalheScreen> {
           Text('Nenhum plano ainda. Toque em "Novo plano".',
               style: AppTextStyles.corpoCinza),
         ...planos.map(_blocoPlano),
+        _blocoTermo(g),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: _novoPlano,

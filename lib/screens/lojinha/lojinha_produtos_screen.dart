@@ -51,6 +51,15 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   int? _limiteQtdGlobal;
   int? _periodoDiasGlobal;
   int _comprasRecentes = 0;
+  // Limite de itens separado para EXCLUSIVOS (`limite_qtd_exclusivo`).
+  int? _limiteQtdExclusivo;
+  int _comprasRecentesExcl = 0;
+
+  // Estoque visível (SAP − carrinhos ativos de outros) dos produtos regulares,
+  // atualizado periodicamente — outros colaboradores reservam/compram o tempo
+  // todo e sem recarregar o estoque exibido fica velho.
+  Map<String, int> _estoqueVisivel = {};
+  Timer? _estoqueTimer;
 
   Timer? _debounce;
 
@@ -59,10 +68,14 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     super.initState();
     _carregarProdutos();
     _searchCtrl.addListener(_onSearchChanged); // <-- mudar nome do listener
+    _estoqueTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && !_carregando) _atualizarEstoque();
+    });
   }
 
   @override
   void dispose() {
+    _estoqueTimer?.cancel();
     _debounce?.cancel();
     for (final t in _cartTimers.values) t.cancel();
     _searchCtrl.dispose();
@@ -78,11 +91,22 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
   // ── Dados ──────────────────────────────────────────────────────────────────
 
+  /// Centros do SAP; se o SAP não devolver o centro, cai para a filial do
+  /// colaborador (igual ao portal).
+  List<String> _centrosParaListar() {
+    final centros = (widget.dadosFuncionario?.centrosVisiveis ?? [])
+        .where((c) => c.trim().isNotEmpty)
+        .toList();
+    if (centros.isNotEmpty) return centros;
+    final filial = _api.colaboradorAtual?.filialEfetiva;
+    return (filial != null && filial.isNotEmpty) ? [filial] : [];
+  }
+
   Future<void> _carregarProdutos() async {
     setState(() => _carregando = true);
     final colabId = _api.colaboradorAtual?.matricula ?? '';
     final results = await Future.wait([
-      _api.buscarProdutosLojinha(centros: widget.dadosFuncionario?.centrosVisiveis ?? []),
+      _api.buscarProdutosLojinha(centros: _centrosParaListar()),
       _api.buscarConfigLojinha(),
       _api.buscarExclusivosLojinha(),
     ]);
@@ -91,27 +115,69 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     _todos = [...exclusivos, ...regulares];
     final config = results[1] as Map<String, dynamic>;
     final limiteQtd = config['limite_qtd'] as int?;
+    final limiteQtdExcl = config['limite_qtd_exclusivo'] as int?;
     final periodoDias = config['periodo_dias'] as int?;
     int comprasRecentes = 0;
-    if (limiteQtd != null && periodoDias != null && colabId.isNotEmpty) {
-      comprasRecentes = await _api.buscarComprasRecentesColab(colabId, periodoDias);
+    int comprasRecentesExcl = 0;
+    if ((limiteQtd != null || limiteQtdExcl != null) &&
+        periodoDias != null &&
+        colabId.isNotEmpty) {
+      final r = await _api.buscarComprasRecentesPorTipoColab(colabId, periodoDias);
+      comprasRecentes = r.sap;
+      comprasRecentesExcl = r.exclusivo;
     }
     if (!mounted) return;
     setState(() {
       _limiteQtdGlobal = limiteQtd;
+      _limiteQtdExclusivo = limiteQtdExcl;
       _periodoDiasGlobal = periodoDias;
       _comprasRecentes = comprasRecentes;
+      _comprasRecentesExcl = comprasRecentesExcl;
       _carregando = false;
     });
     _aplicarFiltros();
+    _atualizarEstoque();
   }
 
-  int get _totalItensCarrinho => _carrinho.values.fold(0, (s, i) => s + i.quantidade);
+  /// Exclusivos não existem no SAP (não têm centro/deposito válidos), então
+  /// não fazem parte dessa checagem — usam sempre o próprio campo `estoque`.
+  Future<void> _atualizarEstoque() async {
+    final regulares = _todos.where((p) => !p.isExclusivo).toList();
+    if (regulares.isEmpty) return;
+    try {
+      final est = await _api.buscarEstoqueVisivel(regulares);
+      if (!mounted || est.isEmpty) return;
+      setState(() => _estoqueVisivel = est);
+    } catch (_) {}
+  }
+
+  /// Estoque exibido/validado de um produto: exclusivo usa o próprio campo;
+  /// regular usa o estoque visível atualizado (cai no do catálogo se ainda
+  /// não carregou).
+  int _estoqueDe(LojinhaProdutoModel p) {
+    if (p.isExclusivo) return p.estoque.toInt();
+    return _estoqueVisivel[p.material] ??
+        _estoqueVisivel[p.material.replaceAll(RegExp(r'^0+'), '')] ??
+        p.estoque.toInt();
+  }
+
   int get _itensRestantes {
     if (_limiteQtdGlobal == null) return 999;
     return (_limiteQtdGlobal! - _comprasRecentes).clamp(0, _limiteQtdGlobal!);
   }
-  bool get _limiteAtingido => _limiteQtdGlobal != null && _itensRestantes <= 0;
+  int get _itensRestantesExclusivo {
+    if (_limiteQtdExclusivo == null) return 999;
+    return (_limiteQtdExclusivo! - _comprasRecentesExcl)
+        .clamp(0, _limiteQtdExclusivo!);
+  }
+  bool get _limiteAtingido =>
+      (_limiteQtdGlobal != null && _itensRestantes <= 0) ||
+      (_limiteQtdExclusivo != null && _itensRestantesExclusivo <= 0);
+
+  /// Itens no carrinho do mesmo tipo (SAP ou exclusivo) que [exclusivo].
+  int _itensCarrinhoDoTipo(bool exclusivo) => _carrinho.values
+      .where((i) => i.produto.isExclusivo == exclusivo)
+      .fold(0, (s, i) => s + i.quantidade);
 
   void _aplicarFiltros() {
     final busca = _searchCtrl.text.toLowerCase().trim();
@@ -187,12 +253,17 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
   void _adicionar(LojinhaProdutoModel p) {
     final atual = _carrinho[p.id]?.quantidade ?? 0;
-    final limite = p.limiteEfetivo(p.estoque.toInt());
+    final limite = p.limiteEfetivo(_estoqueDe(p));
     if (atual >= limite) return;
-    if (_limiteQtdGlobal != null && _totalItensCarrinho >= _itensRestantes) {
+    // Limite de itens do período por tipo (SAP x exclusivo).
+    final excl = p.isExclusivo;
+    final limiteTipo = excl ? _limiteQtdExclusivo : _limiteQtdGlobal;
+    final restantesTipo = excl ? _itensRestantesExclusivo : _itensRestantes;
+    if (limiteTipo != null && _itensCarrinhoDoTipo(excl) >= restantesTipo) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          'Limite de $_limiteQtdGlobal item${_limiteQtdGlobal != 1 ? 'ns' : ''} a cada $_periodoDiasGlobal dias atingido.',
+          'Você só pode comprar mais $restantesTipo ${restantesTipo != 1 ? 'itens' : 'item'} '
+          '${excl ? "exclusivos" : "SAP"} a cada $_periodoDiasGlobal dias.',
           style: GoogleFonts.poppins(color: Colors.white),
         ),
         backgroundColor: Colors.red.shade700,
@@ -206,7 +277,14 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
           ? _carrinho[p.id]!.quantidade++
           : _carrinho[p.id] = CarrinhoItem(produto: p);
     });
-    _agendarSyncCarrinho(p);
+    // Como no web: adicionar produto regular valida na hora (reserva no
+    // servidor); exclusivos e remoções esperam o debounce.
+    if (!p.isExclusivo) {
+      _cartTimers[p.id]?.cancel();
+      _syncCarrinho(p);
+    } else {
+      _agendarSyncCarrinho(p);
+    }
   }
 
   void _remover(LojinhaProdutoModel p) {
@@ -378,7 +456,14 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
           enviando: _enviando,
           itensRestantes: _itensRestantes,
           limiteQtdGlobal: _limiteQtdGlobal,
+          itensRestantesExclusivo: _itensRestantesExclusivo,
+          limiteQtdExclusivo: _limiteQtdExclusivo,
           periodoDiasGlobal: _periodoDiasGlobal,
+          estoque: _estoqueVisivel,
+          limiteDisp: widget.dadosFuncionario?.limiteDisp,
+          bloqueado: widget.dadosFuncionario?.bloqueado ?? false,
+          sapEsgotado: widget.sapEsgotado,
+          exclusivoEsgotado: widget.exclusivoEsgotado,
         ),
       ),
     ).then((_) => setState(() {})); // rebuild ao voltar para refletir qty alteradas
@@ -724,6 +809,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
                                         itemCount: _filtrados.length,
                                         itemBuilder: (_, i) => _CardProduto(
                                           produto: _filtrados[i],
+                                          estoqueVisivel:
+                                              _estoqueDe(_filtrados[i]),
                                           quantidade:
                                               _carrinho[_filtrados[i].id]
                                                   ?.quantidade ??
@@ -1280,11 +1367,13 @@ class _NivelFiltro extends StatelessWidget {
 
 class _CardProduto extends StatelessWidget {
   final LojinhaProdutoModel produto;
+  final int estoqueVisivel;
   final int quantidade;
   final VoidCallback onAdicionar, onRemover;
 
   const _CardProduto({
     required this.produto,
+    required this.estoqueVisivel,
     required this.quantidade,
     required this.onAdicionar,
     required this.onRemover,
@@ -1354,7 +1443,7 @@ class _CardProduto extends StatelessWidget {
                             color: AppColors.laranja.withOpacity(0.4),
                           ),
                   ),
-                  if (produto.estoque > 0 && produto.estoque <= 3)
+                  if (estoqueVisivel > 0 && estoqueVisivel <= 3)
                     Positioned(
                       bottom: 8,
                       left: 0,

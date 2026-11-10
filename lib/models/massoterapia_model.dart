@@ -10,8 +10,12 @@ class MassoterapiaAgendamentoModel {
   final String status;  // AGENDADO | VEIO | NAO_VEIO | CANCELADO
   final String? observacao;
   final String criadoEm;
+  final bool faltaJustificada; // Sesmt justificou a falta (status NAO_VEIO)
+  final String? justificativa;
 
   MassoterapiaAgendamentoModel({
+    this.faltaJustificada = false,
+    this.justificativa,
     required this.id,
     required this.colaboradorId,
     required this.nomeColaborador,
@@ -38,6 +42,8 @@ class MassoterapiaAgendamentoModel {
       status: json['status'] ?? 'AGENDADO',
       observacao: json['observacao'],
       criadoEm: json['criado_em'] ?? '',
+      faltaJustificada: json['falta_justificada'] as bool? ?? false,
+      justificativa: json['justificativa'] as String?,
     );
   }
 }

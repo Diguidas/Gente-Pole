@@ -41,8 +41,16 @@ class _DocumentosInstitucionaisScreenState extends State<DocumentosInstitucionai
     final url = doc['arquivo_url'] as String?;
     if (url == null) return;
     final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    var ok = false;
+    if (uri != null) {
+      try {
+        ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível abrir o documento.')));
+    }
   }
 
   @override

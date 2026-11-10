@@ -2,9 +2,12 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
+import '../gestor/solicitacoes_gestor_formularios.dart' show DialogUber;
+import 'escolha_cotacao_dialog.dart';
 
 const _corSolicitacoes = Color(0xFF7C3AED);
 
@@ -13,6 +16,7 @@ const Map<String, String> _labelTipoSolicitacao = {
   'comunicado_interno': 'Comunicado Interno',
   'incentivo_educacional': 'Incentivo Educacional',
   'cracha': 'Crachá',
+  'reembolso_sesmt': 'Reembolso SESMT',
   'treinamento': 'Treinamento',
   'rota': 'Rota',
 };
@@ -26,16 +30,18 @@ const Map<String, IconData> _iconeTipoSolicitacao = {
   'rota': Icons.alt_route_outlined,
 };
 
-// Tipos que aparecem no grid de "novo pedido" — 'rota' foi ocultado a
-// pedido, mas continua em _labelTipoSolicitacao/_iconeTipoSolicitacao pra
-// exibir corretamente quem já tem pedido antigo no histórico.
+// Tipos que aparecem no grid de "novo pedido" — igual ao web
+// (solicitacoes_colab_screen.dart). Adesão de Benefício é exclusiva de líder
+// (abre pela tela de Solicitações do gestor).
 const List<String> _tiposAbriveis = [
-  'adesao_beneficio',
   'comunicado_interno',
   'incentivo_educacional',
   'cracha',
   'treinamento',
+  'rota',
 ];
+
+bool _pareceUrl(String v) => v.startsWith('http://') || v.startsWith('https://');
 
 /// Mostra o payload de uma solicitação de forma legível (usado tanto na
 /// tela do colaborador quanto na do gestor).
@@ -60,24 +66,42 @@ class PayloadSolicitacaoView extends StatelessWidget {
         children: entradas
             .map((e) => Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '${e.key}: ',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.dark),
+                  child: _pareceUrl('${e.value}')
+                      ? Row(children: [
+                          Text('${e.key}: ',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.dark)),
+                          GestureDetector(
+                            onTap: () => launchUrl(Uri.parse('${e.value}'),
+                                mode: LaunchMode.externalApplication),
+                            child: Text('Ver anexo',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: _corSolicitacoes,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline)),
+                          ),
+                        ])
+                      : RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: '${e.key}: ',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.dark),
+                              ),
+                              TextSpan(
+                                text: '${e.value}',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12, color: AppColors.cinzaTexto),
+                              ),
+                            ],
+                          ),
                         ),
-                        TextSpan(
-                          text: '${e.value}',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12, color: AppColors.cinzaTexto),
-                        ),
-                      ],
-                    ),
-                  ),
                 ))
             .toList(),
       ),
@@ -87,14 +111,14 @@ class PayloadSolicitacaoView extends StatelessWidget {
 
 /// dd/mm/aaaa a partir do `data_admissao` (ISO ou já dd/mm/aaaa) do
 /// colaborador — usado nos payloads das solicitações.
-String? _formatarDataAdmissao(String? valor) {
+String? formatarDataAdmissao(String? valor) {
   if (valor == null || valor.isEmpty) return null;
   final d = DateTime.tryParse(valor);
   if (d == null) return valor;
   return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
-InputDecoration _decoracaoCampo({String? hint}) => InputDecoration(
+InputDecoration decoracaoCampo({String? hint}) => InputDecoration(
       hintText: hint,
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
@@ -105,10 +129,10 @@ InputDecoration _decoracaoCampo({String? hint}) => InputDecoration(
     );
 
 /// Rótulo + campo, no padrão usado em todos os formulários de solicitação.
-class _CampoRotulado extends StatelessWidget {
+class CampoRotulado extends StatelessWidget {
   final String label;
   final Widget child;
-  const _CampoRotulado({required this.label, required this.child});
+  const CampoRotulado({super.key, required this.label, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -133,21 +157,26 @@ class _CampoRotulado extends StatelessWidget {
 /// Casco comum de todo dialog de "abrir solicitação": título, subtítulo
 /// opcional, corpo rolável definido por quem usa, erro e botões
 /// Cancelar/Enviar. Espelha `SolicitacaoDialogShell` do gentepole_admin.
-class _SolicitacaoDialogShell extends StatelessWidget {
+class SolicitacaoDialogShell extends StatelessWidget {
   final String titulo;
   final String? subtitulo;
   final List<Widget> campos;
   final String? erro;
   final bool enviando;
   final VoidCallback onEnviar;
+  final Color cor;
+  final String labelBotao;
 
-  const _SolicitacaoDialogShell({
+  const SolicitacaoDialogShell({
+    super.key,
     required this.titulo,
     this.subtitulo,
     required this.campos,
     this.erro,
     required this.enviando,
     required this.onEnviar,
+    this.cor = _corSolicitacoes,
+    this.labelBotao = 'Enviar',
   });
 
   @override
@@ -193,7 +222,7 @@ class _SolicitacaoDialogShell extends StatelessWidget {
                   ElevatedButton(
                     onPressed: enviando ? null : onEnviar,
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: _corSolicitacoes,
+                        backgroundColor: cor,
                         foregroundColor: Colors.white),
                     child: enviando
                         ? const SizedBox(
@@ -201,7 +230,7 @@ class _SolicitacaoDialogShell extends StatelessWidget {
                             height: 18,
                             child: CircularProgressIndicator(
                                 color: Colors.white, strokeWidth: 2))
-                        : const Text('Enviar'),
+                        : Text(labelBotao),
                   ),
                 ]),
               ],
@@ -230,6 +259,7 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
   final _api = ApiService();
   bool _loading = true;
   List<Map<String, dynamic>> _minhas = [];
+  Map<int, List<Map<String, dynamic>>> _notasPorSolicitacao = {};
   bool _abaMinhas = false;
 
   @override
@@ -246,9 +276,12 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
       return;
     }
     final minhas = await _api.listarSolicitacoes(abertoPorId: col.id);
+    final notas = await _api
+        .listarNotasSolicitacoes(minhas.map((s) => s['id'] as int).toList());
     if (!mounted) return;
     setState(() {
       _minhas = minhas;
+      _notasPorSolicitacao = notas;
       _loading = false;
     });
   }
@@ -258,12 +291,6 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     if (col == null) return;
     bool? enviado;
     switch (tipo) {
-      case 'adesao_beneficio':
-        enviado = await showDialog<bool>(
-          context: context,
-          builder: (_) => _DialogAdesaoBeneficio(colab: col, api: _api),
-        );
-        break;
       case 'comunicado_interno':
         enviado = await showDialog<bool>(
           context: context,
@@ -291,7 +318,7 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
       case 'rota':
         enviado = await showDialog<bool>(
           context: context,
-          builder: (_) => _DialogRota(colab: col, api: _api),
+          builder: (_) => DialogRota(colab: col, api: _api),
         );
         break;
     }
@@ -442,76 +469,171 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     );
   }
 
+  static const List<(String, String)> _gruposStatus = [
+    ('aberto', 'Em aberto'),
+    ('concluido', 'Concluídas'),
+    ('encerrado', 'Recusadas/Canceladas'),
+  ];
+
+  String _grupoDoStatus(String status) {
+    switch (status) {
+      case 'concluido':
+        return 'concluido';
+      case 'cancelado':
+      case 'recusado_gestor':
+        return 'encerrado';
+      default:
+        return 'aberto';
+    }
+  }
+
   Widget _listaMinhas() {
     if (_minhas.isEmpty) {
       return Center(
           child: Text('Você ainda não abriu nenhuma solicitação.',
               style: GoogleFonts.poppins(color: AppColors.cinzaTexto)));
     }
-    return ListView.separated(
-      itemCount: _minhas.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) {
-        final s = _minhas[i];
-        final tipo = s['tipo'] as String;
-        final status = s['status'] as String? ?? 'pendente';
-        final payload =
-            (s['payload'] as Map?)?.cast<String, dynamic>() ?? {};
-        final podeExtra = tipo == 'adesao_beneficio' &&
-            status != 'concluido' &&
-            status != 'cancelado';
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(_iconeTipoSolicitacao[tipo] ?? Icons.assignment_outlined,
-                  color: _corSolicitacoes, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_labelTipoSolicitacao[tipo] ?? tipo,
-                        style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.dark)),
-                    if (s['motivo_recusa_gestor'] != null)
-                      Text('Motivo: ${s['motivo_recusa_gestor']}',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12, color: AppColors.cinzaTexto)),
-                  ],
-                ),
-              ),
-              _statusChip(status),
-            ]),
-            if (payload.isNotEmpty) ...[
+    final porGrupo = <String, List<Map<String, dynamic>>>{};
+    for (final s in _minhas) {
+      final status = s['status'] as String? ?? 'pendente';
+      porGrupo.putIfAbsent(_grupoDoStatus(status), () => []).add(s);
+    }
+    final grupos = _gruposStatus
+        .where((g) => (porGrupo[g.$1] ?? const []).isNotEmpty)
+        .toList();
+    return RefreshIndicator(
+      onRefresh: _carregar,
+      child: ListView(
+        children: [
+          for (final grupo in grupos) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(grupo.$2,
+                  style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.cinzaTexto)),
+            ),
+            for (final s in porGrupo[grupo.$1]!) ...[
+              _cardSolicitacao(s),
               const SizedBox(height: 8),
-              PayloadSolicitacaoView(payload: payload),
             ],
-            if (podeExtra) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => _solicitarValorExtra(s),
-                  child: Text('Solicitar valor extra',
-                      style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _corSolicitacoes)),
-                ),
-              ),
-            ],
-          ]),
-        );
-      },
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
     );
+  }
+
+  Widget _cardSolicitacao(Map<String, dynamic> s) {
+    final tipo = s['tipo'] as String;
+    final status = s['status'] as String? ?? 'pendente';
+    final podeExtra = tipo == 'adesao_beneficio' &&
+        status != 'concluido' &&
+        status != 'cancelado';
+    return GestureDetector(
+      onTap: () => _abrirDetalhe(s),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(_iconeTipoSolicitacao[tipo] ?? Icons.assignment_outlined,
+                color: _corSolicitacoes, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_labelTipoSolicitacao[tipo] ?? tipo,
+                      style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.dark)),
+                  if (s['motivo_recusa_gestor'] != null)
+                    Text('Motivo: ${s['motivo_recusa_gestor']}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, color: AppColors.cinzaTexto)),
+                ],
+              ),
+            ),
+            _statusChip(status),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right,
+                size: 18, color: AppColors.cinzaTexto),
+          ]),
+          if (tipo == 'rota' && status == 'aguardando_escolha') ...[
+            const SizedBox(height: 8),
+            Text(resumoCotacao(s) ?? '',
+                style: GoogleFonts.poppins(
+                    fontSize: 12, color: AppColors.cinzaTexto)),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final escolha = await mostrarEscolhaCotacao(context, s);
+                  if (escolha == null) return;
+                  final col = _api.colaboradorAtual;
+                  if (escolha == 'uber_flash' && col != null && mounted) {
+                    // Uber Flash escolhido: abre o pedido de Uber já preenchido
+                    // com os dados da rota (o colaborador é o passageiro).
+                    final enviado = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => DialogUber(
+                          gestor: col,
+                          equipe: [col],
+                          api: _api,
+                          rotaOrigem: s),
+                    );
+                    if (enviado == true && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content:
+                              Text('Solicitação de Uber enviada ao Facilites.')));
+                    }
+                  }
+                  _carregar();
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _corSolicitacoes,
+                    foregroundColor: Colors.white),
+                child: const Text('Escolher Frete ou Uber Flash'),
+              ),
+            ),
+          ],
+          if (podeExtra) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => _solicitarValorExtra(s),
+                child: Text('Solicitar valor extra',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _corSolicitacoes)),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _abrirDetalhe(Map<String, dynamic> s) async {
+    final atualizou = await showDialog<bool>(
+      context: context,
+      builder: (_) => _DialogDetalheSolicitacao(
+        solicitacao: s,
+        notas: _notasPorSolicitacao[s['id'] as int] ?? const [],
+        api: _api,
+        autorNome: _api.colaboradorAtual?.nome,
+      ),
+    );
+    if (atualizou == true) _carregar();
   }
 
   Future<void> _solicitarValorExtra(Map<String, dynamic> s) async {
@@ -560,148 +682,246 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     _carregar();
   }
 
-  Widget _statusChip(String status) {
-    final Color cor;
-    final String label;
-    switch (status) {
-      case 'pendente_gestor':
-        cor = const Color(0xFFD97706);
-        label = 'Aguardando gestor';
-        break;
-      case 'recusado_gestor':
-        cor = const Color(0xFFDC2626);
-        label = 'Recusada pelo gestor';
-        break;
-      case 'em_andamento':
-        cor = const Color(0xFF2563EB);
-        label = 'Em andamento';
-        break;
-      case 'concluido':
-        cor = const Color(0xFF16A34A);
-        label = 'Concluído';
-        break;
-      case 'cancelado':
-        cor = const Color(0xFFDC2626);
-        label = 'Cancelado';
-        break;
-      default:
-        cor = const Color(0xFFD97706);
-        label = 'Pendente';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration:
-          BoxDecoration(color: cor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-      child: Text(label,
-          style: GoogleFonts.poppins(
-              fontSize: 11, fontWeight: FontWeight.w700, color: cor)),
-    );
-  }
+  Widget _statusChip(String status) => _statusChipSolicitacao(status);
 }
 
-// ─── Adesão de Benefício ────────────────────────────────────────────────────
+Widget _statusChipSolicitacao(String status) {
+  final (cor, label) = switch (status) {
+    'pendente_gestor' => (const Color(0xFFD97706), 'Aguardando gestor'),
+    'recusado_gestor' => (const Color(0xFFDC2626), 'Recusada pelo gestor'),
+    'aguardando_escolha' => (const Color(0xFF7C3AED), 'Escolha o frete'),
+    'em_andamento' => (const Color(0xFF2563EB), 'Em andamento'),
+    'concluido' => (const Color(0xFF16A34A), 'Concluído'),
+    'cancelado' => (const Color(0xFFDC2626), 'Cancelado'),
+    _ => (const Color(0xFFD97706), 'Pendente'),
+  };
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+        color: cor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+    child: Text(label,
+        style: GoogleFonts.poppins(
+            fontSize: 11, fontWeight: FontWeight.w700, color: cor)),
+  );
+}
 
-const _tiposBeneficio = {
-  'alimentacao': 'Alimentação',
-  'combustivel': 'Combustível',
-  'ajuda_custo': 'Ajuda de Custo',
-};
+// ─── Detalhe de uma solicitação: dados enviados + comentários ───────────────
 
-class _DialogAdesaoBeneficio extends StatefulWidget {
-  final ColaboradorModel colab;
+class _DialogDetalheSolicitacao extends StatefulWidget {
+  final Map<String, dynamic> solicitacao;
+  final List<Map<String, dynamic>> notas;
   final ApiService api;
-  const _DialogAdesaoBeneficio({required this.colab, required this.api});
+  final String? autorNome;
+
+  const _DialogDetalheSolicitacao({
+    required this.solicitacao,
+    required this.notas,
+    required this.api,
+    this.autorNome,
+  });
 
   @override
-  State<_DialogAdesaoBeneficio> createState() => _DialogAdesaoBeneficioState();
+  State<_DialogDetalheSolicitacao> createState() =>
+      _DialogDetalheSolicitacaoState();
 }
 
-class _DialogAdesaoBeneficioState extends State<_DialogAdesaoBeneficio> {
-  String? _tipo;
-  final _valorCtrl = TextEditingController();
-  final _justificativaCtrl = TextEditingController();
+class _DialogDetalheSolicitacaoState extends State<_DialogDetalheSolicitacao> {
+  final _comentarioCtrl = TextEditingController();
   bool _enviando = false;
-  String? _erro;
 
   @override
   void dispose() {
-    _valorCtrl.dispose();
-    _justificativaCtrl.dispose();
+    _comentarioCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _enviar() async {
-    if (_tipo == null ||
-        _valorCtrl.text.trim().isEmpty ||
-        _justificativaCtrl.text.trim().isEmpty) {
-      setState(() => _erro = 'Preencha todos os campos.');
-      return;
-    }
-    setState(() {
-      _enviando = true;
-      _erro = null;
-    });
+  Future<void> _enviarComentario() async {
+    final texto = _comentarioCtrl.text.trim();
+    if (texto.isEmpty) return;
+    setState(() => _enviando = true);
     try {
-      await widget.api.criarSolicitacao(
-        tipo: 'adesao_beneficio',
-        payload: {
-          'Colaborador': widget.colab.nome,
-          'Matrícula': widget.colab.matricula,
-          'Cargo': widget.colab.cargo,
-          if (_formatarDataAdmissao(widget.colab.dataAdmissao) != null)
-            'Data de admissão': _formatarDataAdmissao(widget.colab.dataAdmissao),
-          'Tipo de benefício': _tiposBeneficio[_tipo],
-          'Valor': _valorCtrl.text.trim(),
-          'Justificativa': _justificativaCtrl.text.trim(),
-        },
-        abertoPorId: widget.colab.id,
-        abertoPorNome: widget.colab.nome,
-        abertoPorPapel: 'colaborador',
-        setor: widget.colab.setor,
+      await widget.api.adicionarNotaSolicitacao(
+        solicitacaoId: widget.solicitacao['id'] as int,
+        texto: texto,
+        autorNome: widget.autorNome,
       );
       if (!mounted) return;
+      _comentarioCtrl.clear();
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _enviando = false;
-        _erro = 'Erro ao enviar: $e';
-      });
+      setState(() => _enviando = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao comentar: $e')));
     }
+  }
+
+  String _formatarDataHora(String iso) {
+    final d = DateTime.parse(iso).toLocal();
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final hh = d.hour.toString().padLeft(2, '0');
+    final min = d.minute.toString().padLeft(2, '0');
+    return '$dd/$mm $hh:$min';
   }
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
-      titulo: 'Adesão de Benefício',
-      erro: _erro,
-      enviando: _enviando,
-      onEnviar: _enviar,
-      campos: [
-        _CampoRotulado(
-          label: 'Tipo de benefício',
-          child: DropdownButtonFormField<String>(
-            value: _tipo,
-            decoration: _decoracaoCampo(),
-            items: _tiposBeneficio.entries
-                .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                .toList(),
-            onChanged: (v) => setState(() => _tipo = v),
+    final s = widget.solicitacao;
+    final tipo = s['tipo'] as String;
+    final status = s['status'] as String? ?? 'pendente';
+    final payload = (s['payload'] as Map?)?.cast<String, dynamic>() ?? {};
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 620),
+        child: Container(
+          width: 440,
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(_iconeTipoSolicitacao[tipo] ?? Icons.assignment_outlined,
+                      color: _corSolicitacoes, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_labelTipoSolicitacao[tipo] ?? tipo,
+                        style: GoogleFonts.poppins(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.dark)),
+                  ),
+                ]),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                        'Aberta em ${_formatarDataHora(s['criado_em'] as String)}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, color: AppColors.cinzaTexto)),
+                  ),
+                  _statusChipSolicitacao(status),
+                ]),
+                if (s['motivo_recusa_gestor'] != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Motivo da recusa: ${s['motivo_recusa_gestor']}',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: AppColors.erro)),
+                ],
+                const SizedBox(height: 16),
+                Text('O que você enviou',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.cinzaTexto)),
+                const SizedBox(height: 6),
+                PayloadSolicitacaoView(payload: payload),
+                if (resumoCotacao(s) != null) ...[
+                  const SizedBox(height: 10),
+                  Text(resumoCotacao(s)!,
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: const Color(0xFF92400E))),
+                ],
+                const SizedBox(height: 16),
+                Text('Comentários',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.cinzaTexto)),
+                const SizedBox(height: 6),
+                if (widget.notas.isEmpty)
+                  Text('Nenhum comentário ainda.',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: AppColors.cinzaTexto))
+                else
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: widget.notas
+                          .map((n) => Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 3),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 11.5, color: AppColors.dark),
+                                    children: [
+                                      TextSpan(
+                                        text:
+                                            '${_formatarDataHora(n['criado_em'] as String)}'
+                                            '${n['autor_nome'] != null ? ' · ${n['autor_nome']}' : ''} — ',
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.cinzaTexto),
+                                      ),
+                                      TextSpan(text: n['texto'] as String),
+                                    ],
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _comentarioCtrl,
+                      style: GoogleFonts.poppins(fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Escrever um comentário...',
+                        hintStyle: GoogleFonts.poppins(
+                            fontSize: 13, color: Colors.grey.shade400),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFE2E8F0))),
+                      ),
+                      onSubmitted: (_) => _enviarComentario(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _enviando
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : IconButton(
+                          onPressed: _enviarComentario,
+                          icon: const Icon(Icons.send_rounded,
+                              color: _corSolicitacoes),
+                          tooltip: 'Comentar',
+                        ),
+                ]),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Fechar')),
+                ),
+              ],
+            ),
           ),
         ),
-        _CampoRotulado(
-          label: 'Valor',
-          child: TextField(
-            controller: _valorCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _decoracaoCampo(hint: 'Ex: 250.00'),
-          ),
-        ),
-        _CampoRotulado(
-          label: 'Justificativa',
-          child: TextField(controller: _justificativaCtrl, maxLines: 3, decoration: _decoracaoCampo()),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -783,35 +1003,35 @@ class _DialogComunicadoInternoState extends State<_DialogComunicadoInterno> {
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
+    return SolicitacaoDialogShell(
       titulo: 'Comunicado Interno',
       erro: _erro,
       enviando: _enviando,
       onEnviar: _enviar,
       campos: [
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Tipo de material',
           child: DropdownButtonFormField<String>(
             value: _tipo,
             isExpanded: true,
-            decoration: _decoracaoCampo(),
+            decoration: decoracaoCampo(),
             items: _tiposComunicado.entries
                 .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                 .toList(),
             onChanged: (v) => setState(() => _tipo = v),
           ),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Qual o objetivo do material?',
-          child: TextField(controller: _objetivoCtrl, maxLines: 2, decoration: _decoracaoCampo()),
+          child: TextField(controller: _objetivoCtrl, maxLines: 2, decoration: decoracaoCampo()),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Qual texto acompanhará o material?',
-          child: TextField(controller: _textoCtrl, maxLines: 3, decoration: _decoracaoCampo()),
+          child: TextField(controller: _textoCtrl, maxLines: 3, decoration: decoracaoCampo()),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Observações importantes (opcional)',
-          child: TextField(controller: _obsCtrl, maxLines: 2, decoration: _decoracaoCampo()),
+          child: TextField(controller: _obsCtrl, maxLines: 2, decoration: decoracaoCampo()),
         ),
       ],
     );
@@ -870,8 +1090,8 @@ class _DialogCrachaState extends State<_DialogCracha> {
           'Colaborador': widget.colab.nome,
           'Matrícula': widget.colab.matricula,
           'Cargo': widget.colab.cargo,
-          if (_formatarDataAdmissao(widget.colab.dataAdmissao) != null)
-            'Data de admissão': _formatarDataAdmissao(widget.colab.dataAdmissao),
+          if (formatarDataAdmissao(widget.colab.dataAdmissao) != null)
+            'Data de admissão': formatarDataAdmissao(widget.colab.dataAdmissao),
           'Motivo': _motivosCracha[_motivo],
           'Foto': fotoUrl,
         },
@@ -893,24 +1113,24 @@ class _DialogCrachaState extends State<_DialogCracha> {
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
+    return SolicitacaoDialogShell(
       titulo: 'Solicitação de Crachá',
       erro: _erro,
       enviando: _enviando,
       onEnviar: _enviar,
       campos: [
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Motivo',
           child: DropdownButtonFormField<String>(
             value: _motivo,
-            decoration: _decoracaoCampo(),
+            decoration: decoracaoCampo(),
             items: _motivosCracha.entries
                 .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                 .toList(),
             onChanged: (v) => setState(() => _motivo = v),
           ),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Foto para o crachá',
           child: OutlinedButton.icon(
             onPressed: _escolherFoto,
@@ -1015,15 +1235,15 @@ class _DialogTreinamentoState extends State<_DialogTreinamento> {
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
+    return SolicitacaoDialogShell(
       titulo: 'Solicitar Treinamento',
       erro: _erro,
       enviando: _enviando,
       onEnviar: _enviar,
       campos: [
-        _CampoRotulado(label: 'Público-alvo', child: TextField(controller: _publicoCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Tema', child: TextField(controller: _temaCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(
+        CampoRotulado(label: 'Público-alvo', child: TextField(controller: _publicoCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Tema', child: TextField(controller: _temaCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(
           label: 'Locais do treinamento',
           child: _carregandoFiliais
               ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))
@@ -1048,9 +1268,9 @@ class _DialogTreinamentoState extends State<_DialogTreinamento> {
                   ],
                 ),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Descrição prévia de tópicos e temas',
-          child: TextField(controller: _descricaoCtrl, maxLines: 3, decoration: _decoracaoCampo()),
+          child: TextField(controller: _descricaoCtrl, maxLines: 3, decoration: decoracaoCampo()),
         ),
       ],
     );
@@ -1066,16 +1286,23 @@ const _contasRazaoRota = {
   '31209011': 'PJ Comercial',
 };
 
-class _DialogRota extends StatefulWidget {
+class DialogRota extends StatefulWidget {
   final ColaboradorModel colab;
   final ApiService api;
-  const _DialogRota({required this.colab, required this.api});
+
+  /// Gestor abrindo a rota (Facilites): não precisa da aprovação de outro gestor.
+  final bool comoGestor;
+  const DialogRota(
+      {super.key,
+      required this.colab,
+      required this.api,
+      this.comoGestor = false});
 
   @override
-  State<_DialogRota> createState() => _DialogRotaState();
+  State<DialogRota> createState() => _DialogRotaState();
 }
 
-class _DialogRotaState extends State<_DialogRota> {
+class _DialogRotaState extends State<DialogRota> {
   DateTime _data = DateTime.now();
   TimeOfDay _horaSaida = TimeOfDay.now();
   String _tipo = 'moto';
@@ -1086,6 +1313,7 @@ class _DialogRotaState extends State<_DialogRota> {
   final _descricaoTarefaCtrl = TextEditingController();
   final _procurarPorCtrl = TextEditingController();
   bool _recolhimentoValor = false;
+  final _valorRecolhimentoCtrl = TextEditingController();
   final _justificativaCtrl = TextEditingController();
   String? _contaRazao;
   bool _enviando = false;
@@ -1099,6 +1327,7 @@ class _DialogRotaState extends State<_DialogRota> {
     _localDestinoEnderecoCtrl.dispose();
     _descricaoTarefaCtrl.dispose();
     _procurarPorCtrl.dispose();
+    _valorRecolhimentoCtrl.dispose();
     _justificativaCtrl.dispose();
     super.dispose();
   }
@@ -1111,7 +1340,15 @@ class _DialogRotaState extends State<_DialogRota> {
       setState(() => _erro = 'Preencha origem, destino, justificativa e conta razão.');
       return;
     }
-    if (widget.colab.setor == null || widget.colab.setor!.isEmpty) {
+    final valorRecolhimento = double.tryParse(
+        _valorRecolhimentoCtrl.text.trim().replaceAll(',', '.'));
+    if (_recolhimentoValor &&
+        (valorRecolhimento == null || valorRecolhimento <= 0)) {
+      setState(() => _erro = 'Informe o valor a ser recolhido.');
+      return;
+    }
+    if (!widget.comoGestor &&
+        (widget.colab.setor == null || widget.colab.setor!.isEmpty)) {
       setState(() => _erro = 'Você não tem um setor definido. Fale com o RH.');
       return;
     }
@@ -1120,9 +1357,11 @@ class _DialogRotaState extends State<_DialogRota> {
       _erro = null;
     });
     try {
-      final gestor = await widget.api.buscarGestorDoSetor(
-          widget.colab.setor!, widget.colab.empresa ?? '',
-          colaboradorId: widget.colab.id);
+      final gestor = widget.comoGestor
+          ? widget.colab
+          : await widget.api.buscarGestorDoSetor(
+              widget.colab.setor!, widget.colab.empresa ?? '',
+              colaboradorId: widget.colab.id);
       if (gestor == null) {
         setState(() {
           _enviando = false;
@@ -1148,13 +1387,16 @@ class _DialogRotaState extends State<_DialogRota> {
           'Descrição da tarefa': _descricaoTarefaCtrl.text.trim(),
           'Procurar por': _procurarPorCtrl.text.trim(),
           'Recolhimento de valor': _recolhimentoValor ? 'Sim' : 'Não',
+          if (_recolhimentoValor)
+            'Valor a recolher':
+                'R\$ ${valorRecolhimento!.toStringAsFixed(2).replaceAll('.', ',')}',
           'Justificativa': _justificativaCtrl.text.trim(),
         },
         abertoPorId: widget.colab.id,
         abertoPorNome: widget.colab.nome,
-        abertoPorPapel: 'colaborador',
+        abertoPorPapel: widget.comoGestor ? 'gestor' : 'colaborador',
         setor: widget.colab.setor,
-        requerAprovacaoGestor: true,
+        requerAprovacaoGestor: !widget.comoGestor,
         gestorId: gestor.id,
         gestorNome: gestor.nome,
       );
@@ -1171,16 +1413,18 @@ class _DialogRotaState extends State<_DialogRota> {
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
+    return SolicitacaoDialogShell(
       titulo: 'Solicitar Rota',
-      subtitulo: 'Vai passar pela aprovação do seu gestor antes de ir para o RH.',
+      subtitulo: widget.comoGestor
+          ? 'Vai direto para o Facilites.'
+          : 'Vai passar pela aprovação do seu gestor antes de ir para o Facilites.',
       erro: _erro,
       enviando: _enviando,
       onEnviar: _enviar,
       campos: [
         Row(children: [
           Expanded(
-            child: _CampoRotulado(
+            child: CampoRotulado(
               label: 'Data',
               child: OutlinedButton(
                 onPressed: () async {
@@ -1194,7 +1438,7 @@ class _DialogRotaState extends State<_DialogRota> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: _CampoRotulado(
+            child: CampoRotulado(
               label: 'Horário de saída',
               child: OutlinedButton(
                 onPressed: () async {
@@ -1206,7 +1450,7 @@ class _DialogRotaState extends State<_DialogRota> {
             ),
           ),
         ]),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Tipo',
           child: SegmentedButton<String>(
             segments: const [
@@ -1217,13 +1461,13 @@ class _DialogRotaState extends State<_DialogRota> {
             onSelectionChanged: (v) => setState(() => _tipo = v.first),
           ),
         ),
-        _CampoRotulado(label: 'Nome do local de saída', child: TextField(controller: _localSaidaNomeCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Endereço de saída', child: TextField(controller: _localSaidaEnderecoCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Nome do local de destino', child: TextField(controller: _localDestinoNomeCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Endereço de destino', child: TextField(controller: _localDestinoEnderecoCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Descrição da tarefa', child: TextField(controller: _descricaoTarefaCtrl, maxLines: 2, decoration: _decoracaoCampo())),
-        _CampoRotulado(label: 'Procurar por (opcional)', child: TextField(controller: _procurarPorCtrl, decoration: _decoracaoCampo())),
-        _CampoRotulado(
+        CampoRotulado(label: 'Nome do local de saída', child: TextField(controller: _localSaidaNomeCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Endereço de saída', child: TextField(controller: _localSaidaEnderecoCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Nome do local de destino', child: TextField(controller: _localDestinoNomeCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Endereço de destino', child: TextField(controller: _localDestinoEnderecoCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Descrição da tarefa', child: TextField(controller: _descricaoTarefaCtrl, maxLines: 2, decoration: decoracaoCampo())),
+        CampoRotulado(label: 'Procurar por (opcional)', child: TextField(controller: _procurarPorCtrl, decoration: decoracaoCampo())),
+        CampoRotulado(
           label: 'Recolhimento de valor?',
           child: SegmentedButton<bool>(
             segments: const [ButtonSegment(value: true, label: Text('Sim')), ButtonSegment(value: false, label: Text('Não'))],
@@ -1231,13 +1475,23 @@ class _DialogRotaState extends State<_DialogRota> {
             onSelectionChanged: (v) => setState(() => _recolhimentoValor = v.first),
           ),
         ),
-        _CampoRotulado(label: 'Justificativa', child: TextField(controller: _justificativaCtrl, maxLines: 2, decoration: _decoracaoCampo())),
-        _CampoRotulado(
+        if (_recolhimentoValor)
+          CampoRotulado(
+            label: 'Valor a ser recolhido (R\$)',
+            child: TextField(
+              controller: _valorRecolhimentoCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: decoracaoCampo(hint: '0,00'),
+            ),
+          ),
+        CampoRotulado(label: 'Justificativa', child: TextField(controller: _justificativaCtrl, maxLines: 2, decoration: decoracaoCampo())),
+        CampoRotulado(
           label: 'Conta razão (serviços profissionais contratados)',
           child: DropdownButtonFormField<String>(
             value: _contaRazao,
             isExpanded: true,
-            decoration: _decoracaoCampo(),
+            decoration: decoracaoCampo(),
             items: _contasRazaoRota.entries.map((e) => DropdownMenuItem(value: e.key, child: Text('${e.key} - ${e.value}'))).toList(),
             onChanged: (v) => setState(() => _contaRazao = v),
           ),
@@ -1247,7 +1501,7 @@ class _DialogRotaState extends State<_DialogRota> {
   }
 }
 
-// ─── Incentivo Educacional (passa por aprovação do gestor) ─────────────────
+// ─── Incentivo Educacional (direto para o DP, sem aprovação do gestor) ──────
 
 class _DialogIncentivoEducacional extends StatefulWidget {
   final ColaboradorModel colab;
@@ -1287,27 +1541,12 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
       setState(() => _erro = 'Preencha a justificativa.');
       return;
     }
-    if (widget.colab.setor == null || widget.colab.setor!.isEmpty) {
-      setState(() => _erro = 'Você não tem um setor definido. Fale com o RH.');
-      return;
-    }
     setState(() {
       _enviando = true;
       _erro = null;
     });
 
     try {
-      final gestor = await widget.api.buscarGestorDoSetor(
-          widget.colab.setor!, widget.colab.empresa ?? '',
-          colaboradorId: widget.colab.id);
-      if (gestor == null) {
-        setState(() {
-          _enviando = false;
-          _erro = 'Nenhum gestor encontrado para o seu setor. Fale com o RH.';
-        });
-        return;
-      }
-
       final anexoUrl = await widget.api.uploadAnexoSolicitacao(
         Uint8List.fromList(_comprovante!.bytes!),
         _comprovante!.name,
@@ -1320,8 +1559,8 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
           'Matrícula': widget.colab.matricula,
           'Cargo': widget.colab.cargo,
           'Setor': widget.colab.setor,
-          if (_formatarDataAdmissao(widget.colab.dataAdmissao) != null)
-            'Data de admissão': _formatarDataAdmissao(widget.colab.dataAdmissao),
+          if (formatarDataAdmissao(widget.colab.dataAdmissao) != null)
+            'Data de admissão': formatarDataAdmissao(widget.colab.dataAdmissao),
           'Justificativa': _justificativaCtrl.text.trim(),
           'Comprovante': anexoUrl,
         },
@@ -1329,9 +1568,6 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
         abertoPorNome: widget.colab.nome,
         abertoPorPapel: 'colaborador',
         setor: widget.colab.setor,
-        requerAprovacaoGestor: true,
-        gestorId: gestor.id,
-        gestorNome: gestor.nome,
       );
 
       if (!mounted) return;
@@ -1347,14 +1583,14 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
 
   @override
   Widget build(BuildContext context) {
-    return _SolicitacaoDialogShell(
+    return SolicitacaoDialogShell(
       titulo: 'Incentivo Educacional',
-      subtitulo: 'Vai passar pela aprovação do seu gestor antes de ir para o RH.',
+      subtitulo: 'Cai direto na fila do DP (é só o comprovante de uso do incentivo).',
       erro: _erro,
       enviando: _enviando,
       onEnviar: _enviar,
       campos: [
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Comprovante',
           child: OutlinedButton.icon(
             onPressed: _escolherComprovante,
@@ -1367,12 +1603,12 @@ class _DialogIncentivoEducacionalState extends State<_DialogIncentivoEducacional
             ),
           ),
         ),
-        _CampoRotulado(
+        CampoRotulado(
           label: 'Justificativa',
           child: TextField(
             controller: _justificativaCtrl,
             maxLines: 3,
-            decoration: _decoracaoCampo(hint: 'Explique o motivo do pedido'),
+            decoration: decoracaoCampo(hint: 'Explique o motivo do pedido'),
           ),
         ),
       ],

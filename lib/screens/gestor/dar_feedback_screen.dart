@@ -51,6 +51,13 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
 
   bool _presencial = false;
 
+  // Quando o modelo escolhido tem perguntas estruturadas, cada uma ganha seu
+  // próprio campo de resposta (em vez do único _textoCtrl).
+  List<Map<String, dynamic>> _perguntasModelo = [];
+  final List<TextEditingController> _respostasPerguntas = [];
+  String? _tituloFeedbackModelo;
+  String? _objetivoModelo;
+
   @override
   void initState() {
     super.initState();
@@ -72,13 +79,30 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
     _buscaCtrl.dispose();
     _textoCtrl.dispose();
     _notasInternasCtrl.dispose();
+    for (final c in _respostasPerguntas) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  /// Só quem está sob a liderança do gestor logado (mesma regra do web:
+  /// equipe do gestor via setores efetivos + colaborador_hierarquia).
+  Future<List<Map<String, dynamic>>> _minhaEquipe() async {
+    final equipe = await _api.buscarMinhaEquipe();
+    return equipe
+        .map((c) => <String, dynamic>{
+              'id': c.id,
+              'nome': c.nome,
+              'setor': c.setor,
+              'cargo': c.cargo,
+            })
+        .toList();
   }
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
     final resultados = await Future.wait([
-      _api.buscarTodosColaboradores(),
+      _minhaEquipe(),
       _api.listarItensEmpresaFeedback(),
       _api.listarModelosFeedback(apenasAtivos: true),
       _api.listarGruposItensEmpresaFeedback(),
@@ -113,10 +137,27 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
   void _selecionarModelo(int? modeloId) {
     setState(() {
       _modeloSelecionadoId = modeloId;
+      for (final c in _respostasPerguntas) {
+        c.dispose();
+      }
+      _respostasPerguntas.clear();
+      _perguntasModelo = [];
+      _tituloFeedbackModelo = null;
+      _objetivoModelo = null;
       if (modeloId == null) {
         _textoCtrl.clear();
+        return;
+      }
+      final modelo = _modelos.firstWhere((m) => m['id'] == modeloId);
+      final perguntas = modelo['perguntas'] as List?;
+      if (perguntas != null && perguntas.isNotEmpty) {
+        _textoCtrl.clear();
+        _perguntasModelo = List<Map<String, dynamic>>.from(perguntas);
+        _respostasPerguntas.addAll(
+            List.generate(_perguntasModelo.length, (_) => TextEditingController()));
+        _tituloFeedbackModelo = modelo['titulo_feedback'] as String?;
+        _objetivoModelo = modelo['objetivo'] as String?;
       } else {
-        final modelo = _modelos.firstWhere((m) => m['id'] == modeloId);
         _textoCtrl.text = modelo['texto'] as String? ?? '';
       }
     });
@@ -124,8 +165,34 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
 
   bool get _podeEnviar =>
       _colaboradorSelecionado != null &&
-      _textoCtrl.text.trim().isNotEmpty &&
+      (_perguntasModelo.isNotEmpty
+          ? _respostasPerguntas.every((c) => c.text.trim().isNotEmpty)
+          : _textoCtrl.text.trim().isNotEmpty) &&
       _itensEmpresa.every((item) => _notasPorItem[item['id'] as int] != null);
+
+  /// Texto final em markdown: com perguntas, título/objetivo do modelo +
+  /// "**pergunta**/legenda/resposta" (igual ao web).
+  String get _textoFinal {
+    if (_perguntasModelo.isEmpty) return _textoCtrl.text.trim();
+    final buffer = StringBuffer();
+    if ((_tituloFeedbackModelo ?? '').isNotEmpty) {
+      buffer.writeln('**$_tituloFeedbackModelo**');
+      buffer.writeln();
+    }
+    if ((_objetivoModelo ?? '').isNotEmpty) {
+      buffer.writeln('**Objetivo:** $_objetivoModelo');
+      buffer.writeln();
+    }
+    for (var i = 0; i < _perguntasModelo.length; i++) {
+      final titulo = _perguntasModelo[i]['titulo'] as String? ?? '';
+      final legenda = _perguntasModelo[i]['legenda'] as String? ?? '';
+      buffer.writeln('**$titulo**');
+      if (legenda.isNotEmpty) buffer.writeln(legenda);
+      buffer.writeln(_respostasPerguntas[i].text.trim());
+      if (i < _perguntasModelo.length - 1) buffer.writeln();
+    }
+    return buffer.toString().trim();
+  }
 
   Future<void> _enviar() async {
     if (!_podeEnviar || _enviando) return;
@@ -137,7 +204,7 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
       final feedbackId = await _api.criarFeedbackAvaliacao(
         colaboradorId: _colaboradorSelecionado!['id'] as int,
         autorId: autorId,
-        texto: _textoCtrl.text.trim(),
+        texto: _textoFinal,
         anonimo: false,
         presencial: _presencial,
         anotacoesInternas: _notasInternasCtrl.text.trim().isEmpty
@@ -307,6 +374,61 @@ class _DarFeedbackScreenState extends State<DarFeedbackScreen> {
                                   ),
                                 const SizedBox(height: 14),
 
+                                if (_perguntasModelo.isNotEmpty) ...[
+                                  if ((_tituloFeedbackModelo ?? '').isNotEmpty) ...[
+                                    Text(_tituloFeedbackModelo!,
+                                        style: AppTextStyles.corpoMedio
+                                            .copyWith(fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 4),
+                                  ],
+                                  if ((_objetivoModelo ?? '').isNotEmpty) ...[
+                                    Text('Objetivo: $_objetivoModelo',
+                                        style: AppTextStyles.corpoMenor),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  for (var i = 0; i < _perguntasModelo.length; i++)
+                                    Container(
+                                      width: double.infinity,
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(_perguntasModelo[i]['titulo'] as String? ?? '',
+                                              style: AppTextStyles.corpoMedio
+                                                  .copyWith(fontWeight: FontWeight.w700)),
+                                          if ((_perguntasModelo[i]['legenda'] as String? ?? '')
+                                              .isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(_perguntasModelo[i]['legenda'] as String,
+                                                style: AppTextStyles.corpoMenor),
+                                          ],
+                                          const SizedBox(height: 8),
+                                          TextField(
+                                            controller: _respostasPerguntas[i],
+                                            maxLines: 4,
+                                            onChanged: (_) => setState(() {}),
+                                            style: AppTextStyles.corpoNormal,
+                                            decoration: InputDecoration(
+                                              hintText: 'Sua resposta...',
+                                              hintStyle: AppTextStyles.corpoCinza,
+                                              filled: true,
+                                              fillColor: AppColors.cinzaClaro,
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                                borderSide: BorderSide.none,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ] else
                                 TextField(
                                   controller: _textoCtrl,
                                   maxLines: 5,

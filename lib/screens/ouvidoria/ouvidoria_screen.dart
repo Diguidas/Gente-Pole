@@ -29,6 +29,9 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
   PlatformFile? _anexo;
 
   bool _salvando = false;
+  int _aba = 0;
+  bool _carregandoRelatos = false;
+  List<Map<String, dynamic>>? _relatos;
 
   static const Color _cor = Color(0xFF64748B);
 
@@ -176,14 +179,24 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Fale com a Gente', style: AppTextStyles.tituloGrande),
-                Text('Fale com a gente',
+                Text('Relate ocorrências, sugestões ou denúncias',
                     style: AppTextStyles.corpoBranco
                         .copyWith(color: AppColors.cinzaTexto)),
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Row(
+              children: [
+                _chipAba('Novo relato', 0),
+                const SizedBox(width: 8),
+                _chipAba('Meus relatos', 1),
+              ],
+            ),
+          ),
           Expanded(
-                  child: Container(
+                  child: _aba == 1 ? _meusRelatos() : Container(
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(
@@ -421,6 +434,271 @@ class _OuvidoriaScreenState extends State<OuvidoriaScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  // ─── Aba "Meus relatos" ───────────────────────────────────────────────────
+
+  Widget _chipAba(String label, int idx) {
+    final sel = _aba == idx;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _aba = idx);
+        if (idx == 1) _carregarRelatos();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? _cor : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: sel ? _cor : Colors.grey.shade300),
+        ),
+        child: Text(label,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: sel ? Colors.white : Colors.black87,
+            )),
+      ),
+    );
+  }
+
+  Future<void> _carregarRelatos() async {
+    setState(() => _carregandoRelatos = true);
+    final r = await _api.listarMeusRelatosOuvidoria();
+    if (!mounted) return;
+    setState(() {
+      _relatos = r;
+      _carregandoRelatos = false;
+    });
+  }
+
+  static String _statusLabel(String? s) {
+    switch (s) {
+      case 'em_andamento':
+        return 'Em andamento';
+      case 'encerrada':
+      case 'encerrado':
+        return 'Encerrado';
+      default:
+        return 'Pendente';
+    }
+  }
+
+  static Color _statusCor(String? s) {
+    switch (s) {
+      case 'em_andamento':
+        return const Color(0xFF2563EB);
+      case 'encerrada':
+      case 'encerrado':
+        return const Color(0xFF16A34A);
+      default:
+        return const Color(0xFFF59E0B);
+    }
+  }
+
+  static String _fmtData(dynamic iso) {
+    final d = DateTime.tryParse('${iso ?? ''}')?.toLocal();
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  Widget _chipStatus(String? status) {
+    final cor = _statusCor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(_statusLabel(status),
+          style: GoogleFonts.poppins(
+              fontSize: 11, fontWeight: FontWeight.w700, color: cor)),
+    );
+  }
+
+  Widget _meusRelatos() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8F9FC),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: _carregandoRelatos
+          ? const Center(child: CircularProgressIndicator(color: _cor))
+          : RefreshIndicator(
+              color: _cor,
+              onRefresh: _carregarRelatos,
+              child: (_relatos ?? []).isEmpty
+                  ? ListView(
+                      padding: const EdgeInsets.all(40),
+                      children: [
+                        Icon(Icons.inbox_outlined,
+                            size: 56, color: Colors.grey.shade400),
+                        const SizedBox(height: 12),
+                        Text('Você ainda não enviou nenhum relato.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                                fontSize: 14, color: Colors.grey.shade600)),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+                      itemCount: _relatos!.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) => _cardRelato(_relatos![i]),
+                    ),
+            ),
+    );
+  }
+
+  Widget _cardRelato(Map<String, dynamic> r) {
+    final tipo = _tiposOuvidoria['${r['tipo']}'] ?? '${r['tipo'] ?? ''}';
+    final resposta = (r['resposta_colaborador'] as String?)?.trim() ?? '';
+    return GestureDetector(
+      onTap: () => _abrirDetalheRelato(r),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('${r['assunto'] ?? '(sem assunto)'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                          fontSize: 14, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(width: 8),
+                _chipStatus(r['status'] as String?),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+                [tipo, _fmtData(r['criado_em']), if (r['anonimo'] == true) 'Anônimo']
+                    .where((e) => e.isNotEmpty)
+                    .join(' · '),
+                style: GoogleFonts.poppins(
+                    fontSize: 12, color: Colors.grey.shade600)),
+            if (resposta.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.reply_rounded, size: 14, color: _cor),
+                  const SizedBox(width: 4),
+                  Text('Respondido',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _cor)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _abrirDetalheRelato(Map<String, dynamic> r) {
+    final tipo = _tiposOuvidoria['${r['tipo']}'] ?? '${r['tipo'] ?? ''}';
+    final resposta = (r['resposta_colaborador'] as String?)?.trim() ?? '';
+    final ocorrido = (r['ocorrido'] as String?)?.trim() ?? '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('${r['assunto'] ?? '(sem assunto)'}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 8),
+                  _chipStatus(r['status'] as String?),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                  [tipo, _fmtData(r['criado_em']), if (r['anonimo'] == true) 'Anônimo']
+                      .where((e) => e.isNotEmpty)
+                      .join(' · '),
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(height: 16),
+              Text('O que você relatou',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(ocorrido.isNotEmpty ? ocorrido : '—',
+                    style: GoogleFonts.poppins(fontSize: 13)),
+              ),
+              const SizedBox(height: 16),
+              Text('Resposta do RH',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _cor)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _cor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                    resposta.isNotEmpty
+                        ? resposta
+                        : 'Ainda não há resposta do RH.',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: resposta.isNotEmpty
+                            ? null
+                            : Colors.grey.shade600)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

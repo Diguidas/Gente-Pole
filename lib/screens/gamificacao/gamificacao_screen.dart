@@ -21,6 +21,8 @@ class _GamificacaoScreenState extends State<GamificacaoScreen> {
   List<Map<String, dynamic>> _ranking = [];
   Map<String, dynamic>? _meta;
   int _meusPontos = 0;
+  int? _minhaPosicao;
+  int? _totalFilial;
 
   @override
   void initState() {
@@ -44,8 +46,21 @@ class _GamificacaoScreenState extends State<GamificacaoScreen> {
       final ranking = await _api.buscarRankingPontosDaMinhaFilial();
       final meta = await _api.buscarMetaPontos();
       final pontos = await _api.buscarMeusPontos();
+      int? minhaPosicao;
+      int? totalFilial;
+      final filial = _api.colaboradorAtual?.filialEfetiva;
+      if (filial != null && filial.isNotEmpty) {
+        try {
+          final r = await _api.buscarMinhaPosicaoRanking(
+              branch: filial, meusPontos: pontos);
+          minhaPosicao = r.posicao;
+          totalFilial = r.totalFilial;
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() {
+          _minhaPosicao = minhaPosicao;
+          _totalFilial = totalFilial;
           _acoes = acoes;
           _ranking = ranking;
           _meta = meta;
@@ -108,6 +123,14 @@ class _GamificacaoScreenState extends State<GamificacaoScreen> {
                                 progresso: progresso,
                                 recompensa: recompensa,
                               ),
+                              if (_minhaPosicao != null && _totalFilial != null) ...[
+                                const SizedBox(height: 16),
+                                _CardMinhaPosicao(
+                                  posicao: _minhaPosicao!,
+                                  total: _totalFilial!,
+                                  pontos: _meusPontos,
+                                ),
+                              ],
                               const SizedBox(height: 24),
                               Text('Como ganhar $nomeMoeda',
                                   style: GoogleFonts.poppins(
@@ -321,6 +344,87 @@ class _RankingTile extends StatelessWidget {
         Text('$pontos pts',
             style: GoogleFonts.poppins(
                 fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.magenta)),
+      ]),
+    );
+  }
+}
+
+/// Card fixo com a posicao do colaborador no ranking da filial — sempre
+/// visivel, mesmo quando ele nao aparece na lista abaixo.
+class _CardMinhaPosicao extends StatelessWidget {
+  final int posicao;
+  final int total;
+  final int pontos;
+  const _CardMinhaPosicao({
+    required this.posicao,
+    required this.total,
+    required this.pontos,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final corMedalha = switch (posicao) {
+      1 => const Color(0xFFD4AF37),
+      2 => const Color(0xFF9AA5B1),
+      3 => const Color(0xFFB08D57),
+      _ => null,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        gradient: AppColors.gradientePrincipal,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.laranja.withOpacity(0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(children: [
+        Container(
+          width: 52,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: corMedalha != null
+              ? Icon(Icons.emoji_events_rounded, size: 28, color: corMedalha)
+              : Text('$posicaoº',
+                  style: GoogleFonts.poppins(
+                      fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Sua posição no ranking',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withOpacity(0.85))),
+              const SizedBox(height: 2),
+              Text('$posicaoº lugar de $total na filial',
+                  style: GoogleFonts.poppins(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+            ],
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text('$pontos',
+                style: GoogleFonts.poppins(
+                    fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
+            Text(nomeMoeda,
+                style: GoogleFonts.poppins(
+                    fontSize: 11, color: Colors.white.withOpacity(0.85))),
+          ],
+        ),
       ]),
     );
   }

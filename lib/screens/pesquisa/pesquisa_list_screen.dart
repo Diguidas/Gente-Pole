@@ -42,6 +42,7 @@ class _PesquisaListScreenState extends State<PesquisaListScreen> {
                   titulo: p['titulo'] as String? ?? '',
                   anonima: p['anonima'] as bool? ?? false,
                   pedirOptIn: p['pedir_opt_in'] as bool? ?? false,
+                  descricao: p['descricao'] as String?,
                 ),
               ),
             );
@@ -198,6 +199,7 @@ class _PesquisaListScreenState extends State<PesquisaListScreen> {
                     titulo: titulo,
                     anonima: anonima,
                     pedirOptIn: pedirOptIn,
+                    descricao: p['descricao'] as String?,
                   ),
                 ),
               );

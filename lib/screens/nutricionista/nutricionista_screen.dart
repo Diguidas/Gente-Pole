@@ -77,7 +77,11 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
     final meuId = _api.colaboradorAtual?.id;
     if (meuId == null) return null;
     try {
-      return _agendamentos.firstWhere((a) => a.colaboradorId == meuId);
+      // Só o agendamento do dia selecionado (como no portal): agendar em
+      // outro dia não é bloqueado por um agendamento em dia diferente.
+      return _agendamentos.firstWhere((a) =>
+          a.colaboradorId == meuId &&
+          (_dataSelecionada == null || a.data == _dataSelecionada));
     } catch (_) {
       return null;
     }
@@ -182,6 +186,12 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
       return;
     }
     setState(() => _salvando = true);
+    if (await _api.jaTemAgendamentoNutricionistaNoDia(_dataSelecionada!)) {
+      if (!mounted) return;
+      setState(() => _salvando = false);
+      _mostrarErro('Você já tem um agendamento nesse dia.');
+      return;
+    }
     final ok = await _api.agendarNutricionista(
       data: _dataSelecionada!,
       horario: _horarioSelecionado!,

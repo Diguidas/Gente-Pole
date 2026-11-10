@@ -1,3 +1,4 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
@@ -20,7 +21,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   @override
   void initState() {
     super.initState();
-    _futureEquipe = _api.buscarMinhaEquipeVisao();
+    _futureEquipe = _carregarEquipe();
     _buscaCtrl.addListener(() => setState(() => _busca = _buscaCtrl.text));
   }
 
@@ -28,6 +29,25 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   void dispose() {
     _buscaCtrl.dispose();
     super.dispose();
+  }
+
+  /// Carrega a equipe com as mesmas mensagens de erro do web.
+  Future<List<ColaboradorModel>> _carregarEquipe() async {
+    if (_api.colaboradorAtual == null) {
+      throw 'Perfil de colaborador não encontrado.';
+    }
+    try {
+      final setores = await _api.buscarSetoresEfetivosDoGestor();
+      if (setores.isEmpty) throw 'Nenhum setor associado a este gestor.';
+      return await _api.buscarMinhaEquipeVisao();
+    } catch (e) {
+      if (e is String) rethrow;
+      throw 'Erro ao carregar equipe: $e';
+    }
+  }
+
+  void _recarregar() {
+    setState(() => _futureEquipe = _carregarEquipe());
   }
 
   List<ColaboradorModel> _filtrar(List<ColaboradorModel> equipe) {
@@ -138,6 +158,37 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                           );
                         }
 
+                        if (snap.hasError) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.error_outline,
+                                      size: 48, color: AppColors.cinzaTexto),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '${snap.error}',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.poppins(
+                                        color: AppColors.cinzaTexto),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: _recarregar,
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.laranja),
+                                    child: Text('Tentar novamente',
+                                        style: GoogleFonts.poppins(
+                                            color: Colors.white)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
                         final equipeCompleta = snap.data ?? [];
                         final equipe = _filtrar(equipeCompleta);
 
@@ -172,9 +223,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                         return RefreshIndicator(
                           color: AppColors.magenta,
                           onRefresh: () async {
-                            setState(() {
-                              _futureEquipe = _api.buscarMinhaEquipeVisao();
-                            });
+                            _recarregar();
                           },
                           child: ListView(
                             padding:
@@ -264,7 +313,13 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
         .join();
     final dias = _diasParaAniversario(c.dataNascimento);
 
-    return Container(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => showDialog(
+        context: context,
+        builder: (_) => _DadosColaboradorDialog(colaborador: c),
+      ),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -278,7 +333,10 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
       child: Row(
         children: [
           // Avatar
-          Container(
+          FotoClicavel(
+            url: c.fotoUrl,
+            nome: c.nome,
+            child: Container(
             width: 48,
             height: 48,
             decoration: BoxDecoration(
@@ -293,6 +351,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                             _avatarIniciais(iniciais)),
                   )
                 : _avatarIniciais(iniciais),
+          ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -335,6 +394,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -346,6 +406,189 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
           fontSize: 16,
           fontWeight: FontWeight.w700,
           color: AppColors.laranja,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Dados do colaborador (abre ao tocar no card) ────────────────────────────
+//
+// Só dados cadastrais e hierarquia. Exames, pesquisas respondidas, SAP e CPF
+// ficam de fora de propósito (mesma regra do web).
+
+class _DadosColaboradorDialog extends StatefulWidget {
+  final ColaboradorModel colaborador;
+  const _DadosColaboradorDialog({required this.colaborador});
+
+  @override
+  State<_DadosColaboradorDialog> createState() =>
+      _DadosColaboradorDialogState();
+}
+
+class _DadosColaboradorDialogState extends State<_DadosColaboradorDialog> {
+  List<Map<String, dynamic>> _hierarquia = [];
+  Map<String, dynamic>? _extras;
+
+  static const _niveis = {
+    'gerente_geral': 'Gerente Geral',
+    'gestor': 'Gestor',
+    'coordenador': 'Coordenador',
+    'supervisor': 'Supervisor',
+    'encarregado': 'Encarregado',
+    'lider': 'Líder',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final api = ApiService();
+    final id = widget.colaborador.id;
+    api.buscarHierarquiaResolvidaDoColaborador(id).then((h) {
+      if (mounted) setState(() => _hierarquia = h);
+    }).catchError((_) {});
+    api.buscarDadosExtrasColaborador(id).then((e) {
+      if (mounted) setState(() => _extras = e);
+    }).catchError((_) {});
+  }
+
+  String _fmt(String? iso) {
+    final dt = DateTime.tryParse(iso ?? '');
+    if (dt == null) return '—';
+    String p(int n) => n.toString().padLeft(2, '0');
+    return '${p(dt.day)}/${p(dt.month)}/${dt.year}';
+  }
+
+  /// "2 anos e 3 meses" a partir da admissão.
+  String? _tempoDeCasa(String? iso) {
+    final dt = DateTime.tryParse(iso ?? '');
+    if (dt == null) return null;
+    final hoje = DateTime.now();
+    var meses = (hoje.year - dt.year) * 12 + hoje.month - dt.month;
+    if (hoje.day < dt.day) meses--;
+    if (meses < 1) return 'menos de 1 mês';
+    final anos = meses ~/ 12;
+    final resto = meses % 12;
+    final partes = [
+      if (anos > 0) '$anos ${anos == 1 ? 'ano' : 'anos'}',
+      if (resto > 0) '$resto ${resto == 1 ? 'mês' : 'meses'}',
+    ];
+    return partes.join(' e ');
+  }
+
+  Widget _item(String rotulo, String? valor) {
+    if (valor == null || valor.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(rotulo,
+            style: GoogleFonts.poppins(
+                fontSize: 11, color: AppColors.cinzaTexto)),
+        SelectableText(valor,
+            style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppColors.dark)),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colaborador;
+    final nome = c.nome;
+    final fotoUrl = c.fotoUrl;
+    final iniciais = nome
+        .trim()
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .take(2)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    final admissao = c.dataAdmissao;
+    final tempo = _tempoDeCasa(admissao);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 640),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: AppColors.laranja.withOpacity(0.12),
+                  backgroundImage: fotoUrl != null && fotoUrl.isNotEmpty
+                      ? NetworkImage(fotoUrl)
+                      : null,
+                  child: fotoUrl == null || fotoUrl.isEmpty
+                      ? Text(iniciais,
+                          style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.laranja))
+                      : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(nome,
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.dark)),
+                        Text(c.cargo ?? '',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: AppColors.cinzaTexto)),
+                      ]),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, size: 20),
+                ),
+              ]),
+              const Divider(height: 28),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _item('Matrícula', c.matricula),
+                      _item('Setor', c.setor),
+                      _item(
+                          'Data de admissão',
+                          admissao == null
+                              ? null
+                              : '${_fmt(admissao)}${tempo != null ? '  ·  $tempo de casa' : ''}'),
+                      _item('Data de nascimento',
+                          c.dataNascimento == null ? null : _fmt(c.dataNascimento)),
+                      _item('Horário de trabalho',
+                          _extras?['horario_trabalho']?.toString()),
+                      _item('E-mail', _extras?['email']?.toString()),
+                      if (_hierarquia.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text('Hierarquia',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.laranja)),
+                        const SizedBox(height: 8),
+                        for (final h in _hierarquia)
+                          _item(
+                              _niveis[h['nivel']] ?? '${h['nivel']}',
+                              (h['colaboradores'] as Map?)?['nome'] as String?),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

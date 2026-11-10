@@ -1,3 +1,4 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/aniversariante_model.dart';
@@ -30,7 +31,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     _tabCtrl = TabController(length: 2, vsync: this);
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
-    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario(tipo: 'natalicio');
     _carregarJaParabenizados();
   }
 
@@ -53,7 +54,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   void _recarregar() => setState(() {
     _future = _api.buscarAniversariantesMes();
     _futureMensagens = _api.buscarMensagensParabens();
-    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+    _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario(tipo: 'natalicio');
     _carregarJaParabenizados();
   });
 
@@ -314,7 +315,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
       color: AppColors.magenta,
       onRefresh: () async => setState(() {
         _futureMensagens = _api.buscarMensagensParabens();
-        _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario();
+        _futureMensagemEmpresa = _api.buscarMensagemEmpresaAniversario(tipo: 'natalicio');
       }),
       child: FutureBuilder<List<dynamic>>(
         future: Future.wait([_futureMensagemEmpresa, _futureMensagens]),
@@ -490,7 +491,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AvatarColaborador(fotoUrl: fotoUrl, nome: remetente, raio: 20),
+          FotoClicavel(
+            url: fotoUrl,
+            nome: remetente,
+            child: AvatarColaborador(fotoUrl: fotoUrl, nome: remetente, raio: 20),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -931,10 +936,14 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   Widget _avatar(colaborador, {double raio = 22, bool fonteGrande = false}) {
-    return AvatarColaborador(
-      fotoUrl: colaborador.fotoUrl,
+    return FotoClicavel(
+      url: colaborador.fotoUrl,
       nome: colaborador.nome,
-      raio: raio,
+      child: AvatarColaborador(
+        fotoUrl: colaborador.fotoUrl,
+        nome: colaborador.nome,
+        raio: raio,
+      ),
     );
   }
 
@@ -1069,10 +1078,14 @@ class _ModalParabensState extends State<_ModalParabens> {
             const SizedBox(height: 20),
             Row(
               children: [
-                AvatarColaborador(
-                  fotoUrl: a.colaborador.fotoUrl,
+                FotoClicavel(
+                  url: a.colaborador.fotoUrl,
                   nome: a.colaborador.nome,
-                  raio: 26,
+                  child: AvatarColaborador(
+                    fotoUrl: a.colaborador.fotoUrl,
+                    nome: a.colaborador.nome,
+                    raio: 26,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(

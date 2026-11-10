@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../models/vaga_model.dart';
 import '../../services/api_service.dart';
+import 'candidatura_chat_sheet.dart';
+import 'teste_pratico_gestor.dart';
 
 class KanbanGestorScreen extends StatefulWidget {
   final VagaModel vaga;
@@ -63,6 +65,11 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       case 'INTEGRACAO':
         return lista.where((c) => c.statusEfetivo == 'INTEGRACAO').toList();
       default:
+        // Chips por status/etapa (igual ao web): comparam o status da candidatura.
+        if (_filtroStatus.startsWith('ST_')) {
+          final alvo = _filtroStatus.substring(3);
+          return lista.where((c) => c.status == alvo).toList();
+        }
         return lista;
     }
   }
@@ -96,15 +103,44 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              widget.vaga.titulo,
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    widget.vaga.titulo,
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (widget.vaga.sigilosa) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.25),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.lock,
+                                              size: 11, color: Colors.white),
+                                          const SizedBox(width: 3),
+                                          Text('Sigilosa',
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white)),
+                                        ]),
+                                  ),
+                                ],
+                              ],
                             ),
                             Text(
                               widget.vaga.departamento ?? 'Candidatos',
@@ -124,19 +160,40 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _chipFiltro('TODOS', 'Todos'),
-                        _chipFiltro('GRUPO_TRIAGEM', 'Triagem'),
-                        _chipFiltro('GRUPO_ENTREVISTA', 'Entrevista'),
-                        _chipFiltro('GRUPO_ASO', 'ASO'),
-                        _chipFiltro('GRUPO_ADMISSAO', 'Admissão'),
-                        _chipFiltro('GRUPO_CONTRATO', 'Contrato'),
-                        _chipFiltro('INTEGRACAO', 'Integração'),
-                      ],
-                    ),
+                  child: Column(
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _chipFiltro('TODOS', 'Todos'),
+                            _chipFiltro('GRUPO_TRIAGEM', 'Triagem'),
+                            _chipFiltro('GRUPO_ENTREVISTA', 'Entrevista'),
+                            _chipFiltro('GRUPO_ASO', 'ASO'),
+                            _chipFiltro('GRUPO_ADMISSAO', 'Admissão'),
+                            _chipFiltro('GRUPO_CONTRATO', 'Contrato'),
+                            _chipFiltro('INTEGRACAO', 'Integração'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Filtro por etapa/status da candidatura (mesmos chips do web).
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _chipFiltro('ST_INSCRITO', 'Inscrito'),
+                            _chipFiltro('ST_TRIAGEM', 'Triagem'),
+                            _chipFiltro('ST_AVALIACAO_COMP', 'Aval. Comp.'),
+                            _chipFiltro('ST_ENTREV_RH', 'Entrev. RH'),
+                            _chipFiltro('ST_ENTREV_GESTOR', 'Entrevista'),
+                            _chipFiltro('ST_PROPOSTA', 'Proposta'),
+                            _chipFiltro('ST_APROVADO', 'Aprovados'),
+                            _chipFiltro('ST_REPROVADO', 'Reprovados'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -258,6 +315,13 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                     ],
                   ),
                 ),
+                CandidaturaChatBotao(
+                  candidaturaId: c.id,
+                  nomeCandidato: c.candidatoNome,
+                  papel: 'gestor',
+                  autorId: _api.colaboradorAtual?.id ?? 0,
+                  autorNome: _api.colaboradorAtual?.nome ?? 'Gestor',
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
@@ -294,6 +358,25 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                   ],
                 ],
               ),
+            ),
+
+          // Como no web: o bloco do teste prático aparece em qualquer etapa
+          // (o próprio widget se esconde se a vaga não tem teste prático).
+          TestePraticoGestorAcao(
+            key: ValueKey('tp_${c.id}'),
+            candidaturaId: c.id,
+            vagaId: c.vagaId,
+            nomeCandidato: c.candidatoNome,
+            onAction: _carregarCandidatos,
+          ),
+
+          if (c.status == 'REPROVADO' &&
+              (c.motivoReprovacao ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+              child: Text('Motivo: ${c.motivoReprovacao}',
+                  style: GoogleFonts.poppins(
+                      fontSize: 11, color: AppColors.cinzaTexto)),
             ),
 
           // Botões de entrevista
@@ -654,6 +737,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       case 'CONTRATO_ENVIADO': return AppColors.laranja;
       case 'CONTRATO_ASSINADO': return const Color(0xFF10B981);
       case 'INTEGRACAO': return const Color(0xFF059669);
+      case 'REPROVADO': return AppColors.erro;
       default: return AppColors.cinzaTexto;
     }
   }
@@ -678,6 +762,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
       case 'CONTRATO_ENVIADO':    return 'Contrato Enviado';
       case 'CONTRATO_ASSINADO':   return 'Contrato Assinado';
       case 'INTEGRACAO':          return 'Integração';
+      case 'REPROVADO':           return 'Reprovado';
       default: return status;
     }
   }

@@ -13,7 +13,20 @@ class LojinhaCarrinhoScreen extends StatefulWidget {
   final bool enviando;
   final int? itensRestantes;
   final int? limiteQtdGlobal;
+  /// Limite de itens separado para EXCLUSIVOS (`limite_qtd_exclusivo`).
+  final int? itensRestantesExclusivo;
+  final int? limiteQtdExclusivo;
   final int? periodoDiasGlobal;
+  /// Estoque visível (material → qtd) já carregado na grade de produtos —
+  /// fallback enquanto/caso a consulta do carrinho não responda.
+  final Map<String, int> estoque;
+  /// Limite em R$ disponível (já descontadas as compras exclusivas do
+  /// ciclo); null = dados do funcionário indisponíveis, não bloqueia.
+  final double? limiteDisp;
+  final bool bloqueado;
+  /// Já usou o pedido regular (SAP) / exclusivo do período.
+  final bool sapEsgotado;
+  final bool exclusivoEsgotado;
 
   const LojinhaCarrinhoScreen({
     super.key,
@@ -24,7 +37,14 @@ class LojinhaCarrinhoScreen extends StatefulWidget {
     required this.enviando,
     this.itensRestantes,
     this.limiteQtdGlobal,
+    this.itensRestantesExclusivo,
+    this.limiteQtdExclusivo,
     this.periodoDiasGlobal,
+    this.estoque = const {},
+    this.limiteDisp,
+    this.bloqueado = false,
+    this.sapEsgotado = false,
+    this.exclusivoEsgotado = false,
   });
 
   @override
@@ -41,9 +61,49 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   List<CarrinhoItem> get _itens => widget.carrinho.values.toList();
   double get _total => _itens.fold(0.0, (s, i) => s + i.subtotal);
   int get _totalItens => _itens.fold(0, (s, i) => s + i.quantidade);
+
+  /// Itens no carrinho do mesmo tipo (SAP ou exclusivo) que [exclusivo].
+  int _itensDoTipo(bool exclusivo) => _itens
+      .where((i) => i.produto.isExclusivo == exclusivo)
+      .fold(0, (s, i) => s + i.quantidade);
+
+  /// Limite de itens do período, validado por tipo (SAP x exclusivo).
+  bool get _ultrapassaLimiteItens =>
+      (widget.limiteQtdGlobal != null &&
+          _itensDoTipo(false) >
+              (widget.itensRestantes ?? widget.limiteQtdGlobal!)) ||
+      (widget.limiteQtdExclusivo != null &&
+          _itensDoTipo(true) >
+              (widget.itensRestantesExclusivo ?? widget.limiteQtdExclusivo!));
+
+  /// Limite em R$ disponível.
+  bool get _ultrapassaValor =>
+      widget.limiteDisp != null &&
+      widget.limiteDisp! > 0 &&
+      _total > widget.limiteDisp!;
+
+  bool get _temItemRegular => _itens.any((i) => !i.produto.isExclusivo);
+  bool get _temItemExclusivo => _itens.any((i) => i.produto.isExclusivo);
+
+  /// Limite de PEDIDOS (não itens) por tipo — revalidado aqui no carrinho.
+  bool get _ultrapassaLimitePedidos =>
+      (widget.sapEsgotado && _temItemRegular) ||
+      (widget.exclusivoEsgotado && _temItemExclusivo);
+
   bool get _ultrapassaLimite =>
-      widget.limiteQtdGlobal != null &&
-      _totalItens > (widget.itensRestantes ?? widget.limiteQtdGlobal!);
+      _ultrapassaValor || _ultrapassaLimiteItens || _ultrapassaLimitePedidos;
+
+  List<String> get _avisos => [
+        if (_ultrapassaValor)
+          'Ultrapassa o limite disponível de ${_moeda(widget.limiteDisp!)}',
+        if (_ultrapassaLimiteItens)
+          'Limite de itens do período: ${widget.itensRestantes ?? widget.limiteQtdGlobal} SAP'
+              '${widget.limiteQtdExclusivo != null ? " e ${widget.itensRestantesExclusivo ?? widget.limiteQtdExclusivo} exclusivos" : ""}, a cada ${widget.periodoDiasGlobal} dias. Ajuste o carrinho.',
+        if (_ultrapassaLimitePedidos)
+          widget.sapEsgotado && _temItemRegular
+              ? 'Você já usou seu pedido regular (SAP) do período. Remova os itens regulares do carrinho ou tente de novo mais tarde.'
+              : 'Você já usou seu pedido de produto exclusivo do período. Remova os itens exclusivos do carrinho ou tente de novo mais tarde.',
+      ];
 
   @override
   void initState() {
@@ -63,15 +123,92 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
     final result = await _api.buscarEstoqueVisivel(produtos);
     if (!mounted) return;
     setState(() {
-      _estoqueVisivel = result;
+      // Falha na consulta devolve vazio: mantém o último valor conhecido.
+      if (result.isNotEmpty) _estoqueVisivel = result;
       _carregandoEstoque = false;
     });
   }
 
   int _disponivelPara(LojinhaProdutoModel p) {
     if (p.isExclusivo) return p.limiteEfetivo(p.estoque.toInt());
-    final estoque = _estoqueVisivel[p.material] ?? p.estoque.toInt();
+    final semZeros = p.material.replaceAll(RegExp(r'^0+'), '');
+    final estoque = _estoqueVisivel[p.material] ??
+        _estoqueVisivel[semZeros] ??
+        widget.estoque[p.material] ??
+        widget.estoque[semZeros] ??
+        p.estoque.toInt();
     return p.limiteEfetivo(estoque);
+  }
+
+  /// Reconsulta o estoque bem na hora de fechar o pedido e ajusta o carrinho
+  /// se alguém levou o produto entre o momento em que ele foi adicionado e
+  /// agora. Sem essa trava, dois colaboradores disputando a última unidade
+  /// só descobrem o problema quando o SAP rejeita o pedido com um erro cru.
+  /// Retorna true se o carrinho teve que ser ajustado (e portanto não deve
+  /// seguir direto pra confirmação).
+  Future<bool> _revalidarEstoque() async {
+    await _buscarEstoque();
+    if (!mounted) return true;
+    final ajustados = <String>[];
+    final removidos = <String>[];
+    for (final item in _itens) {
+      final p = item.produto;
+      final disponivel = _disponivelPara(p);
+      final qtd = item.quantidade;
+      if (disponivel <= 0) {
+        // Usa o callback do carrinho pra manter a sincronização com o servidor.
+        for (var n = 0; n < qtd; n++) {
+          widget.onRemover(p);
+        }
+        removidos.add(p.descricao);
+      } else if (qtd > disponivel) {
+        for (var n = 0; n < qtd - disponivel; n++) {
+          widget.onRemover(p);
+        }
+        ajustados.add(p.descricao);
+      }
+    }
+    if (ajustados.isEmpty && removidos.isEmpty) return false;
+    setState(() {});
+    if (!mounted) return true;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('O estoque mudou',
+            style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text(
+          [
+            if (removidos.isNotEmpty)
+              'Sem estoque, removido do carrinho: ${removidos.join(', ')}.',
+            if (ajustados.isNotEmpty)
+              'Quantidade ajustada pro que ainda tem disponível: ${ajustados.join(', ')}.',
+          ].join('\n\n'),
+          style: GoogleFonts.poppins(fontSize: 13),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.laranja,
+                foregroundColor: Colors.white),
+            child: Text('Entendi', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+    return true;
+  }
+
+  /// Compra feita de 21 do mês passado até 20 desse mês entra no desconto
+  /// em folha do dia 5 do mês seguinte a esse fechamento. Vale pra qualquer
+  /// produto da Lojinha (SAP ou exclusivo).
+  static DateTime _dataDescontoFolha(DateTime data) {
+    final fechamento = data.day <= 20
+        ? DateTime(data.year, data.month)
+        : DateTime(data.year, data.month + 1);
+    return DateTime(fechamento.year, fechamento.month + 1, 5);
   }
 
   String _moeda(double v) =>
@@ -93,12 +230,29 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
   }
 
   Future<void> _confirmarPedido() async {
+    if (_ultrapassaLimite ||
+        widget.bloqueado ||
+        _itens.isEmpty ||
+        widget.enviando) {
+      return;
+    }
+
+    // Revalida o estoque na hora de fechar; se algo mudou, mostra o aviso e
+    // não segue direto pra confirmação.
+    if (await _revalidarEstoque()) return;
+    if (_itens.isEmpty || !mounted) return;
+
+    final desconto = _dataDescontoFolha(DateTime.now());
+    final dd = desconto.day.toString().padLeft(2, '0');
+    final mm = desconto.month.toString().padLeft(2, '0');
+
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         contentPadding: const EdgeInsets.all(28),
-        content: Column(
+        content: SingleChildScrollView(
+         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -123,21 +277,61 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              '$_totalItens ${_totalItens == 1 ? 'item' : 'itens'} · ${_moeda(_total)}',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.cinzaTexto,
+            const SizedBox(height: 12),
+            // Lista de itens do pedido
+            ..._itens.map((i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Icon(Icons.circle,
+                            size: 5, color: AppColors.cinzaTexto),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${i.produto.descricao} × ${i.quantidade}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, color: AppColors.dark),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.laranja.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(12),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Deseja finalizar o pedido?',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.cinzaTexto,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text('Total a descontar em folha',
+                            style: GoogleFonts.poppins(fontSize: 13)),
+                      ),
+                      Text(_moeda(_total),
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.laranja)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Compras de 21 do mês passado a 20 desse mês saem no contracheque de $dd/$mm/${desconto.year}.',
+                    style: GoogleFonts.poppins(
+                        fontSize: 11, color: AppColors.cinzaTexto),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -181,6 +375,7 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
               ],
             ),
           ],
+         ),
         ),
       ),
     );
@@ -339,15 +534,23 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
                           border: Border.all(color: Colors.red.shade200),
                         ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(Icons.warning_amber_rounded,
                                 color: Colors.red.shade700, size: 16),
                             const SizedBox(width: 6),
                             Expanded(
-                              child: Text(
-                                'Carrinho ultrapassa o limite de ${widget.limiteQtdGlobal} itens a cada ${widget.periodoDiasGlobal} dias.',
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.red.shade700),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (final aviso in _avisos)
+                                    Text(
+                                      aviso,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          color: Colors.red.shade700),
+                                    ),
+                                ],
                               ),
                             ),
                           ],
@@ -369,7 +572,11 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           elevation: 0,
                         ),
-                        onPressed: (widget.enviando || _ultrapassaLimite) ? null : _confirmarPedido,
+                        onPressed: (widget.enviando ||
+                                _ultrapassaLimite ||
+                                widget.bloqueado)
+                            ? null
+                            : _confirmarPedido,
                         child: widget.enviando
                             ? const SizedBox(
                                 width: 20,

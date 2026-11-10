@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import 'conexoes_acoes_colab_view.dart';
 
 class ConexoesDoiemScreen extends StatefulWidget {
   const ConexoesDoiemScreen({super.key});
@@ -212,7 +213,7 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
                     child: TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildAbaVoluntario(),
+                        _buildAbaAcoes(),
                         _buildAbaInstituicao(),
                       ],
                     ),
@@ -220,6 +221,23 @@ class _ConexoesDoiemScreenState extends State<ConexoesDoiemScreen>
                 ),
               ],
             ),
+    );
+  }
+
+  // Ações com inscrição por período/vagas; sem as tabelas novas, usa o fluxo antigo.
+  Widget _buildAbaAcoes() {
+    final colab = _api.colaboradorAtual;
+    if (colab == null) return _buildAbaVoluntario();
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: ConexoesAcoesColabView(
+        colaboradorId: colab.id,
+        matricula: colab.matricula,
+        fallback: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: _buildAbaVoluntario(),
+        ),
+      ),
     );
   }
 

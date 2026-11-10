@@ -7,6 +7,7 @@ class PesquisaRespostaScreen extends StatefulWidget {
   final String titulo;
   final bool anonima;
   final bool pedirOptIn;
+  final String? descricao;
 
   const PesquisaRespostaScreen({
     super.key,
@@ -14,6 +15,7 @@ class PesquisaRespostaScreen extends StatefulWidget {
     required this.titulo,
     required this.anonima,
     this.pedirOptIn = false,
+    this.descricao,
   });
 
   @override
@@ -30,6 +32,11 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   // Guarda as respostas: pergunta_id → valor (String | int | bool | Set<String> | Map<String,String>)
   final Map<int, dynamic> _respostas = {};
 
+  // Motivo obrigatorio ao responder "Não" em perguntas sim/não com
+  // `pedir_motivo_se_nao` (mesma gravacao do web: vai em valor_texto).
+  final Map<int, String> _motivosNao = {};
+  final Map<int, TextEditingController> _motivoControllers = {};
+
   // ── Gate de opt-in ────────────────────────────────────────────────
   bool? _optInRespondeu;
   bool _enviandoRecusa = false;
@@ -43,6 +50,9 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
 
   @override
   void dispose() {
+    for (final c in _motivoControllers.values) {
+      c.dispose();
+    }
     _motivoRecusaCtrl.dispose();
     super.dispose();
   }
@@ -97,10 +107,18 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   bool _validarObrigatorias() {
     for (final p in _perguntas) {
       final obrigatoria = p['obrigatoria'] as bool? ?? true;
-      if (!obrigatoria) continue;
       final id = p['id'] as int;
       final tipo = p['tipo'] as String? ?? 'texto_livre';
       final valor = _respostas[id];
+
+      if (tipo == 'sim_nao' &&
+          p['pedir_motivo_se_nao'] == true &&
+          valor == false &&
+          (_motivosNao[id] ?? '').trim().isEmpty) {
+        return false;
+      }
+
+      if (!obrigatoria) continue;
 
       if (tipo == 'escala_matriz') {
         final linhas = (p['escala_linhas'] as List?)?.cast<String>() ?? [];
@@ -140,6 +158,7 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
       pesquisaId: widget.pesquisaId,
       anonima: widget.anonima,
       respostas: _respostas,
+      motivosNao: _motivosNao,
     );
 
     if (!mounted) return;
@@ -220,6 +239,14 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
                             if (widget.anonima)
                               Text(
                                 'Pesquisa anônima',
+                                style: AppTextStyles.corpoBranco
+                                    .copyWith(color: AppColors.brancoOp80),
+                              ),
+                            if ((widget.descricao ?? '').trim().isNotEmpty)
+                              Text(
+                                widget.descricao!.trim(),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
                                 style: AppTextStyles.corpoBranco
                                     .copyWith(color: AppColors.brancoOp80),
                               ),
@@ -484,7 +511,10 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
           if (tipo == 'texto' || tipo == 'texto_livre') _respostaTexto(id),
           if (tipo == 'multipla_escolha') _respostaMultipla(id, opcoes),
           if (tipo == 'checkbox') _respostaCheckbox(id, opcoes),
-          if (tipo == 'escala') _respostaEscala(id, escalaMin, escalaMax),
+          if (tipo == 'escala')
+            _respostaEscala(id, escalaMin, escalaMax,
+                p['escala_label_min'] as String? ?? '',
+                p['escala_label_max'] as String? ?? ''),
           if (tipo == 'escala_matriz')
             _respostaEscalaMatriz(
               id,
@@ -493,7 +523,8 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
               escalaLinhas,
               escalaColunas,
             ),
-          if (tipo == 'sim_nao') _respostaSimNao(id),
+          if (tipo == 'sim_nao')
+            _respostaSimNao(id, p['pedir_motivo_se_nao'] == true),
         ],
       ),
     );
@@ -704,7 +735,8 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   }
 
   // ── Escala ─────────────────────────────────────────────────────────
-  Widget _respostaEscala(int id, int min, int max) {
+  Widget _respostaEscala(int id, int min, int max,
+      [String labelMin = '', String labelMax = '']) {
     final atual = _respostas[id] as int?;
     return Column(
       children: [
@@ -745,8 +777,10 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('$min = Mín.', style: AppTextStyles.corpoMinimo),
-            Text('$max = Máx.', style: AppTextStyles.corpoMinimo),
+            Text(labelMin.isNotEmpty ? labelMin : '$min = Mín.',
+                style: AppTextStyles.corpoMinimo),
+            Text(labelMax.isNotEmpty ? labelMax : '$max = Máx.',
+                style: AppTextStyles.corpoMinimo),
           ],
         ),
       ],
@@ -754,8 +788,37 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   }
 
   // ── Sim / Não ──────────────────────────────────────────────────────
-  Widget _respostaSimNao(int id) {
+  Widget _respostaSimNao(int id, [bool pedirMotivo = false]) {
     final atual = _respostas[id] as bool?;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _botoesSimNao(id, atual),
+        if (pedirMotivo && atual == false) ...[
+          const SizedBox(height: 10),
+          Builder(builder: (_) {
+            _motivoControllers[id] ??=
+                TextEditingController(text: _motivosNao[id]);
+            return TextField(
+              controller: _motivoControllers[id],
+              maxLines: 2,
+              onChanged: (v) => _motivosNao[id] = v,
+              decoration: InputDecoration(
+                hintText: 'Por quê? *',
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _botoesSimNao(int id, bool? atual) {
     return Row(
       children: [
         Expanded(

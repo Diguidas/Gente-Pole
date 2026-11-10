@@ -7,7 +7,12 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../core/app_navigator.dart';
 import '../core/app_theme.dart';
+import '../screens/cadastro/atualizacao_cadastral_screen.dart';
 import '../screens/feedback/elogiar_screen.dart';
+import '../screens/feedback/feedback_gestor_colab_screen.dart';
+import '../screens/gestor/candidaturas_gestor_screen.dart';
+import '../screens/oportunidades/eu_crio_oportunidades_screen.dart';
+import '../screens/solicitacoes/solicitacoes_screen.dart';
 import '../screens/gestor/feedback_gestor_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/servicos_screen.dart';
@@ -165,7 +170,17 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
       case 'parabens':
         return (icone: Icons.cake_outlined, cor: const Color(0xFFEC4899));
       case 'feedback':
+      case 'feedback_solicitacao':
         return (icone: Icons.forum_outlined, cor: AppColors.laranja);
+      case 'elogio':
+        return (icone: Icons.favorite_outline_rounded, cor: const Color(0xFFF59E0B));
+      case 'solicitacao':
+        return (icone: Icons.assignment_outlined, cor: const Color(0xFF6366F1));
+      case 'candidatura_gestor':
+      case 'candidatura_colab':
+        return (icone: Icons.work_outline_rounded, cor: const Color(0xFF10B981));
+      case 'cadastro':
+        return (icone: Icons.badge_outlined, cor: const Color(0xFF0EA5E9));
       case 'experiencia':
       case 'experiencia_equipe':
         return (icone: Icons.hourglass_bottom_rounded, cor: AppColors.amarelo);
@@ -194,13 +209,29 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
       case 'parabens':
         AppNavigator.goToTab(1); // aba Parabéns
         break;
+      case 'elogio':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ElogiarScreen()));
+        break;
+      case 'solicitacao':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const SolicitacoesScreen()));
+        break;
+      case 'candidatura_gestor':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const CandidaturasGestorScreen()));
+        break;
+      case 'candidatura_colab':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const EuCrioOportunidadesScreen()));
+        break;
+      case 'cadastro':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AtualizacaoCadastralScreen()));
+        break;
       case 'feedback':
+      case 'feedback_solicitacao':
         final ehGestor = await _api.verificarSeEhGestor();
         if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ehGestor ? const FeedbackGestorScreen() : const ElogiarScreen(),
+            builder: (_) => ehGestor ? const FeedbackGestorScreen() : const FeedbackGestorColabScreen(),
           ),
         );
         break;
@@ -214,6 +245,21 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
               builder: (_) => const AvaliarPeriodoExperienciaGestorScreen()),
         );
         break;
+    }
+  }
+
+  Future<void> _recusarSolicitacao(NotificacaoItem item) async {
+    final id = item.refId;
+    if (id == null) return;
+    try {
+      await _api.recusarSolicitacaoFeedback(id);
+      if (!mounted) return;
+      setState(() => _itens.removeWhere((e) => e.chave == item.chave));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao recusar: $e'), backgroundColor: AppColors.erro),
+      );
     }
   }
 
@@ -272,6 +318,29 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
                   itemBuilder: (_, i) => _card(_itens[i]),
                 ),
               ),
+            if (!_loading && _itens.any((e) => e.tipo == 'feedback_solicitacao'))
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12, bottom: 8),
+                  child: TextButton(
+                    onPressed: () async {
+                      final nav = Navigator.of(context);
+                      final ehGestor = await _api.verificarSeEhGestor();
+                      nav.pop();
+                      nav.push(
+                        MaterialPageRoute(
+                          builder: (_) => ehGestor ? const FeedbackGestorScreen() : const FeedbackGestorColabScreen(),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Ver tudo em Meus Feedbacks',
+                      style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -318,6 +387,32 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto),
                     ),
+                    if (item.tipo == 'feedback_solicitacao')
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton(
+                              onPressed: () => _recusarSolicitacao(item),
+                              child: Text(
+                                'Recusar',
+                                style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.cinzaTexto),
+                              ),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => _abrirItem(item),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6366F1),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              child: Text('Atender', style: GoogleFonts.poppins(fontSize: 11.5)),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),

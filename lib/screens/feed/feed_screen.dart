@@ -6,15 +6,18 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gentepole/core/app_theme.dart';
 import 'package:gentepole/core/nivel_tempo_casa.dart';
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:gentepole/core/pontos_bus.dart';
 import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
-import 'package:gentepole/screens/feedback/elogiar_screen.dart';
+import 'package:gentepole/screens/aniversariante_screen.dart';
+import 'package:gentepole/screens/feedback/feedback_gestor_colab_screen.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
 import 'package:gentepole/services/api_service.dart';
+import 'package:gentepole/widgets/enquete_card.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -35,6 +38,9 @@ class _FeedScreenState extends State<FeedScreen> {
   final _scrollCtrl = ScrollController();
 
   List<FeedPostModel> _posts = [];
+  List<Map<String, dynamic>> _enquetes = [];
+  // Enquetes anexadas a comunicados (id da enquete -> enquete).
+  Map<int, Map<String, dynamic>> _enquetesComunicado = {};
   bool _carregando = true;
   bool _carregandoMais = false;
   bool _temMais = true;
@@ -234,6 +240,7 @@ class _FeedScreenState extends State<FeedScreen> {
         tipo: tipo,
         colaboradorId: pessoaId,
         nome: pessoa['nome'] as String? ?? 'Colega',
+        apelido: pessoa['apelido'] as String?,
         setor: pessoa['setor'] as String?,
         dataEvento: dataEvento,
         titulo: titulo,
@@ -306,7 +313,7 @@ class _FeedScreenState extends State<FeedScreen> {
         });
 
   Future<void> _registrarHumor(int nivel) async {
-    const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
+    const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo(a)'];
     final label = labels[nivel - 1];
 
     // Dialog perguntando o motivo
@@ -376,11 +383,14 @@ class _FeedScreenState extends State<FeedScreen> {
       // Cria post automático no feed. *nome* entre asteriscos é o mesmo
       // padrão usado nos posts de aniversário — o _PostCard reconhece e
       // destaca automaticamente.
+      // Mesmo texto do web: nome normalizado (apelido ou primeiro nome, sem
+      // CAIXA ALTA) e o nível em minúsculas no meio da frase.
       final colab = _api.colaboradorAtual;
-      final nome = colab?.primeiroNome ?? 'Alguém';
+      final nome = colab == null ? 'Alguém' : nomeCurto(colab.nome, colab.apelido);
+      final nivelTxt = label.toLowerCase();
       final conteudo = motivo.isNotEmpty
-          ? '*$nome* está se sentindo $label\n\n$motivo'
-          : '*$nome* está se sentindo $label';
+          ? '*$nome* está se sentindo $nivelTxt\n\n$motivo'
+          : '*$nome* está se sentindo $nivelTxt';
 
       await _api.criarPost(
         conteudo: conteudo,
@@ -389,7 +399,66 @@ class _FeedScreenState extends State<FeedScreen> {
         temTextoLivre: motivo.isNotEmpty,
       );
       _carregarFeed(reiniciar: true);
+      await _mostrarBannerHumor(nivel);
     }
+  }
+
+  /// Mensagem de apoio configurada para o nível de humor escolhido (igual ao
+  /// diálogo que o web mostra depois de registrar). Sem banner, não mostra nada.
+  Future<void> _mostrarBannerHumor(int nivel) async {
+    Map<String, dynamic>? banner;
+    try {
+      banner = await _api.buscarBannerHumor(nivel);
+    } catch (_) {
+      return;
+    }
+    if (banner == null || !mounted) return;
+    final texto = (banner['mensagem'] ??
+            banner['texto_principal'] ??
+            '')
+        .toString()
+        .trim();
+    final apoio = (banner['texto_apoio'] ?? '').toString().trim();
+    final imagem = (banner['imagem_url'] ?? '').toString().trim();
+    if (texto.isEmpty && apoio.isEmpty && imagem.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (imagem.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(imagem,
+                    height: 140, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (texto.isNotEmpty)
+              Text(texto,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.dark)),
+            if (apoio.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(apoio,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, color: AppColors.cinzaTexto)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   // ── Feed ──────────────────────────────────────────────────────────────────────
@@ -405,14 +474,54 @@ class _FeedScreenState extends State<FeedScreen> {
     }
 
     final novos = await _api.buscarFeed(pagina: _pagina);
+    final enquetes = _pagina == 0 ? await EnqueteCard.carregarAtivas() : null;
+    // Enquetes anexadas aos comunicados desta página (aparecem dentro do card
+    // do comunicado, em qualquer estado).
+    final enquetesDeComunicado = await EnqueteCard.carregarPorIds([
+      for (final p in novos)
+        if (p.enqueteId != null) p.enqueteId!,
+    ]);
     if (!mounted) return;
 
     setState(() {
+      if (enquetes != null) _enquetes = enquetes;
+      if (reiniciar) _enquetesComunicado = {};
+      _enquetesComunicado.addAll(enquetesDeComunicado);
       _posts.addAll(novos);
-      _temMais = novos.length >= 20;
+      // "Tem mais" vem da página bruta do banco (o filtro por destinatário
+      // pode reduzir a lista devolvida mesmo havendo mais posts).
+      _temMais = _api.feedTemMaisPaginas;
       _carregando = false;
       _carregandoMais = false;
     });
+  }
+
+  /// Posts + enquetes ativas intercalados por data de criação (mais novo primeiro).
+  List<Widget> _postsComEnquetes(List<FeedPostModel> posts, int? meuId) {
+    final itens = <MapEntry<DateTime, Widget>>[
+      for (final p in posts)
+        MapEntry(
+          p.criadoEm,
+          _PostCard(
+            post: p,
+            meuId: meuId,
+            onExcluir: () => _confirmarExclusao(p),
+            enquete: p.enqueteId == null ? null : _enquetesComunicado[p.enqueteId],
+          ),
+        ),
+      for (final e in _enquetes)
+        MapEntry(
+          DateTime.tryParse(e['criado_em']?.toString() ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+          EnqueteCard(
+            key: ValueKey('enquete_${e['id']}'),
+            enquete: e,
+            meuId: meuId,
+          ),
+        ),
+    ];
+    itens.sort((a, b) => b.key.compareTo(a.key));
+    return itens.map((e) => e.value).toList();
   }
 
   void _onScroll() {
@@ -654,13 +763,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                 final itens = <Widget>[
                                   ...fixos,
                                   if (feedPrincipal.isEmpty) _vazioWidget(),
-                                  ...postsVisiveis.map(
-                                    (p) => _PostCard(
-                                      post: p,
-                                      meuId: meuId,
-                                      onExcluir: () => _confirmarExclusao(p),
-                                    ),
-                                  ),
+                                  ..._postsComEnquetes(postsVisiveis, meuId),
                                   if (mostrarBotaoMais)
                                     _buildBotaoMostrarMaisPosts(restantes),
                                   ..._buildItensCelebracao(),
@@ -1022,6 +1125,13 @@ class _FeedScreenState extends State<FeedScreen> {
               destaqueMeuSetor: meuSetor != null &&
                   meuSetor.isNotEmpty &&
                   a.colaborador.setor == meuSetor,
+              // Igual ao web: do card dá pra ir direto parabenizar (a tela de
+              // Aniversariantes tem o envio de parabéns).
+              onTap: a.colaborador.id == _api.colaboradorAtual?.id
+                  ? null
+                  : () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const AniversariantesScreen(),
+                      )),
             ),
           )
           .toList(),
@@ -1051,7 +1161,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     pessoa: a,
                     dataEvento: ApiService.dataHojeIso(),
                     titulo:
-                        'Celebrar ${(a['nome'] as String? ?? '').split(' ').first}',
+                        'Celebrar ${nomeCurto(a['nome'] as String?, a['apelido'] as String?)}',
                     subtitulo:
                         '$anos ${anos == 1 ? 'ano' : 'anos'} de empresa',
                   ),
@@ -1086,7 +1196,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     pessoa: c,
                     dataEvento: c['data_admissao'] as String,
                     titulo:
-                        'Boas-vindas, ${(c['nome'] as String? ?? '').split(' ').first}!',
+                        'Boas-vindas, ${nomeCurto(c['nome'] as String?, c['apelido'] as String?)}!',
                     subtitulo: dataFormatada.isNotEmpty
                         ? 'Chegou dia $dataFormatada'
                         : 'Novo polevalente',
@@ -1179,7 +1289,8 @@ class _FeedScreenState extends State<FeedScreen> {
       onTap: () async {
         await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ElogiarScreen()),
+          MaterialPageRoute(
+              builder: (_) => const FeedbackGestorColabScreen()),
         );
         _carregarFeedbacksPresenciaisPendentes();
       },
@@ -2575,7 +2686,7 @@ class _HumorCardState extends State<_HumorCard> {
       Icons.sentiment_satisfied_rounded,
       Icons.sentiment_very_satisfied_rounded,
     ];
-    const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo'];
+    const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo(a)'];
     final jaRegistrou = widget.humorHoje != null;
     final nivelAtual = jaRegistrou
         ? (widget.humorHoje!['nivel'] as int? ?? 0)
@@ -2711,11 +2822,15 @@ class _PostCard extends StatelessWidget {
   /// reações.
   final bool preview;
 
+  /// Enquete anexada ao comunicado (renderizada dentro do card).
+  final Map<String, dynamic>? enquete;
+
   const _PostCard({
     required this.post,
     required this.meuId,
     required this.onExcluir,
     this.preview = false,
+    this.enquete,
   });
 
   @override
@@ -3009,6 +3124,32 @@ class _PostCard extends StatelessWidget {
           // ── Imagem ──────────────────────────────────────────────────────────
           if (post.temImagem) _imagensDoPost(),
 
+          // ── Selo Fixado (comunicado < 24h) ─────────────────────────────────
+          if (post.tipo == 'comunicado' &&
+              DateTime.now().toUtc().difference(
+                    post.criadoEm.subtract(const Duration(hours: 3)),
+                  ) <
+                  const Duration(hours: 24))
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14, 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.push_pin_rounded,
+                      size: 13, color: AppColors.cinzaTexto),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Fixado',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.cinzaTexto,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // ── Título (comunicados) ───────────────────────────────────────────
           if (post.titulo != null && post.titulo!.isNotEmpty)
             Padding(
@@ -3050,6 +3191,18 @@ class _PostCard extends StatelessWidget {
           if ((post.conteudo == null || post.conteudo!.isEmpty) &&
               (post.titulo == null || post.titulo!.isEmpty))
             const SizedBox(height: 14),
+
+          // ── Enquete anexada ao comunicado ───────────────────────────────────
+          if (post.tipo == 'comunicado' && enquete != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: EnqueteCard(
+                key: ValueKey('enquete_comunicado_${post.id}'),
+                enquete: enquete!,
+                meuId: meuId,
+                embutido: true,
+              ),
+            ),
 
           // ── Reações ─────────────────────────────────────────────────────────
           if (!preview) _ReacoesBar(postId: post.id, meuId: meuId),
@@ -3301,9 +3454,13 @@ class _PostCard extends StatelessWidget {
 
   Widget _avatarColaborador(String nome, String? fotoUrl) {
     if (fotoUrl != null && fotoUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: 20,
-        backgroundImage: CachedNetworkImageProvider(fotoUrl),
+      return FotoClicavel(
+        url: fotoUrl,
+        nome: nome,
+        child: CircleAvatar(
+          radius: 20,
+          backgroundImage: CachedNetworkImageProvider(fotoUrl),
+        ),
       );
     }
     final iniciais = () {
@@ -3640,7 +3797,10 @@ class _QuemReagiuSheet extends StatelessWidget {
                     ApiService.tiposReacaoPost[r['tipo']] ?? Icons.thumb_up_rounded;
                 return Row(
                   children: [
-                    CircleAvatar(
+                    FotoClicavel(
+                      url: fotoUrl,
+                      nome: nome,
+                      child: CircleAvatar(
                       radius: 18,
                       backgroundColor: AppColors.laranjaOp15,
                       backgroundImage: (fotoUrl != null && fotoUrl.isNotEmpty)
@@ -3649,6 +3809,7 @@ class _QuemReagiuSheet extends StatelessWidget {
                       child: (fotoUrl == null || fotoUrl.isEmpty)
                           ? Text(nome.isNotEmpty ? nome[0].toUpperCase() : '?')
                           : null,
+                    ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -3873,7 +4034,10 @@ class _LinhaAniversario extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          CircleAvatar(
+          FotoClicavel(
+            url: fotoUrl,
+            nome: nome,
+            child: CircleAvatar(
             radius: 24,
             backgroundColor: cor.withOpacity(0.15),
             backgroundImage: (fotoUrl != null && fotoUrl!.isNotEmpty)
@@ -3888,6 +4052,7 @@ class _LinhaAniversario extends StatelessWidget {
                     ),
                   )
                 : null,
+          ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -3998,7 +4163,7 @@ class _LinhaAniversario extends StatelessWidget {
 Widget _avatarCelebracao(Map? autor) {
   final foto = autor?['foto_url'] as String?;
   final nome = (autor?['nome'] as String?)?.trim() ?? '?';
-  return CircleAvatar(
+  return FotoClicavel(url: foto, nome: nome, child: CircleAvatar(
     radius: 16,
     backgroundColor: AppColors.laranja.withOpacity(0.15),
     backgroundImage: (foto != null && foto.isNotEmpty)
@@ -4014,7 +4179,7 @@ Widget _avatarCelebracao(Map? autor) {
               color: AppColors.laranja,
             ),
           ),
-  );
+  ));
 }
 
 /// Folha de celebração (tempo de empresa / novo polevalente): em cima, quem
@@ -4025,6 +4190,7 @@ class _CelebracaoSheet extends StatefulWidget {
   final String tipo;
   final int colaboradorId;
   final String nome;
+  final String? apelido;
   final String? setor;
   final String dataEvento;
   final String titulo;
@@ -4036,6 +4202,7 @@ class _CelebracaoSheet extends StatefulWidget {
     required this.tipo,
     required this.colaboradorId,
     required this.nome,
+    this.apelido,
     required this.setor,
     required this.dataEvento,
     required this.titulo,
@@ -4058,7 +4225,7 @@ class _CelebracaoSheetState extends State<_CelebracaoSheet> {
   @override
   void initState() {
     super.initState();
-    final primeiro = widget.nome.split(' ').first;
+    final primeiro = nomeCurto(widget.nome, widget.apelido);
     _ctrl.text = widget.tipo == 'tempo_empresa'
         ? 'Parabéns pelo seu tempo de Pole, $primeiro! 🎉'
         : 'Seja muito bem-vindo(a), $primeiro! 👋';
@@ -4206,7 +4373,7 @@ class _CelebracaoSheetState extends State<_CelebracaoSheet> {
             const Divider(height: 24),
             if (_jaCelebrei)
               Text(
-                'Você já celebrou ${widget.nome.split(' ').first}. ✓',
+                'Você já celebrou ${nomeCurto(widget.nome, widget.apelido)}. ✓',
                 style: GoogleFonts.poppins(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
+import '../../widgets/markdown_texto.dart';
 import 'dar_feedback_screen.dart';
 
 const _labelsEstrela = ['1', '2', '3', '4', '5'];
@@ -296,7 +297,7 @@ class _FeedbackGestorScreenState extends State<FeedbackGestorScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          Text(f['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
+          MarkdownTexto(f['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
           if (itensNotas.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(

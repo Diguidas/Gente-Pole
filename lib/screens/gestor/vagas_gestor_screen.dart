@@ -51,9 +51,8 @@ class _VagasGestorScreenState extends State<VagasGestorScreen> {
         } catch (_) {
           vaga = null;
         }
-        final podeVerCandidatos = vaga != null &&
-            vaga.statusRequisicao == 'APROVADA' &&
-            (vaga.status == 'ABERTA' || vaga.status == 'ENCERRADA');
+        final podeVerCandidatos =
+            vaga != null && vaga.statusRequisicao == 'APROVADA';
         if (podeVerCandidatos) {
           _jaAbriuDeepLink = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -252,14 +251,65 @@ class _TabMinhasVagas extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...vagas.map((v) => _cardVaga(
-                    context, v, aprovadosPorVaga[v.id] ?? 0)),
+                ..._secoesPorStatus(context, vagas),
               ],
             ],
           ),
         );
       },
     );
+  }
+
+  /// Rótulo de status exibido (mesma regra do card e do web).
+  String _rotuloStatus(VagaModel v, int totalAprovados) {
+    if (v.statusRequisicao == 'APROVADA' &&
+        totalAprovados >= v.quantidadeVagas) {
+      return 'Vaga preenchida';
+    }
+    if (v.statusRequisicao == 'APROVADA') return 'Aprovada';
+    if (v.statusRequisicao == 'RECUSADA') return 'Recusada';
+    return 'Aguardando RH';
+  }
+
+  /// Agrupa as requisições por status, com contador (igual ao web).
+  List<Widget> _secoesPorStatus(BuildContext context, List<VagaModel> vagas) {
+    const ordemStatus = [
+      'Aguardando RH',
+      'Aprovada',
+      'Vaga preenchida',
+      'Recusada',
+    ];
+    final grupos = <String, List<VagaModel>>{};
+    for (final v in vagas) {
+      final rotulo = _rotuloStatus(v, aprovadosPorVaga[v.id] ?? 0);
+      grupos.putIfAbsent(rotulo, () => []).add(v);
+    }
+    final widgets = <Widget>[];
+    var primeira = true;
+    for (final status in ordemStatus.where(grupos.containsKey)) {
+      final doGrupo = grupos[status]!;
+      widgets.add(Padding(
+        padding: EdgeInsets.only(top: primeira ? 0 : 12, bottom: 8),
+        child: Row(children: [
+          Text(status,
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.cinzaTexto)),
+          const SizedBox(width: 6),
+          Text('${doGrupo.length}',
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.cinzaTexto.withOpacity(0.6))),
+        ]),
+      ));
+      for (final v in doGrupo) {
+        widgets.add(_cardVaga(context, v, aprovadosPorVaga[v.id] ?? 0));
+      }
+      primeira = false;
+    }
+    return widgets;
   }
 
   Widget _cardVaga(BuildContext context, VagaModel v, int totalAprovados) {
@@ -282,11 +332,10 @@ class _TabMinhasVagas extends StatelessWidget {
       corStatus = AppColors.amarelo;
       labelStatus = 'Aguardando RH';
     }
-    // Inclui 'ENCERRADA' (vaga preenchida) — senão o gestor perde acesso ao
-    // board assim que o número de aprovados é atingido, mesmo tendo o resto
-    // do fluxo de admissão (ASO, contrato, integração) ainda em andamento.
-    final podeVerCandidatos = statusReq == 'APROVADA' &&
-        (v.status == 'ABERTA' || v.status == 'ENCERRADA');
+    // Igual ao web: vaga aprovada sempre abre o board, qualquer que seja o
+    // status (ABERTA, ENCERRADA, PAUSADA) — o fluxo de entrevista/proposta/
+    // admissão continua mesmo com a vaga pausada ou preenchida.
+    final podeVerCandidatos = statusReq == 'APROVADA';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -328,6 +377,27 @@ class _TabMinhasVagas extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (v.sigilosa) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.magenta.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.lock,
+                              size: 11, color: AppColors.magenta),
+                          const SizedBox(width: 3),
+                          Text('Sigilosa',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.magenta)),
+                        ]),
+                      ),
+                    ],
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),

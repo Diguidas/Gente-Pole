@@ -1,5 +1,12 @@
 // ─── Produto ──────────────────────────────────────────────────────────────────
 
+/// Intervalo de horário ('HH:mm:ss') de uma regra de disponibilidade.
+class LojinhaHoraIntervalo {
+  final String inicio;
+  final String fim;
+  const LojinhaHoraIntervalo(this.inicio, this.fim);
+}
+
 class LojinhaProdutoModel {
   final int id;
   final String material;
@@ -16,6 +23,14 @@ class LojinhaProdutoModel {
   final String? centro;
   final String? deposito;
   final List<int>? diasSemana;
+  /// Regras de disponibilidade dos EXCLUSIVOS (`lojinha_regras`, tipo
+  /// exclusivo): filiais, horário global e horário por dia da semana.
+  final List<String>? filiais;
+  final String? horaInicio; // 'HH:mm:ss', null = sem restrição
+  final String? horaFim;
+  /// Horário específico por dia da semana (1=Seg..7=Dom), usado quando a
+  /// regra tem dias específicos selecionados. Dia ausente do mapa = dia todo.
+  final Map<int, LojinhaHoraIntervalo>? horariosDia;
   final int? limiteQtd;
   final String? periodoLimite;
   final bool isExclusivo;
@@ -36,12 +51,21 @@ class LojinhaProdutoModel {
     this.centro,
     this.deposito,
     this.diasSemana,
+    this.filiais,
+    this.horaInicio,
+    this.horaFim,
+    this.horariosDia,
     this.limiteQtd,
     this.periodoLimite,
     this.isExclusivo = false,
   });
 
-  factory LojinhaProdutoModel.fromExclusivo(Map<String, dynamic> j) =>
+  /// [regra] é a linha de `lojinha_regras` (tipo exclusivo) que cobre o
+  /// material, quando existir.
+  factory LojinhaProdutoModel.fromExclusivo(
+    Map<String, dynamic> j, {
+    Map<String, dynamic>? regra,
+  }) =>
       LojinhaProdutoModel(
         id:           (j['id'].hashCode).abs(),
         material:     j['material'] as String,
@@ -50,8 +74,28 @@ class LojinhaProdutoModel {
         preco:        (j['preco'] as num).toDouble(),
         estoque:      (j['estoque'] as num).toDouble(),
         fotoUrl:      j['foto_url'] as String?,
+        diasSemana:   (regra?['dias_semana'] as List?)?.cast<int>(),
+        filiais:      (regra?['filiais'] as List?)?.cast<String>(),
+        horaInicio:   regra?['hora_inicio'] as String?,
+        horaFim:      regra?['hora_fim'] as String?,
+        horariosDia:  _parseHorariosDia(regra?['horarios_dia']),
         isExclusivo:  true,
       );
+
+  static Map<int, LojinhaHoraIntervalo>? _parseHorariosDia(dynamic raw) {
+    if (raw is! Map) return null;
+    final mapa = <int, LojinhaHoraIntervalo>{};
+    raw.forEach((k, v) {
+      final dia = int.tryParse(k.toString());
+      if (dia == null || v is! Map) return;
+      final inicio = v['inicio'] as String?;
+      final fim = v['fim'] as String?;
+      if (inicio != null && fim != null) {
+        mapa[dia] = LojinhaHoraIntervalo(inicio, fim);
+      }
+    });
+    return mapa.isEmpty ? null : mapa;
+  }
 
   factory LojinhaProdutoModel.fromJson(Map<String, dynamic> j) =>
       LojinhaProdutoModel(
@@ -75,8 +119,45 @@ class LojinhaProdutoModel {
       );
 
   bool get disponivelHoje {
-    if (diasSemana == null || diasSemana!.isEmpty) return true;
-    return diasSemana!.contains(DateTime.now().weekday);
+    if (!isExclusivo) {
+      // Regulares (SAP): comportamento atual do app (só dias da semana).
+      if (diasSemana == null || diasSemana!.isEmpty) return true;
+      return diasSemana!.contains(DateTime.now().weekday);
+    }
+
+    // Exclusivos: dia da semana + horário (global ou por dia), igual ao web.
+    final agora = DateTime.now();
+    final diaAtivo = diasSemana == null || diasSemana!.isEmpty;
+    if (!diaAtivo && !diasSemana!.contains(agora.weekday)) return false;
+
+    final horaAgora =
+        '${agora.hour.toString().padLeft(2, '0')}:${agora.minute.toString().padLeft(2, '0')}:00';
+
+    // Dias específicos selecionados: cada dia pode ter seu próprio horário
+    // (ou "dia todo", se não estiver no mapa).
+    if (!diaAtivo && horariosDia != null) {
+      final intervalo = horariosDia![agora.weekday];
+      if (intervalo != null) {
+        return horaAgora.compareTo(intervalo.inicio) >= 0 &&
+            horaAgora.compareTo(intervalo.fim) <= 0;
+      }
+      return true;
+    }
+
+    // "Todos os dias": horário global, se houver.
+    if (horaInicio != null && horaFim != null) {
+      return horaAgora.compareTo(horaInicio!) >= 0 &&
+          horaAgora.compareTo(horaFim!) <= 0;
+    }
+    return true;
+  }
+
+  /// Disponibilidade por filial da regra — [branch] é a filial do
+  /// colaborador logado (`ColaboradorModel.branch`).
+  bool disponivelParaFilial(String? branch) {
+    if (filiais == null || filiais!.isEmpty) return true;
+    if (branch == null) return false;
+    return filiais!.contains(branch);
   }
 
   int limiteEfetivo(int estoqueVisivel) =>
@@ -151,7 +232,9 @@ class LojinhaFuncionarioModel {
     required this.mensagem,
   });
 
-  bool get bloqueado => bloqueio.trim().isNotEmpty;
+  // O SAP às vezes devolve a string "false" para "sem bloqueio".
+  bool get bloqueado =>
+      bloqueio.trim().isNotEmpty && bloqueio.trim().toLowerCase() != 'false';
   double get limiteUsado => limiteTotal - limiteDisp;
   double get percentualUsado =>
       limiteTotal > 0 ? (limiteUsado / limiteTotal).clamp(0.0, 1.0) : 0.0;
@@ -198,6 +281,9 @@ class LojinhaPedidoResumoModel {
   final bool isExclusivo;
   final String? descricaoExclusivo;
   final int? quantidadeExclusivo;
+  /// true quando o pedido exclusivo junta mais de um produto do mesmo
+  /// carrinho ([descricaoExclusivo] já traz "A × 2 · B × 1").
+  final bool agrupado;
   /// Timestamp exato da compra (só preenchido para exclusivos, via
   /// `criado_em`). Usado para ordenar corretamente compras do mesmo dia.
   final DateTime? criadoEm;
@@ -213,6 +299,7 @@ class LojinhaPedidoResumoModel {
     this.isExclusivo = false,
     this.descricaoExclusivo,
     this.quantidadeExclusivo,
+    this.agrupado = false,
     this.criadoEm,
   });
 
@@ -240,6 +327,45 @@ class LojinhaPedidoResumoModel {
       criadoEm: criadoEm != null ? DateTime.tryParse(criadoEm) : null,
     );
   }
+
+  /// Vários produtos exclusivos do mesmo carrinho (mesmo `pedido_id`) viram UM
+  /// pedido na lista, como no web: descrição "A × 2 · B × 1", quantidade e
+  /// valor somados.
+  factory LojinhaPedidoResumoModel.exclusivoAgrupado({
+    required String data, // yyyy-MM-dd
+    required List<({String descricao, int quantidade, double preco})> itens,
+    String? criadoEm,
+  }) {
+    if (itens.length == 1) {
+      final i = itens.first;
+      return LojinhaPedidoResumoModel.exclusivo(
+          data: data,
+          descricao: i.descricao,
+          quantidade: i.quantidade,
+          preco: i.preco,
+          criadoEm: criadoEm);
+    }
+    final total = itens.fold<int>(0, (s, i) => s + i.quantidade);
+    final valor = itens.fold<double>(0, (s, i) => s + i.preco * i.quantidade);
+    return LojinhaPedidoResumoModel(
+      ordem: '',
+      criacao: data.replaceAll('-', ''),
+      valorTotal: valor,
+      situacao: _situacaoExclusivo(data),
+      status: '',
+      isExclusivo: true,
+      descricaoExclusivo:
+          itens.map((i) => '${i.descricao} × ${i.quantidade}').join(' · '),
+      quantidadeExclusivo: total,
+      agrupado: true,
+      criadoEm: criadoEm != null ? DateTime.tryParse(criadoEm) : null,
+    );
+  }
+
+  /// Texto da linha do pedido exclusivo na lista ("Produto × 2").
+  String get rotuloExclusivo => agrupado
+      ? (descricaoExclusivo ?? '')
+      : '${descricaoExclusivo ?? ''} × ${quantidadeExclusivo ?? 0}';
 
   static String _situacaoExclusivo(String data) {
     try {

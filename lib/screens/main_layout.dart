@@ -11,6 +11,7 @@ import 'servicos_screen.dart';
 import 'atalhos/atalhos_sheet.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/notificacoes_sino.dart';
+import '../widgets/popup_aniversario.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -34,6 +35,10 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _timerAcesso = Timer.periodic(
         const Duration(minutes: 5), (_) => _verificarAcesso());
+    // Pop-up de aniversário (natalício / tempo de empresa), 1x por dia.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) PopupAniversario.verificar(context);
+    });
   }
 
   @override

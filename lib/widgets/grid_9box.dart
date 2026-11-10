@@ -1,3 +1,4 @@
+import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
@@ -29,10 +30,14 @@ double? nota9BoxDecimal(Map<String, dynamic> a, String dimensao,
   final auto = a['autoavaliacao_$dimensao'] as int?;
   final equipe = a['equipe_$dimensao'] as int?;
 
+  // Pesos do ciclo têm prioridade; ciclos antigos (sem pesos) e avaliações
+  // sem ciclo (período de experiência) usam os do template — igual ao web.
+  final cicloId = a['ciclo_id'] as int?;
   final templateId = a['template_id'] as int?;
   Map<String, int>? pesos;
-  if (templateId != null && pesosPorTemplate != null) {
-    pesos = pesosPorTemplate[templateId];
+  if (pesosPorTemplate != null) {
+    if (cicloId != null) pesos = pesosPorTemplate[chavePesoCiclo(cicloId)];
+    if (pesos == null && templateId != null) pesos = pesosPorTemplate[templateId];
   }
   if (pesos == null) {
     final notas = [gestor, if (auto != null) auto, if (equipe != null) equipe];
@@ -332,7 +337,7 @@ class _ChipColaborador extends StatelessWidget {
             color: Colors.white.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: Text(nome.split(' ').first,
+          child: Text(nomeCurto(nome, (avaliacao['colaboradores'] as Map?)?['apelido'] as String?),
               style: GoogleFonts.poppins(fontSize: 10)),
         ),
       ),

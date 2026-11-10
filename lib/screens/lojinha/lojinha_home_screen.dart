@@ -29,6 +29,39 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   bool _sapEsgotado = false;
   bool _exclusivoEsgotado = false;
 
+  // Limite de ITENS por período, separado por tipo (SAP x exclusivos).
+  int? _limiteQtdSap;
+  int? _limiteQtdExclusivo;
+  int? _periodoDiasItens;
+  int _itensRestantesSap = 999;
+  int _itensRestantesExclusivo = 999;
+
+  bool get _limiteItensAtingido =>
+      (_limiteQtdSap != null && _itensRestantesSap <= 0) ||
+      (_limiteQtdExclusivo != null && _itensRestantesExclusivo <= 0);
+
+  String _qtdItens(int n) => '$n ${n != 1 ? 'itens' : 'item'}';
+
+  String get _resumoItensRestantes =>
+      [
+        if (_limiteQtdSap != null) '${_qtdItens(_itensRestantesSap)} SAP',
+        if (_limiteQtdExclusivo != null)
+          '${_qtdItens(_itensRestantesExclusivo)} exclusivos',
+      ].join(' · ') +
+      ' disponíveis para compra';
+
+  String get _resumoLimiteItens {
+    final dias = _periodoDiasItens ?? 0;
+    final per = 'a cada $dias dia${dias != 1 ? 's' : ''}';
+    return 'Limite: ' +
+        [
+          if (_limiteQtdSap != null) '${_qtdItens(_limiteQtdSap!)} SAP',
+          if (_limiteQtdExclusivo != null)
+            '${_qtdItens(_limiteQtdExclusivo!)} exclusivos',
+        ].join(' + ') +
+        ' $per';
+  }
+
   // Olhinho pra ocultar o limite disponível (privacidade quando alguém olha
   // por cima do ombro) — lembrado entre sessões via SharedPreferences.
   static const _kValorOcultoKey = 'lojinha_valor_oculto';
@@ -77,6 +110,33 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     if (matricula == null) return;
     try {
       final config = await _api.buscarConfigLojinha();
+
+      // Limite de ITENS por tipo (SAP x exclusivo) no período.
+      final limiteQtd = config['limite_qtd'] as int?;
+      final limiteQtdExcl = config['limite_qtd_exclusivo'] as int?;
+      final periodoDias = config['periodo_dias'] as int?;
+      if ((limiteQtd != null || limiteQtdExcl != null) && periodoDias != null) {
+        final r =
+            await _api.buscarComprasRecentesPorTipoColab(matricula, periodoDias);
+        if (!mounted) return;
+        setState(() {
+          _limiteQtdSap = limiteQtd;
+          _limiteQtdExclusivo = limiteQtdExcl;
+          _periodoDiasItens = periodoDias;
+          _itensRestantesSap = limiteQtd == null
+              ? 999
+              : (limiteQtd - r.sap).clamp(0, limiteQtd);
+          _itensRestantesExclusivo = limiteQtdExcl == null
+              ? 999
+              : (limiteQtdExcl - r.exclusivo).clamp(0, limiteQtdExcl);
+        });
+      } else if (mounted) {
+        setState(() {
+          _limiteQtdSap = null;
+          _limiteQtdExclusivo = null;
+        });
+      }
+
       final limiteSap = config['limite_pedidos_sap'] as int?;
       final limiteExclusivo = config['limite_pedidos_exclusivo'] as int?;
       final periodoDiasPedidos = config['periodo_dias_pedidos'] as int?;
@@ -237,6 +297,13 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                           if (dados != null && dados.bloqueado)
                             _alertaBloqueio(),
 
+                          // ── Limite de itens por tipo (SAP x exclusivos) ──
+                          if (_limiteQtdSap != null ||
+                              _limiteQtdExclusivo != null) ...[
+                            _cardLimiteItens(),
+                            const SizedBox(height: 16),
+                          ],
+
                           // ── Botões principais ────────────────────────
                           _botaoMenu(
                             context,
@@ -244,9 +311,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             titulo: 'Novo Pedido',
                             subtitulo: (_sapEsgotado && _exclusivoEsgotado)
                                 ? 'Você já usou seus pedidos deste período'
-                                : 'Explorar produtos disponíveis',
+                                : _limiteItensAtingido
+                                    ? 'Limite de compras atingido'
+                                    : 'Explorar produtos disponíveis',
                             cor: AppColors.laranja,
                             bloqueado: (dados?.bloqueado ?? false) ||
+                                _limiteItensAtingido ||
                                 (_sapEsgotado && _exclusivoEsgotado),
                             onTap: () async {
                               await Navigator.push(
@@ -482,6 +552,51 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
         ),
       );
 
+  Widget _cardLimiteItens() {
+    final atingido = _limiteItensAtingido;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: atingido ? Colors.red.shade50 : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: atingido ? Colors.red.shade200 : const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            atingido ? Icons.block_rounded : Icons.shopping_bag_outlined,
+            size: 20,
+            color: atingido ? Colors.red.shade600 : AppColors.cinzaTexto,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  atingido
+                      ? 'Limite de compras atingido'
+                      : _resumoItensRestantes,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: atingido ? Colors.red.shade700 : AppColors.dark,
+                  ),
+                ),
+                Text(
+                  _resumoLimiteItens,
+                  style: GoogleFonts.poppins(
+                      fontSize: 11, color: AppColors.cinzaTexto),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _alertaBloqueio() => Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(14),
@@ -614,7 +729,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                     children: [
                       Text(
                           p.isExclusivo
-                              ? '${p.descricaoExclusivo} × ${p.quantidadeExclusivo}'
+                              ? p.rotuloExclusivo
                               : 'Pedido nº ${p.ordem}',
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(

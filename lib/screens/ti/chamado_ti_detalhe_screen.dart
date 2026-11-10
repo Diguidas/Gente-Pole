@@ -7,6 +7,24 @@ import '../../services/api_service.dart';
 
 const _corTi = Color(0xFFE64A19);
 
+String tiNormEstado(String? s) => (s ?? '')
+    .toLowerCase()
+    .replaceAll(RegExp(r'^\d+\s*-\s*'), '')
+    .replaceAll(RegExp(r'[áàâã]'), 'a')
+    .replaceAll(RegExp(r'[éê]'), 'e')
+    .replaceAll('í', 'i')
+    .replaceAll(RegExp(r'[óôõ]'), 'o')
+    .replaceAll(RegExp(r'[úü]'), 'u')
+    .replaceAll('ç', 'c')
+    .trim();
+
+bool tiSemRetorno(Map<String, dynamic>? info) =>
+    tiNormEstado(info?['state'] as String?).contains('sem retorno') ||
+    tiNormEstado(info?['boardColumn'] as String?).contains('sem retorno');
+
+bool tiTemTagReaberto(Map<String, dynamic>? info) =>
+    ((info?['tags'] as String?) ?? '').split(';').any((t) => tiNormEstado(t) == 'reaberto');
+
 const _etapasBoard = [
   'Triagem',
   'Backlog',
@@ -35,9 +53,10 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
   final _comentarioCtrl = TextEditingController();
   Map<String, dynamic>? _info;
   List<Map<String, dynamic>> _comentariosExtra = [];
-  PlatformFile? _anexo;
+  final List<PlatformFile> _anexos = [];
   bool _loading = true;
   bool _enviando = false;
+  bool _reabrindo = false;
 
   @override
   void initState() {
@@ -104,25 +123,28 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
   }
 
   Future<void> _escolherAnexo() async {
-    final resultado = await FilePicker.platform.pickFiles(withData: true);
+    final resultado =
+        await FilePicker.platform.pickFiles(withData: true, allowMultiple: true);
     if (!mounted) return;
     if (resultado != null && resultado.files.isNotEmpty) {
-      setState(() => _anexo = resultado.files.first);
+      setState(() => _anexos.addAll(resultado.files));
     }
   }
 
   Future<void> _enviarComentario() async {
     final texto = _comentarioCtrl.text.trim();
-    final anexo = _anexo;
-    if (texto.isEmpty && anexo == null) return;
+    final anexos = List<PlatformFile>.of(_anexos);
+    if (texto.isEmpty && anexos.isEmpty) return;
     setState(() => _enviando = true);
     try {
       final workItemId = widget.chamado['azure_work_item_id'] as int;
-      final anexoUrl = await _api.comentarChamadoAzureTI(
+      final enviados = await _api.comentarChamadoAzureTI(
         workItemId: workItemId,
         texto: texto,
-        anexoBytes: anexo?.bytes != null ? Uint8List.fromList(anexo!.bytes!) : null,
-        anexoNomeArquivo: anexo?.name,
+        anexos: [
+          for (final a in anexos)
+            if (a.bytes != null) (bytes: Uint8List.fromList(a.bytes!), nome: a.name),
+        ],
       );
       if (!mounted) return;
       setState(() {
@@ -133,12 +155,11 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
             'autor': widget.solicitanteNome,
             'data': DateTime.now().toIso8601String(),
             'viaApp': true,
-            'anexoUrl': anexoUrl,
-            'anexoNome': anexo?.name,
+            'anexos': enviados,
           },
         ];
         _comentarioCtrl.clear();
-        _anexo = null;
+        _anexos.clear();
         _enviando = false;
       });
     } catch (e) {
@@ -150,6 +171,68 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
         behavior: SnackBarBehavior.floating,
       ));
     }
+  }
+
+  Future<void> _reabrir() async {
+    setState(() => _reabrindo = true);
+    try {
+      final workItemId = widget.chamado['azure_work_item_id'] as int;
+      final r = await _api.reabrirChamadoAzureTI(workItemId: workItemId);
+      if (!mounted) return;
+      setState(() {
+        _info = {...?_info, 'state': r.estado, 'boardColumn': r.estado, 'tags': r.tags};
+        _reabrindo = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _reabrindo = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Não foi possível reabrir: $e', style: AppTextStyles.corpoBranco),
+        backgroundColor: AppColors.erro,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Widget _blocoSemRetorno() {
+    const ambar = Color(0xFFD97706);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ambar.withOpacity(.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.notification_important_rounded, size: 20, color: ambar),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Este chamado está sem retorno do usuário',
+                  style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700, color: AppColors.dark)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text('Veja as anotações acima e clique em "Reabrir card" para continuar o atendimento.',
+              style: AppTextStyles.corpoCinza.copyWith(height: 1.35)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _reabrindo ? null : _reabrir,
+              style: ElevatedButton.styleFrom(backgroundColor: ambar, foregroundColor: Colors.white),
+              icon: _reabrindo
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.replay_rounded, size: 18, color: Colors.white),
+              label: const Text('Reabrir card', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _linha(String rotulo, String? valor, {IconData? icone}) {
@@ -195,7 +278,8 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
     final etapaAtual = coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...');
     final indice = _indiceEtapa(coluna, estado);
     final progresso = (indice + 1) / _etapasBoard.length;
-    final cor = _corEtapa(indice, concluido);
+    final semRetorno = tiSemRetorno(info);
+    final cor = semRetorno ? const Color(0xFFD97706) : _corEtapa(indice, concluido);
 
     return Scaffold(
       appBar: AppBar(
@@ -226,6 +310,7 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                             if (tipoSolicitacao?.isNotEmpty == true) _Tag(texto: tipoSolicitacao!),
                             if (departamento?.isNotEmpty == true) _Tag(texto: departamento!),
                             if (nivelUrgencia != null) _Tag(texto: nivelUrgencia, cor: _corUrgencia(nivelUrgencia)),
+                            if (tiTemTagReaberto(info)) const _Tag(texto: 'Reaberto', cor: Color(0xFF7C3AED)),
                           ],
                         ),
                         const SizedBox(height: 18),
@@ -288,16 +373,33 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                           ...comentarios.map((com) {
                             final autor = com['autor'] as String? ?? 'TI';
                             final mine = com['viaApp'] == true;
-                            final anexoUrl = com['anexoUrl'] as String?;
-                            final anexoNome = com['anexoNome'] as String?;
+                            // Lista `anexos` (vários) com fallback para o formato
+                            // antigo (anexoUrl/anexoNome).
+                            final anexosCom = <({String url, String nome})>[];
+                            final listaAnexos = com['anexos'];
+                            if (listaAnexos is List) {
+                              for (final a in listaAnexos) {
+                                if (a is Map && a['url'] != null) {
+                                  anexosCom.add((
+                                    url: a['url'].toString(),
+                                    nome: (a['nome'] ?? 'Anexo').toString(),
+                                  ));
+                                }
+                              }
+                            }
+                            if (anexosCom.isEmpty && com['anexoUrl'] != null) {
+                              anexosCom.add((
+                                url: com['anexoUrl'].toString(),
+                                nome: (com['anexoNome'] ?? 'Anexo').toString(),
+                              ));
+                            }
                             final textoLimpo = com['texto'] is String ? _semHtml(com['texto'] as String) : '';
                             return _CardComentario(
                               mine: mine,
                               autor: autor,
                               texto: textoLimpo,
                               hora: _formatarData(com['data'] as String?),
-                              anexoUrl: anexoUrl,
-                              anexoNome: anexoNome,
+                              anexos: anexosCom,
                             );
                           }),
                       ],
@@ -307,32 +409,41 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                     top: false,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: Column(
+                      child: semRetorno
+                          ? _blocoSemRetorno()
+                          : Column(
                         children: [
-                          if (_anexo != null)
+                          if (_anexos.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(color: AppColors.cinzaClaro, borderRadius: BorderRadius.circular(20)),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.attach_file_rounded, size: 14, color: _corTi),
-                                      const SizedBox(width: 6),
-                                      ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 180),
-                                        child: Text(_anexo!.name, overflow: TextOverflow.ellipsis, style: AppTextStyles.corpoMinimo),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final a in _anexos)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(color: AppColors.cinzaClaro, borderRadius: BorderRadius.circular(20)),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.attach_file_rounded, size: 14, color: _corTi),
+                                            const SizedBox(width: 6),
+                                            ConstrainedBox(
+                                              constraints: const BoxConstraints(maxWidth: 180),
+                                              child: Text(a.name, overflow: TextOverflow.ellipsis, style: AppTextStyles.corpoMinimo),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            InkWell(
+                                              onTap: () => setState(() => _anexos.remove(a)),
+                                              child: const Icon(Icons.close_rounded, size: 14, color: AppColors.cinzaTexto),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                      const SizedBox(width: 6),
-                                      InkWell(
-                                        onTap: () => setState(() => _anexo = null),
-                                        child: const Icon(Icons.close_rounded, size: 14, color: AppColors.cinzaTexto),
-                                      ),
-                                    ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -341,7 +452,7 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                             children: [
                               IconButton(
                                 onPressed: _enviando ? null : _escolherAnexo,
-                                icon: Icon(Icons.attach_file_rounded, size: 20, color: _anexo == null ? AppColors.cinzaTexto : _corTi),
+                                icon: Icon(Icons.attach_file_rounded, size: 20, color: _anexos.isEmpty ? AppColors.cinzaTexto : _corTi),
                               ),
                               Expanded(
                                 child: TextField(
@@ -400,16 +511,14 @@ class _CardComentario extends StatelessWidget {
   final String autor;
   final String texto;
   final String hora;
-  final String? anexoUrl;
-  final String? anexoNome;
+  final List<({String url, String nome})> anexos;
 
   const _CardComentario({
     required this.mine,
     required this.autor,
     required this.texto,
     required this.hora,
-    this.anexoUrl,
-    this.anexoNome,
+    this.anexos = const [],
   });
 
   @override
@@ -437,10 +546,10 @@ class _CardComentario extends StatelessWidget {
               const SizedBox(height: 5),
               Text(texto, style: AppTextStyles.corpoNormal.copyWith(height: 1.35)),
             ],
-            if (anexoUrl != null) ...[
+            for (final a in anexos) ...[
               const SizedBox(height: 6),
               InkWell(
-                onTap: () => launchUrl(Uri.parse(anexoUrl!), mode: LaunchMode.externalApplication),
+                onTap: () => launchUrl(Uri.parse(a.url), mode: LaunchMode.externalApplication),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -448,7 +557,7 @@ class _CardComentario extends StatelessWidget {
                     const SizedBox(width: 4),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 220),
-                      child: Text(anexoNome ?? 'Anexo',
+                      child: Text(a.nome,
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.corpoMenor.copyWith(color: corFaixa, decoration: TextDecoration.underline)),
                     ),

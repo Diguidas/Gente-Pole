@@ -279,6 +279,7 @@ class _AdminFisioterapiaScreenState extends State<AdminFisioterapiaScreen> {
           sessao: s,
           nomeColaborador: caso?.nomeColaborador ?? '—',
           patologia: caso?.patologia ?? '—',
+          emergencia: caso?.emergencia ?? false,
           onVeio: () => _marcarPresenca(s, 'VEIO'),
           onNaoVeio: () => _marcarPresenca(s, 'NAO_VEIO'),
           onEvolucao: () => _registrarEvolucao(s),
@@ -359,6 +360,7 @@ class _SessaoCard extends StatelessWidget {
   final FisioterapiaSessao sessao;
   final String nomeColaborador;
   final String patologia;
+  final bool emergencia;
   final VoidCallback onVeio;
   final VoidCallback onNaoVeio;
   final VoidCallback onEvolucao;
@@ -367,6 +369,7 @@ class _SessaoCard extends StatelessWidget {
     required this.sessao,
     required this.nomeColaborador,
     required this.patologia,
+    required this.emergencia,
     required this.onVeio,
     required this.onNaoVeio,
     required this.onEvolucao,
@@ -413,6 +416,37 @@ class _SessaoCard extends StatelessWidget {
                 child: Text(sessao.horario,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
               ),
+              const SizedBox(width: 8),
+              // Sinaliza se a sessão é de emergência ou normal.
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (emergencia ? AppColors.magenta : AppColors.cinzaTexto).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (emergencia)
+                    const Icon(Icons.bolt_rounded, size: 13, color: AppColors.magenta),
+                  Text(emergencia ? 'Emergência' : 'Normal',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: emergencia ? AppColors.magenta : AppColors.cinzaTexto)),
+                ]),
+              ),
+              if (sessao.cedidaEmergencia) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.laranja.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Cedida p/ emergência',
+                      style: TextStyle(
+                          fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.laranja)),
+                ),
+              ],
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

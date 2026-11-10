@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
-import '../../models/colaborador_model.dart';
+import '../../widgets/campo_texto_formatado.dart';
+import '../../widgets/markdown_texto.dart';
+import '../../widgets/modal_resposta.dart';
 import '../../services/api_service.dart';
 
-/// Tela "Elogiar" — reconhecimento livre entre colegas (sem notas), pedido
-/// de feedback ao próprio gestor, e tudo que o colaborador já recebeu
-/// (elogios de colegas + feedback formal do gestor).
+/// Tela "Elogiar" — reconhecimento livre entre colegas, elogios recebidos (com
+/// resposta) e respostas aos elogios enviados. Feedback fica em Performance.
 class ElogiarScreen extends StatefulWidget {
   const ElogiarScreen({super.key});
 
@@ -20,15 +21,13 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
 
   bool _loading = true;
   bool _enviando = false;
-  bool _pedindoFeedback = false;
 
   List<Map<String, dynamic>> _todosColaboradores = [];
   List<Map<String, dynamic>> _filtrados = [];
   Map<String, dynamic>? _colaboradorSelecionado;
 
   List<Map<String, dynamic>> _recebidos = [];
-  List<Map<String, dynamic>> _solicitacoesEnviadas = [];
-  ColaboradorModel? _meuGestor;
+  List<Map<String, dynamic>> _respostas = [];
 
   @override
   void initState() {
@@ -48,91 +47,35 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
 
   Future<void> _carregar() async {
     setState(() => _loading = true);
-    final eu = _api.colaboradorAtual;
     final resultados = await Future.wait([
       _api.buscarTodosColaboradores(),
       _api.listarElogiosRecebidos(_meuId),
-      _api.listarFeedbacksAvaliacao(_meuId),
-      _api.listarSolicitacoesFeedbackEnviadas(_meuId),
-      if (eu?.setor != null && eu?.empresa != null)
-        _api.buscarGestorDoSetor(eu!.setor!, eu.empresa!, colaboradorId: eu.id)
-      else
-        Future.value(null),
+      _api.listarRespostasAosMeusElogios(_meuId),
     ]);
     if (!mounted) return;
 
-    final elogios = (resultados[1] as List<Map<String, dynamic>>)
-        .map((e) => {...e, '_tipo': 'elogio'})
-        .toList();
-    final feedbacks = (resultados[2] as List<Map<String, dynamic>>)
-        .map((f) => {...f, '_tipo': 'feedback'})
-        .toList();
-    final combinados = [...elogios, ...feedbacks];
-    combinados.sort((a, b) {
-      final da = a['criado_em'] as String? ?? '';
-      final db = b['criado_em'] as String? ?? '';
-      return db.compareTo(da);
-    });
-
     setState(() {
-      _todosColaboradores = resultados[0] as List<Map<String, dynamic>>;
-      _filtrados = _todosColaboradores;
-      _recebidos = combinados;
-      _solicitacoesEnviadas = resultados[3] as List<Map<String, dynamic>>;
-      _meuGestor = resultados[4] as ColaboradorModel?;
+      _todosColaboradores = resultados[0];
+      // Não dá para elogiar a si mesmo.
+      _filtrados =
+          _todosColaboradores.where((c) => c['id'] != _meuId).toList();
+      _recebidos = resultados[1];
+      _respostas = resultados[2];
       _loading = false;
     });
-
-    // Marca como vistos os feedbacks formais que o colaborador acabou de ver.
-    _api.marcarFeedbacksRecebidosComoVistos(_meuId);
   }
 
   void _filtrar() {
     final q = _buscaCtrl.text.toLowerCase().trim();
     setState(() {
-      _filtrados = q.isEmpty
-          ? _todosColaboradores
-          : _todosColaboradores.where((c) {
-              final nome = (c['nome'] as String? ?? '').toLowerCase();
-              final setor = (c['setor'] as String? ?? '').toLowerCase();
-              return nome.contains(q) || setor.contains(q);
-            }).toList();
+      _filtrados = _todosColaboradores.where((c) {
+        if (c['id'] == _meuId) return false;
+        if (q.isEmpty) return true;
+        final nome = (c['nome'] as String? ?? '').toLowerCase();
+        final setor = (c['setor'] as String? ?? '').toLowerCase();
+        return nome.contains(q) || setor.contains(q);
+      }).toList();
     });
-  }
-
-  bool get _jaTemPedidoAoGestorPendente =>
-      _meuGestor != null &&
-      _solicitacoesEnviadas.any((s) =>
-          s['destinatario_id'].toString() == _meuGestor!.id.toString() &&
-          s['status'] == 'pendente');
-
-  Future<void> _pedirFeedbackAoGestor() async {
-    if (_meuGestor == null) return;
-    setState(() => _pedindoFeedback = true);
-    try {
-      await _api.criarSolicitacaoFeedback(
-        solicitanteId: _meuId,
-        destinatarioId: _meuGestor!.id,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Pedido enviado ao seu gestor!',
-            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
-        backgroundColor: AppColors.sucesso,
-        behavior: SnackBarBehavior.floating,
-      ));
-      await _carregar();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao enviar pedido: $e',
-            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
-        backgroundColor: AppColors.erro,
-        behavior: SnackBarBehavior.floating,
-      ));
-    } finally {
-      if (mounted) setState(() => _pedindoFeedback = false);
-    }
   }
 
   Future<void> _enviarElogio() async {
@@ -236,9 +179,6 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _cardPedirFeedback(),
-                                const SizedBox(height: 24),
-
                                 Text('Elogiar um colega', style: AppTextStyles.labelSecao),
                                 const SizedBox(height: 10),
                                 _buscaColaborador(),
@@ -272,26 +212,11 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                                 const SizedBox(height: 14),
 
                                 // Campo de texto
-                                TextField(
+                                CampoTextoFormatado(
                                   controller: _textoCtrl,
+                                  hintText: 'Escreva o elogio...',
                                   maxLines: 4,
-                                  maxLength: 1000,
-                                  style: AppTextStyles.corpoNormal,
-                                  decoration: InputDecoration(
-                                    hintText: 'Escreva o elogio...',
-                                    hintStyle: AppTextStyles.corpoCinza,
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: AppColors.magenta),
-                                    ),
-                                  ),
-                                  onChanged: (_) => setState(() {}),
+                                  onChanged: () => setState(() {}),
                                 ),
                                 const SizedBox(height: 14),
 
@@ -322,14 +247,21 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                                 ),
                                 const SizedBox(height: 28),
 
-                                Text('Feedback que você já recebeu',
+                                Text('Elogios que você recebeu',
                                     style: AppTextStyles.labelSecao),
                                 const SizedBox(height: 10),
                                 if (_recebidos.isEmpty)
-                                  Text('Você ainda não recebeu nenhum elogio ou feedback.',
+                                  Text('Você ainda não recebeu nenhum elogio.',
                                       style: AppTextStyles.corpoCinza)
                                 else
                                   ..._recebidos.map(_cardRecebido),
+                                if (_respostas.isNotEmpty) ...[
+                                  const SizedBox(height: 24),
+                                  Text('Respostas aos meus elogios',
+                                      style: AppTextStyles.labelSecao),
+                                  const SizedBox(height: 10),
+                                  ..._respostas.map(_cardResposta),
+                                ],
                                 const SizedBox(height: 20),
                               ],
                             ),
@@ -339,54 +271,6 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _cardPedirFeedback() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.magentaOp15,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.magentaOp18),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.mail_outline_rounded, color: AppColors.magenta, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Pedir feedback ao meu gestor',
-                    style: AppTextStyles.corpoNormal.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(
-                  _meuGestor == null
-                      ? 'Não encontramos um gestor cadastrado para o seu setor.'
-                      : 'Peça pra ${_meuGestor!.nome} te dar um retorno sobre seu trabalho.',
-                  style: AppTextStyles.corpoMenor,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          if (_meuGestor != null)
-            ElevatedButton(
-              onPressed:
-                  (_jaTemPedidoAoGestorPendente || _pedindoFeedback) ? null : _pedirFeedbackAoGestor,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.magenta,
-                foregroundColor: Colors.white,
-              ),
-              child: Text(
-                _jaTemPedidoAoGestorPendente ? 'Pedido enviado' : 'Pedir',
-                style: AppTextStyles.corpoMenor.copyWith(color: Colors.white),
-              ),
-            ),
         ],
       ),
     );
@@ -450,32 +334,36 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
     );
   }
 
-  Future<void> _confirmarPresencial(int feedbackId, bool confirmado) async {
-    try {
-      await _api.confirmarFeedbackPresencial(feedbackId, confirmado);
-      await _carregar();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao responder: $e',
-            style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
-        backgroundColor: AppColors.erro,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
+  void _responder(Map<String, dynamic> item) {
+    final anonimo = item['anonimo'] == true;
+    final nome = anonimo ? 'Anônimo' : _nomeColaborador(item['autor_id']);
+    mostrarModalResposta(
+      context,
+      titulo: anonimo ? 'Responder ao elogio' : 'Responder a $nome',
+      subtitulo: anonimo
+          ? 'Sua resposta chega a quem elogiou, sem revelar quem é.'
+          : 'Sua resposta chega a $nome.',
+      hint: 'Escreva seu agradecimento...',
+      onEnviar: (resposta) async {
+        final ok = await _api.responderElogio(
+            elogioId: item['id'] as int, resposta: resposta);
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok ? 'Resposta enviada!' : 'Não foi possível enviar a resposta.',
+              style: AppTextStyles.corpoNormal.copyWith(color: Colors.white)),
+          backgroundColor: ok ? AppColors.sucesso : AppColors.erro,
+          behavior: SnackBarBehavior.floating,
+        ));
+        if (ok) _carregar();
+        return ok;
+      },
+    );
   }
 
   Widget _cardRecebido(Map<String, dynamic> item) {
     final anonimo = item['anonimo'] == true;
-    final ehElogio = item['_tipo'] == 'elogio';
-    final autor = item['autor'] as Map?;
-    final nomeAutor = anonimo
-        ? 'Anônimo'
-        : (ehElogio ? _nomeColaborador(item['autor_id']) : (autor?['nome'] as String? ?? '—'));
-    final presencial = item['presencial'] as bool?;
-    final presencialConfirmado = item['presencial_confirmado'] as bool?;
-    final aguardandoConfirmacao =
-        !ehElogio && presencial == true && presencialConfirmado == null;
+    final nomeAutor = anonimo ? 'Anônimo' : _nomeColaborador(item['autor_id']);
+    final resposta = (item['resposta'] as String?)?.trim() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -495,56 +383,61 @@ class _ElogiarScreenState extends State<ElogiarScreen> {
                     style: AppTextStyles.corpoMedio
                         .copyWith(color: AppColors.magenta, fontWeight: FontWeight.w700)),
               ),
-              _Selo(
-                texto: ehElogio ? 'Elogio' : 'Feedback do gestor',
-                cor: ehElogio ? AppColors.sucesso : AppColors.magenta,
-              ),
-              if (!ehElogio && presencial == true) ...[
-                const SizedBox(width: 6),
-                if (presencialConfirmado == true)
-                  _Selo(texto: 'Presencial confirmado', cor: AppColors.sucesso)
-                else if (presencialConfirmado == false)
-                  _Selo(texto: 'Presencial negado', cor: AppColors.erro)
-                else
-                  const _Selo(texto: 'Presencial · aguardando', cor: Color(0xFFF59E0B)),
-              ],
+              const _Selo(texto: 'Elogio', cor: AppColors.sucesso),
             ],
           ),
           const SizedBox(height: 6),
-          Text(item['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
-          if (aguardandoConfirmacao) ...[
-            const SizedBox(height: 10),
+          MarkdownTexto(item['texto'] as String? ?? '', style: AppTextStyles.corpoNormal),
+          const SizedBox(height: 8),
+          if (resposta.isNotEmpty)
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withOpacity(0.08),
+                color: AppColors.magentaOp15,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Essa conversa aconteceu presencialmente?',
-                      style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _confirmarPresencial(item['id'] as int, true),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.sucesso, foregroundColor: Colors.white),
-                        child: Text('Sim, foi presencial', style: AppTextStyles.corpoMinimo.copyWith(color: Colors.white)),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () => _confirmarPresencial(item['id'] as int, false),
-                        child: Text('Não foi', style: AppTextStyles.corpoMinimo),
-                      ),
-                    ],
-                  ),
-                ],
+              child: Text('Você respondeu: $resposta',
+                  style: AppTextStyles.corpoMenor),
+            )
+          else
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _responder(item),
+                icon: const Icon(Icons.reply_rounded, size: 16),
+                label: Text('Responder',
+                    style: AppTextStyles.corpoMenor
+                        .copyWith(color: AppColors.magenta, fontWeight: FontWeight.w600)),
               ),
             ),
-          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _cardResposta(Map<String, dynamic> item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${_nomeColaborador(item['colaborador_id'])} respondeu ao seu elogio',
+              style: AppTextStyles.corpoMedio
+                  .copyWith(color: AppColors.magenta, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          MarkdownTexto(item['resposta'] as String? ?? '', style: AppTextStyles.corpoNormal),
+          const SizedBox(height: 6),
+          Text('Seu elogio: ${item['texto'] ?? ''}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.corpoCinza),
         ],
       ),
     );

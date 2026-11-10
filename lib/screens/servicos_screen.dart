@@ -1,25 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:gentepole/screens/feedback/feedback_screen.dart';
 import 'package:gentepole/screens/lojinha/lojinha_home_screen.dart';
-import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
-import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:gentepole/screens/cardapio/cardapio_screen.dart';
 import 'package:gentepole/screens/reserva_salas/reserva_salas_screen.dart';
-import 'package:gentepole/screens/conexoes/conexoes_do_bem_screen.dart';
 import 'package:gentepole/screens/ouvidoria/ouvidoria_screen.dart';
 import 'package:gentepole/screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
-import 'package:gentepole/screens/pdi/pdi_screen.dart';
-import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
-import 'package:gentepole/screens/avaliacao/avaliar_colegas_screen.dart';
-import 'package:gentepole/screens/avaliacao/periodo_experiencia_screen.dart';
 import 'package:gentepole/screens/solicitacoes/solicitacoes_screen.dart';
-import 'package:gentepole/screens/fisioterapia/fisioterapia_screen.dart';
-import 'plantao_psicologico_screen.dart';
+import 'bem_na_pole_screen.dart';
 import 'feedback/elogiar_screen.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import 'gestor/gestor_screen.dart';
+import 'performance/performance_colab_screen.dart';
 import 'gamificacao/gamificacao_screen.dart';
 import 'integracao/integracao_screen.dart';
 import 'documentos/documentos_institucionais_screen.dart';
@@ -27,7 +19,10 @@ import 'manual_uso/manual_uso_screen.dart';
 import 'contracheque/contracheque_screen.dart';
 import 'acesso_rapido/acesso_rapido_screen.dart';
 import 'ti/chamados_ti_screen.dart';
-import 'veiculos/meus_veiculos_screen.dart';
+import 'locomocao/locomocao_screen.dart';
+import 'visitantes/visitantes_screen.dart';
+import 'cadastro/atualizacao_cadastral_screen.dart';
+import '../widgets/cracha_virtual_dialog.dart';
 
 class ServicosScreen extends StatefulWidget {
   const ServicosScreen({super.key});
@@ -66,6 +61,10 @@ class _ServicosScreenState extends State<ServicosScreen> {
       _api.folhaContrachequeAtiva(),
       _api.verificarSeEhRequisitanteDeVaga(),
     ]);
+    Set<String> bloqueadas = {};
+    try {
+      bloqueadas = await _api.listarFuncionalidadesGestorBloqueadas();
+    } catch (_) {}
     if (mounted) {
       setState(() {
         _ehGestor = resultados[0];
@@ -75,7 +74,10 @@ class _ServicosScreenState extends State<ServicosScreen> {
         _massoterapiaDisponivel = resultados[4];
         _nutricaoDisponivel = resultados[5];
         _contrachequeAtivo = resultados[6];
-        _ehRequisitanteVaga = resultados[7];
+        // Requisitante puro com Vagas bloqueada não tem nada pra ver em
+        // Gestão de Equipe (no web a área inteira some).
+        _ehRequisitanteVaga =
+            resultados[7] && !bloqueadas.contains('vagas_gestor');
         _loadingPerfis = false;
       });
     }
@@ -257,14 +259,30 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           _botaoServico(
                             context,
                             icone: Icons.directions_car_outlined,
-                            titulo: 'Meus Veículos',
-                            subtitulo: 'Cadastre seu carro ou moto',
+                            titulo: 'Locomoção',
+                            subtitulo: 'Como você vai para a empresa',
                             cor: AppColors.laranja,
                             emBreve: false,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const MeusVeiculosScreen(),
+                                builder: (_) => const LocomocaoScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.badge_outlined,
+                            titulo: 'Visitantes',
+                            subtitulo: 'Cadastre quem vai te visitar',
+                            cor: const Color(0xFF0D9488),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const VisitantesScreen(),
                               ),
                             ),
                           ),
@@ -288,24 +306,6 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             const SizedBox(height: 14),
                           ],
 
-                          // Mude para true para exibir nas demonstrações
-                          if (false) ...[
-                            _botaoServico(
-                              context,
-                              icone: Icons.forum_outlined,
-                              titulo: 'Feedback',
-                              subtitulo: 'Envie e receba feedbacks dos colegas',
-                              cor: AppColors.laranja,
-                              emBreve: false,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const FeedbackScreen(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
                           _botaoServico(
                             context,
                             icone: Icons.poll_outlined,
@@ -368,90 +368,20 @@ class _ServicosScreenState extends State<ServicosScreen> {
                           const SizedBox(height: 28),
 
                           // ── Bem na Pole ───────────────────────────────────
-                          _sectionLabel('Bem na Pole', AppColors.magenta),
-                          const SizedBox(height: 10),
-
-                          if (!_loadingPerfis && _massoterapiaDisponivel) ...[
-                            _botaoServico(
-                              context,
-                              icone: Icons.self_improvement_rounded,
-                              titulo: 'Massoterapia',
-                              subtitulo: 'Agende sua sessão de bem-estar',
-                              cor: AppColors.magenta,
-                              emBreve: false,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const MassoterapiaScreen(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-
-                          if (!_loadingPerfis && _nutricaoDisponivel) ...[
-                            _botaoServico(
-                              context,
-                              icone: Icons.local_dining_outlined,
-                              titulo: 'Nutricionista',
-                              subtitulo: 'Agende uma consulta nutricional',
-                              cor: const Color(0xFF10B981),
-                              emBreve: false,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const NutricionistaScreen(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-
                           _botaoServico(
                             context,
-                            icone: Icons.accessibility_new_rounded,
-                            titulo: 'Fisioterapia',
-                            subtitulo: 'Acompanhe suas sessões e exercícios',
+                            icone: Icons.spa_outlined,
+                            titulo: 'Bem na Pole',
+                            subtitulo: 'Massoterapia, nutrição, fisioterapia e mais',
                             cor: AppColors.magenta,
                             emBreve: false,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const FisioterapiaScreen(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.psychology_outlined,
-                            titulo: 'Plantão Psicológico',
-                            subtitulo: 'Apoio emocional e saúde mental',
-                            cor: const Color(0xFF7C3AED),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const PlantaoPsicologicoScreen(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.favorite_outline_rounded,
-                            titulo: 'Conexões do Bem',
-                            subtitulo:
-                                'Voluntariado e indicação de instituições',
-                            cor: const Color(0xFFEC4899),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ConexoesDoiemScreen(),
+                                builder: (_) => BemNaPoleScreen(
+                                  massoterapiaDisponivel: _massoterapiaDisponivel,
+                                  nutricaoDisponivel: _nutricaoDisponivel,
+                                ),
                               ),
                             ),
                           ),
@@ -520,65 +450,17 @@ class _ServicosScreenState extends State<ServicosScreen> {
 
                           _botaoServico(
                             context,
-                            icone: Icons.flag_outlined,
-                            titulo: 'Meu PDI',
+                            icone: Icons.trending_up_rounded,
+                            titulo: 'Performance',
                             subtitulo:
-                                'Acompanhe seu plano de desenvolvimento',
-                            cor: const Color(0xFF6366F1),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const PdiScreen()),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.assessment_outlined,
-                            titulo: 'Minha Avaliação',
-                            subtitulo:
-                                'Responda sua autoavaliação de desempenho',
-                            cor: const Color(0xFF6366F1),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const AvaliacaoScreen()),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.groups_outlined,
-                            titulo: 'Avaliar Colegas',
-                            subtitulo: 'Avaliações de ciclo 360 pendentes',
+                                'PDI, avaliações e período de experiência',
                             cor: const Color(0xFF6366F1),
                             emBreve: false,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                   builder: (_) =>
-                                      const AvaliarColegasScreen()),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          _botaoServico(
-                            context,
-                            icone: Icons.explore_outlined,
-                            titulo: 'Período de Experiência',
-                            subtitulo:
-                                'Responda a pesquisa do seu período de experiência',
-                            cor: const Color(0xFF6366F1),
-                            emBreve: false,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const PeriodoExperienciaScreen()),
+                                      const PerformanceColabScreen()),
                             ),
                           ),
                           const SizedBox(height: 28),
@@ -643,8 +525,44 @@ class _ServicosScreenState extends State<ServicosScreen> {
                             const SizedBox(height: 28),
                           ],
 
-                          // ── Institucional ─────────────────────────────────
-                          _sectionLabel('Institucional', AppColors.laranja),
+                          // ── Meu Cadastro ──────────────────────────────────
+                          _sectionLabel('Meu Cadastro', const Color(0xFF0369A1)),
+                          const SizedBox(height: 10),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.folder_shared_outlined,
+                            titulo: 'Atualização cadastral',
+                            subtitulo: 'Envie seus documentos e de seus dependentes',
+                            cor: const Color(0xFF0369A1),
+                            emBreve: false,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AtualizacaoCadastralScreen(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _botaoServico(
+                            context,
+                            icone: Icons.badge_outlined,
+                            titulo: 'Crachá virtual',
+                            subtitulo: 'Veja a frente e o verso do seu crachá',
+                            cor: const Color(0xFF0369A1),
+                            emBreve: false,
+                            onTap: () {
+                              final id = ApiService().colaboradorAtual?.id;
+                              if (id != null) {
+                                abrirCrachaVirtual(context, colaboradorId: id);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 28),
+
+                          // ── Utilitários ───────────────────────────────────
+                          _sectionLabel('Utilitários', AppColors.laranja),
                           const SizedBox(height: 10),
 
                           _botaoServico(

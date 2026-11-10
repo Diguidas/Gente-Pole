@@ -4,6 +4,7 @@ import '../../core/app_theme.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 import '../solicitacoes/solicitacoes_screen.dart' show PayloadSolicitacaoView;
+import 'solicitacoes_gestor_formularios.dart';
 
 // Só pra exibir o histórico corretamente — não controla o que pode ser
 // criado (isso é _labelTipoSolicitacaoGestor, o grid de "novo pedido").
@@ -12,49 +13,21 @@ const Map<String, String> _labelTipoSolicitacaoAprovacao = {
   'rota': 'Rota',
   'moveis_administrativos': 'Móveis Administrativos',
   'uber': 'Uber',
+  'uber_fixo': 'Uber Fixo',
 };
 
-// 'moveis_administrativos' e 'uber' foram ocultados do grid de "novo
-// pedido" a pedido — os dialogs continuam existindo, só não aparecem
-// mais como opção de criar.
+// Uber, Uber Fixo, Móveis Administrativos e Rota diária do gestor ficam na
+// tela Facilites (facilites_gestor_screen.dart), como no web.
 const Map<String, String> _labelTipoSolicitacaoGestor = {
+  'adesao_beneficio': 'Adesão de Benefício',
   'swile': 'Swile',
   'adiantamento_13': 'Adiantamento de 13º',
 };
 
 const Map<String, IconData> _iconeTipoSolicitacaoGestor = {
+  'adesao_beneficio': Icons.card_giftcard_outlined,
   'swile': Icons.card_giftcard_outlined,
   'adiantamento_13': Icons.payments_outlined,
-};
-
-/// Tipos gestor que pedem selecionar 1 colaborador da equipe.
-const Set<String> _tiposComColabUnico = {'moveis_administrativos', 'adiantamento_13'};
-
-/// Tipos gestor que pedem selecionar vários colaboradores da equipe.
-const Set<String> _tiposComColabMultiplo = {'swile'};
-
-/// Campos extras de texto por tipo — simplificação do formulário completo
-/// do web (que tem seletores de unidade/aeroporto/endereço no Uber e
-/// dropdowns fixos em Móveis) em favor de campos de texto livre.
-const Map<String, List<(String label, bool multilinha)>> _camposPorTipoGestor = {
-  'moveis_administrativos': [
-    ('Tipo de solicitação (Material ou Serviço)', false),
-    ('Ordem de investimento', false),
-    ('Descrição', true),
-    ('Referência (link)', false),
-  ],
-  'uber': [
-    ('Data da corrida', false),
-    ('Passageiro (nome e matrícula)', false),
-    ('E-mail Uber do passageiro', false),
-    ('Trajeto', false),
-    ('Partida', false),
-    ('Destino', false),
-    ('Centro de custo solicitante', false),
-    ('Observação', true),
-  ],
-  'adiantamento_13': [],
-  'swile': [],
 };
 
 enum _AbaGestor { novo, pendentes, historico }
@@ -63,7 +36,8 @@ enum _AbaGestor { novo, pendentes, historico }
 /// (colaborador). Porta `solicitacoes_gestor_screen.dart` do gentepole_admin:
 /// abre pedidos que não passam por aprovação (Móveis, Swile, Uber,
 /// Adiantamento de 13º) e aprova/recusa os que exigem aprovação do gestor
-/// (Incentivo Educacional e Rota), abertos pelos membros da equipe.
+/// (Rota), abertos pelos membros da equipe. Incentivo Educacional vai direto
+/// para o DP, sem aprovação do gestor.
 class SolicitacoesGestorScreen extends StatefulWidget {
   const SolicitacoesGestorScreen({super.key});
 
@@ -91,7 +65,8 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
       setState(() => _loading = false);
       return;
     }
-    final equipe = await _api.buscarMinhaEquipe();
+    final equipe = await _api.buscarMinhaEquipe(
+        apenasLiderDireto: true, funcionalidade: 'solicitacoes_gestor');
     // Junta o que precisa da aprovação dele (gestorId) com o que ele mesmo
     // abriu direto (Móveis, Swile, Uber, Adiantamento de 13º).
     final results = await Future.wait([
@@ -126,8 +101,12 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
     if (gestor == null) return;
     final enviado = await showDialog<bool>(
       context: context,
-      builder: (_) =>
-          _DialogSolicitacaoGestor(tipo: tipo, equipe: _equipe, api: _api),
+      builder: (_) => switch (tipo) {
+        'adesao_beneficio' =>
+          DialogAdesaoBeneficio(gestor: gestor, equipe: _equipe, api: _api),
+        'swile' => DialogSwile(gestor: gestor, equipe: _equipe, api: _api),
+        _ => DialogAdiantamento13(gestor: gestor, equipe: _equipe, api: _api),
+      },
     );
     if (enviado == true) _carregar();
   }
@@ -454,290 +433,6 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
       decoration: BoxDecoration(color: cor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
       child: Text(label,
           style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w700, color: cor)),
-    );
-  }
-}
-
-/// Formulário genérico de nova solicitação do gestor — os campos exibidos
-/// variam por [tipo] (ver `_camposPorTipoGestor`). Nenhum desses 4 tipos
-/// exige aprovação (vão direto para a fila do RH/DP).
-class _DialogSolicitacaoGestor extends StatefulWidget {
-  final String tipo;
-  final List<ColaboradorModel> equipe;
-  final ApiService api;
-  const _DialogSolicitacaoGestor(
-      {required this.tipo, required this.equipe, required this.api});
-
-  @override
-  State<_DialogSolicitacaoGestor> createState() => _DialogSolicitacaoGestorState();
-}
-
-class _DialogSolicitacaoGestorState extends State<_DialogSolicitacaoGestor> {
-  final _ctrls = <String, TextEditingController>{};
-  ColaboradorModel? _colabAlvo;
-  final Set<ColaboradorModel> _selecionados = {};
-  bool _enviando = false;
-  String? _erro;
-
-  @override
-  void initState() {
-    super.initState();
-    final campos = _camposPorTipoGestor[widget.tipo] ?? <(String, bool)>[];
-    for (final (label, _) in campos) {
-      _ctrls[label] = TextEditingController();
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in _ctrls.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _enviar() async {
-    final gestor = widget.api.colaboradorAtual;
-    if (gestor == null) return;
-    if (_tiposComColabUnico.contains(widget.tipo) && _colabAlvo == null) {
-      setState(() => _erro = 'Selecione o colaborador.');
-      return;
-    }
-    if (_tiposComColabMultiplo.contains(widget.tipo) && _selecionados.isEmpty) {
-      setState(() => _erro = 'Selecione ao menos um colaborador.');
-      return;
-    }
-    final camposVazios = _ctrls.values.any((c) => c.text.trim().isEmpty);
-    if (camposVazios) {
-      setState(() => _erro = 'Preencha todos os campos.');
-      return;
-    }
-    setState(() {
-      _enviando = true;
-      _erro = null;
-    });
-    try {
-      final payload = <String, dynamic>{
-        if (_colabAlvo != null) ...{
-          'Colaborador': _colabAlvo!.nome,
-          'Matrícula': _colabAlvo!.matricula,
-          'Cargo': _colabAlvo!.cargo,
-        },
-        if (_selecionados.isNotEmpty)
-          'Colaboradores':
-              _selecionados.map((c) => '${c.nome} (${c.matricula})').join(', '),
-        for (final entry in _ctrls.entries) entry.key: entry.value.text.trim(),
-      };
-
-      await widget.api.criarSolicitacao(
-        tipo: widget.tipo,
-        payload: payload,
-        abertoPorId: gestor.id,
-        abertoPorNome: gestor.nome,
-        abertoPorPapel: 'gestor',
-        setor: gestor.setor,
-      );
-
-      if (!mounted) return;
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _enviando = false;
-        _erro = 'Erro ao enviar: $e';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final campos = _camposPorTipoGestor[widget.tipo] ?? <(String, bool)>[];
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 560),
-        child: Container(
-          width: 420,
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    _labelTipoSolicitacaoAprovacao[widget.tipo] ??
-                        _labelTipoSolicitacaoGestor[widget.tipo] ??
-                        widget.tipo,
-                    style: GoogleFonts.poppins(
-                        fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
-                const SizedBox(height: 16),
-                if (widget.tipo == 'swile') const _RegrasPrazoSwile(),
-                if (_tiposComColabUnico.contains(widget.tipo)) ...[
-                  Text('Colaborador',
-                      style: GoogleFonts.poppins(
-                          fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.cinzaTexto)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<ColaboradorModel>(
-                    initialValue: _colabAlvo,
-                    isExpanded: true,
-                    items: widget.equipe
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c.nome)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _colabAlvo = v),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (_tiposComColabMultiplo.contains(widget.tipo)) ...[
-                  Text('Colaboradores',
-                      style: GoogleFonts.poppins(
-                          fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.cinzaTexto)),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: widget.equipe.map((c) {
-                      final sel = _selecionados.contains(c);
-                      return FilterChip(
-                        label: Text(c.nome),
-                        selected: sel,
-                        onSelected: (v) => setState(() {
-                          if (v) {
-                            _selecionados.add(c);
-                          } else {
-                            _selecionados.remove(c);
-                          }
-                        }),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                ...campos.map((campo) {
-                  final (label, multilinha) = campo;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(label,
-                            style: GoogleFonts.poppins(
-                                fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.cinzaTexto)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _ctrls[label],
-                          maxLines: multilinha ? 3 : 1,
-                          style: GoogleFonts.poppins(fontSize: 14),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                if (_erro != null) ...[
-                  const SizedBox(height: 4),
-                  Text(_erro!, style: GoogleFonts.poppins(fontSize: 12, color: AppColors.erro)),
-                ],
-                const SizedBox(height: 8),
-                Row(children: [
-                  const Spacer(),
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _enviando ? null : _enviar,
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.laranja, foregroundColor: Colors.white),
-                    child: _enviando
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Enviar'),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Aviso de prazo de envio/crédito exibido na abertura da solicitação —
-/// o gestor precisa saber disso antes de mandar, já que solicitação feita
-/// depois do dia 20 só vira crédito no mês seguinte ao esperado.
-class _RegrasPrazoSwile extends StatelessWidget {
-  const _RegrasPrazoSwile();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF1F2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFECDD3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Icon(Icons.push_pin_outlined, size: 14, color: Color(0xFFE11D48)),
-            const SizedBox(width: 6),
-            Text('Regras de Prazos de Envio',
-                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark)),
-          ]),
-          const SizedBox(height: 8),
-          _itemRegra('Combustível'),
-          const SizedBox(height: 6),
-          _itemRegra('Alimentação'),
-        ],
-      ),
-    );
-  }
-
-  Widget _itemRegra(String beneficio) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 5, right: 8),
-          child: Container(width: 4, height: 4, decoration: const BoxDecoration(color: AppColors.dark, shape: BoxShape.circle)),
-        ),
-        Expanded(
-          child: RichText(
-            text: TextSpan(
-              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.dark, height: 1.4),
-              children: [
-                TextSpan(text: '$beneficio\n', style: const TextStyle(fontWeight: FontWeight.w700)),
-                const TextSpan(text: 'Envio até o dia '),
-                const TextSpan(text: '20 de cada mês', style: TextStyle(fontWeight: FontWeight.w700)),
-                const TextSpan(text: ' → Crédito disponível em '),
-                const TextSpan(text: '01 do mês seguinte', style: TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

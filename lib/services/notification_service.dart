@@ -10,6 +10,8 @@ import '../screens/gestor/vagas_gestor_screen.dart';
 import '../screens/massoterapia/massoterapia_screen.dart';
 import '../screens/nutricionista/nutricionista_screen.dart';
 import '../screens/fisioterapia/fisioterapia_screen.dart';
+import '../screens/consulta_medica/consulta_medica_screen.dart';
+import '../screens/gestor/candidatura_chat_sheet.dart';
 import 'api_service.dart';
 
 // Handler de background — deve ser função top-level (fora de qualquer classe)
@@ -133,6 +135,11 @@ class NotificationService {
             builder: (_) => ChamadosTiScreen(workItemIdParaAbrir: _itemId(data)),
           ),
         );
+      case 'consulta_medica':
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const ConsultaMedicaScreen()),
+        );
       case 'pesquisas':
         AppNavigator.goToTab(2);
         AppNavigator.navigatorKey.currentState?.push(
@@ -147,6 +154,13 @@ class NotificationService {
             builder: (_) => VagasGestorScreen(vagaIdParaAbrir: _itemId(data)),
           ),
         );
+      case 'candidato_chat':
+        AppNavigator.goToTab(2);
+        final ctxChat = AppNavigator.navigatorKey.currentContext;
+        final idChat = _itemId(data);
+        if (ctxChat != null && idChat != null) {
+          abrirCandidaturaChatDaNotificacao(ctxChat, idChat);
+        }
       case 'servicos_massoterapia':
         AppNavigator.goToTab(2);
         AppNavigator.navigatorKey.currentState?.push(

@@ -47,8 +47,16 @@ class _AcessoRapidoScreenState extends State<AcessoRapidoScreen> {
 
   Future<void> _abrir(String url) async {
     final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    var ok = false;
+    if (uri != null) {
+      try {
+        ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível abrir o link.')));
+    }
   }
 
   List<Map<String, dynamic>> _porTipo(String tipo) =>

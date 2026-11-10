@@ -25,6 +25,29 @@ class _ContrachequeScreenState extends State<ContrachequeScreen> {
   final _api = ApiService();
   bool _carregando = true;
   List<({int mes, int ano, List<Map<String, dynamic>> periodos})> _competencias = [];
+  // null = todos os periodos
+  int? _filtroPeriodo;
+
+  /// Periodos que o colaborador realmente tem, na ordem do codigo.
+  List<int> get _periodosPresentes {
+    final s = <int>{};
+    for (final c in _competencias) {
+      for (final p in c.periodos) {
+        s.add(p['periodo'] as int);
+      }
+    }
+    return s.toList()..sort();
+  }
+
+  List<({int mes, int ano, List<Map<String, dynamic>> periodos})> get _visiveis {
+    if (_filtroPeriodo == null) return _competencias;
+    final r = <({int mes, int ano, List<Map<String, dynamic>> periodos})>[];
+    for (final c in _competencias) {
+      final ps = c.periodos.where((p) => p['periodo'] == _filtroPeriodo).toList();
+      if (ps.isNotEmpty) r.add((mes: c.mes, ano: c.ano, periodos: ps));
+    }
+    return r;
+  }
 
   @override
   void initState() {
@@ -48,6 +71,10 @@ class _ContrachequeScreenState extends State<ContrachequeScreen> {
       if (!mounted) return;
       setState(() {
         _competencias = comPeriodos;
+        // Se o periodo escolhido deixou de existir, volta para "todos".
+        if (_filtroPeriodo != null && !_periodosPresentes.contains(_filtroPeriodo)) {
+          _filtroPeriodo = null;
+        }
         _carregando = false;
       });
     } catch (_) {
@@ -90,7 +117,32 @@ class _ContrachequeScreenState extends State<ContrachequeScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(20),
                     children: [
-                      for (final c in _competencias) ...[
+                      // Qual periodo? "Todos" mostra tudo; os demais filtram.
+                      if (_periodosPresentes.length > 1) ...[
+                        Text('Qual contracheque você quer ver?',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12.5, color: AppColors.cinzaTexto)),
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          ChoiceChip(
+                            label: Text('Todos', style: GoogleFonts.poppins(fontSize: 12)),
+                            selected: _filtroPeriodo == null,
+                            selectedColor: _corContracheque.withOpacity(0.15),
+                            onSelected: (_) => setState(() => _filtroPeriodo = null),
+                          ),
+                          for (final per in _periodosPresentes)
+                            ChoiceChip(
+                              label: Text(
+                                  ApiService.nomesPeriodoFolha[per] ?? 'Período $per',
+                                  style: GoogleFonts.poppins(fontSize: 12)),
+                              selected: _filtroPeriodo == per,
+                              selectedColor: _corContracheque.withOpacity(0.15),
+                              onSelected: (_) => setState(() => _filtroPeriodo = per),
+                            ),
+                        ]),
+                        const SizedBox(height: 16),
+                      ],
+                      for (final c in _visiveis) ...[
                         Text('${_mesesNome[c.mes - 1]} de ${c.ano}',
                             style: GoogleFonts.poppins(
                                 fontSize: 13, color: AppColors.cinzaTexto)),

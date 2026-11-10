@@ -35,7 +35,7 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
   String? _departamento;
   String? _nivelUrgencia;
   String? _atribuidoPara; // guarda o id (string) do ti_membro selecionado
-  PlatformFile? _anexo;
+  final List<PlatformFile> _anexos = [];
   List<Map<String, dynamic>> _membros = [];
   List<String> _tiposSolicitacao = [];
   List<String> _departamentos = [];
@@ -94,10 +94,11 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
   }
 
   Future<void> _escolherAnexo() async {
-    final resultado = await FilePicker.platform.pickFiles(withData: true);
+    final resultado =
+        await FilePicker.platform.pickFiles(withData: true, allowMultiple: true);
     if (!mounted) return;
     if (resultado != null && resultado.files.isNotEmpty) {
-      setState(() => _anexo = resultado.files.first);
+      setState(() => _anexos.addAll(resultado.files.where((f) => f.bytes != null)));
     }
   }
 
@@ -134,8 +135,10 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
         atribuidoPara: membro['azure_email'] as String,
         tiMembroId: membro['id'] as int,
         solicitanteEmail: _emailCtrl.text.trim(),
-        anexoBytes: _anexo?.bytes != null ? Uint8List.fromList(_anexo!.bytes!) : null,
-        anexoNomeArquivo: _anexo?.name,
+        anexos: [
+          for (final a in _anexos)
+            (bytes: Uint8List.fromList(a.bytes!), nome: a.name),
+        ],
       );
       final matricula = _api.colaboradorAtual?.matricula;
       if (matricula != null) {
@@ -263,7 +266,32 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'Descreva o problema.' : null,
                     ),
                     const SizedBox(height: 18),
-                    _label('Anexo (opcional)'),
+                    _label('Anexos (opcional)'),
+                    for (var i = 0; i < _anexos.length; i++)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.cinzaClaro,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.attach_file_rounded, size: 18, color: _corTi),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _anexos[i].name,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.corpoNormal.copyWith(color: AppColors.dark),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => setState(() => _anexos.removeAt(i)),
+                            child: const Icon(Icons.close_rounded, size: 16, color: AppColors.cinzaTexto),
+                          ),
+                        ]),
+                      ),
                     InkWell(
                       onTap: _escolherAnexo,
                       borderRadius: BorderRadius.circular(16),
@@ -275,21 +303,15 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Row(children: [
-                          Icon(Icons.attach_file_rounded, size: 18, color: _anexo == null ? AppColors.cinzaTexto : _corTi),
+                          const Icon(Icons.add_rounded, size: 18, color: AppColors.cinzaTexto),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              _anexo?.name ?? 'Anexar print ou foto',
+                              _anexos.isEmpty ? 'Anexar print ou foto' : 'Adicionar outro anexo',
                               overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.corpoNormal.copyWith(
-                                  color: _anexo == null ? AppColors.cinzaTexto : AppColors.dark),
+                              style: AppTextStyles.corpoNormal.copyWith(color: AppColors.cinzaTexto),
                             ),
                           ),
-                          if (_anexo != null)
-                            InkWell(
-                              onTap: () => setState(() => _anexo = null),
-                              child: const Icon(Icons.close_rounded, size: 16, color: AppColors.cinzaTexto),
-                            ),
                         ]),
                       ),
                     ),

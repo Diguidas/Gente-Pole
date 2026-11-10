@@ -40,11 +40,20 @@ class _Matriz9BoxScreenState extends State<Matriz9BoxScreen> {
       final r = await Future.wait([
         _api.buscarPesosTemplates(ids),
         _api.listarNineBoxLegendas(),
+        _api.buscarPesosCiclos(avaliacoes
+            .map((a) => a['ciclo_id'] as int?)
+            .whereType<int>()
+            .toSet()
+            .toList()),
       ]);
       if (!mounted) return;
       setState(() {
         _avaliacoes = avaliacoes;
-        _pesos = r[0] as Map<int, Map<String, int>>;
+        // Pesos do ciclo (chave negativa) convivem com os do template.
+        _pesos = {
+          ...r[0] as Map<int, Map<String, int>>,
+          ...r[2] as Map<int, Map<String, int>>,
+        };
         _legendas = r[1] as Map<String, String>;
         _loading = false;
       });
