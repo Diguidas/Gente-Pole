@@ -25,6 +25,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   final Set<int> _visitadas = {0};
   Timer? _timerAcesso;
   bool _encerrando = false;
+  // Dia (aaaa-mm-dd) do último acesso registrado nesta execução: o app fica
+  // aberto em segundo plano, então ao voltar num dia novo registra de novo.
+  String? _acessoRegistradoEm;
 
   @override
   void initState() {
@@ -35,6 +38,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _timerAcesso = Timer.periodic(
         const Duration(minutes: 5), (_) => _verificarAcesso());
+    _registrarAcesso();
     // Pop-up de aniversário (natalício / tempo de empresa), 1x por dia.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) PopupAniversario.verificar(context);
@@ -51,7 +55,19 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _verificarAcesso();
+    if (state == AppLifecycleState.resumed) {
+      _verificarAcesso();
+      _registrarAcesso();
+    }
+  }
+
+  void _registrarAcesso() {
+    final h = DateTime.now();
+    final hoje =
+        '${h.year}-${h.month.toString().padLeft(2, '0')}-${h.day.toString().padLeft(2, '0')}';
+    if (_acessoRegistradoEm == hoje) return;
+    _acessoRegistradoEm = hoje;
+    ApiService().registrarAcessoApp();
   }
 
   /// Desligado ou bloqueado no painel: encerra a sessão. Se a conferência

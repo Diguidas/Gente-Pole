@@ -261,6 +261,20 @@ class ApiService {
     }
   }
 
+  /// Telemetria de engajamento: registra que o colaborador abriu o app (uma
+  /// linha por abertura; o painel conta colaboradores únicos por dia). Erro
+  /// aqui nunca pode atrapalhar o uso do app.
+  Future<void> registrarAcessoApp() async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return;
+    try {
+      await _client.from('acessos_app').insert({
+        'colaborador_id': int.tryParse(id.toString()) ?? id,
+        'origem': 'app',
+      });
+    } catch (_) {}
+  }
+
   /// Salva (ou atualiza) o FCM token do colaborador logado no banco.
   Future<void> salvarFcmToken(String token) async {
     final id = colaboradorAtual?.id;
