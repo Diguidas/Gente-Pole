@@ -43,6 +43,18 @@ const List<String> _tiposAbriveis = [
 
 bool _pareceUrl(String v) => v.startsWith('http://') || v.startsWith('https://');
 
+/// Código de 4 dígitos da solicitação ("#1234"), ou vazio se ainda não tiver.
+String codigoSolicitacao(Map<String, dynamic> s) {
+  final c = s['codigo'];
+  return c == null ? '' : '#$c';
+}
+
+/// "#1234 · Crachá" — título de cartão com o código na frente.
+String tituloComCodigo(Map<String, dynamic> s, String titulo) {
+  final c = codigoSolicitacao(s);
+  return c.isEmpty ? titulo : '$c · $titulo';
+}
+
 /// Mostra o payload de uma solicitação de forma legível (usado tanto na
 /// tela do colaborador quanto na do gestor).
 class PayloadSolicitacaoView extends StatelessWidget {
@@ -260,7 +272,6 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _minhas = [];
   Map<int, List<Map<String, dynamic>>> _notasPorSolicitacao = {};
-  bool _abaMinhas = false;
 
   @override
   void initState() {
@@ -377,20 +388,25 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(children: [
-                            _tabBtn('Novo pedido', !_abaMinhas,
-                                () => setState(() => _abaMinhas = false)),
-                            const SizedBox(width: 8),
-                            _tabBtn('Minhas solicitações', _abaMinhas,
-                                () => setState(() => _abaMinhas = true)),
-                          ]),
-                          const SizedBox(height: 16),
+                          // Tudo numa tela só: novo pedido no topo e, logo
+                          // abaixo, o acompanhamento das já abertas.
                           Expanded(
                             child: _loading
                                 ? const Center(
                                     child: CircularProgressIndicator(
                                         color: _corSolicitacoes))
-                                : (_abaMinhas ? _listaMinhas() : _grid()),
+                                : RefreshIndicator(
+                                    onRefresh: _carregar,
+                                    child: ListView(
+                                      children: [
+                                        _tituloSecao('Abrir um novo pedido'),
+                                        _grid(),
+                                        const SizedBox(height: 24),
+                                        _tituloSecao('Minhas solicitações'),
+                                        ..._listaMinhas(),
+                                      ],
+                                    ),
+                                  ),
                           ),
                         ],
                       ),
@@ -405,26 +421,21 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     );
   }
 
-  Widget _tabBtn(String label, bool ativo, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: ativo ? _corSolicitacoes : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: ativo ? Colors.white : AppColors.cinzaTexto)),
-      ),
+  Widget _tituloSecao(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(texto,
+          style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.dark)),
     );
   }
 
   Widget _grid() {
     return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 220,
         mainAxisExtent: 110,
@@ -487,11 +498,16 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     }
   }
 
-  Widget _listaMinhas() {
+  List<Widget> _listaMinhas() {
     if (_minhas.isEmpty) {
-      return Center(
-          child: Text('Você ainda não abriu nenhuma solicitação.',
-              style: GoogleFonts.poppins(color: AppColors.cinzaTexto)));
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Center(
+              child: Text('Você ainda não abriu nenhuma solicitação.',
+                  style: GoogleFonts.poppins(color: AppColors.cinzaTexto))),
+        ),
+      ];
     }
     final porGrupo = <String, List<Map<String, dynamic>>>{};
     for (final s in _minhas) {
@@ -501,28 +517,23 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     final grupos = _gruposStatus
         .where((g) => (porGrupo[g.$1] ?? const []).isNotEmpty)
         .toList();
-    return RefreshIndicator(
-      onRefresh: _carregar,
-      child: ListView(
-        children: [
-          for (final grupo in grupos) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: Text(grupo.$2,
-                  style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.cinzaTexto)),
-            ),
-            for (final s in porGrupo[grupo.$1]!) ...[
-              _cardSolicitacao(s),
-              const SizedBox(height: 8),
-            ],
-            const SizedBox(height: 12),
-          ],
+    return [
+      for (final grupo in grupos) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(grupo.$2,
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.cinzaTexto)),
+        ),
+        for (final s in porGrupo[grupo.$1]!) ...[
+          _cardSolicitacao(s),
+          const SizedBox(height: 8),
         ],
-      ),
-    );
+        const SizedBox(height: 12),
+      ],
+    ];
   }
 
   Widget _cardSolicitacao(Map<String, dynamic> s) {
@@ -549,7 +560,7 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_labelTipoSolicitacao[tipo] ?? tipo,
+                  Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? tipo),
                       style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -789,7 +800,7 @@ class _DialogDetalheSolicitacaoState extends State<_DialogDetalheSolicitacao> {
                       color: _corSolicitacoes, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(_labelTipoSolicitacao[tipo] ?? tipo,
+                    child: Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? tipo),
                         style: GoogleFonts.poppins(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,

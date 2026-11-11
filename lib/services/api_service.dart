@@ -134,7 +134,7 @@ class ApiService {
         .from('colaboradores')
         .select()
         .eq('cpf', cpfLimpo)
-        .maybeSingle();
+        .order('demitido', ascending: true, nullsFirst: true).order('data_admissao', ascending: false).limit(1).maybeSingle();
 
     if (resultColaborador == null) {
       // Verifica se é um fornecedor cadastrado em usuarios_app (por CPF)
@@ -2876,6 +2876,11 @@ class ApiService {
       return LojinhaFuncionarioModel(
         limiteTotal: dados.limiteTotal,
         limiteDisp: limiteDispAjustado,
+        limiteBruto: dados.limiteBruto,
+        pensao: dados.pensao,
+        emprestimos: dados.emprestimos,
+        planoSaude: dados.planoSaude,
+        bonificacao: dados.bonificacao,
         bloqueio: dados.bloqueio,
         centro: dados.centro,
         mensagem: dados.mensagem,

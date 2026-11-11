@@ -3,7 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
-import '../solicitacoes/solicitacoes_screen.dart' show PayloadSolicitacaoView;
+import '../solicitacoes/solicitacoes_screen.dart'
+    show PayloadSolicitacaoView, codigoSolicitacao, tituloComCodigo;
 import 'solicitacoes_gestor_formularios.dart';
 
 // Só pra exibir o histórico corretamente — não controla o que pode ser
@@ -30,8 +31,6 @@ const Map<String, IconData> _iconeTipoSolicitacaoGestor = {
   'adiantamento_13': Icons.payments_outlined,
 };
 
-enum _AbaGestor { novo, pendentes, historico }
-
 /// "Solicitações" do gestor — contrapartida de [SolicitacoesScreen]
 /// (colaborador). Porta `solicitacoes_gestor_screen.dart` do gentepole_admin:
 /// abre pedidos que não passam por aprovação (Móveis, Swile, Uber,
@@ -50,7 +49,6 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _todas = [];
   List<ColaboradorModel> _equipe = [];
-  _AbaGestor _aba = _AbaGestor.pendentes;
 
   @override
   void initState() {
@@ -128,7 +126,7 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Recusar solicitação',
+        title: Text('Recusar solicitação ${codigoSolicitacao(s)}'.trim(),
             style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700)),
         content: SizedBox(
           width: 380,
@@ -186,7 +184,8 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final lista = _aba == _AbaGestor.historico ? _historico : _pendentes;
+    final pendentes = _pendentes;
+    final historico = _historico;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: _loading
@@ -214,54 +213,43 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
                       ),
                     ),
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: [
-                          _tabBtn('Novo pedido', _aba == _AbaGestor.novo,
-                              () => setState(() => _aba = _AbaGestor.novo)),
-                          const SizedBox(width: 8),
-                          _tabBtn('Aguardando aprovação (${_pendentes.length})',
-                              _aba == _AbaGestor.pendentes,
-                              () => setState(() => _aba = _AbaGestor.pendentes)),
-                          const SizedBox(width: 8),
-                          _tabBtn('Histórico', _aba == _AbaGestor.historico,
-                              () => setState(() => _aba = _AbaGestor.historico)),
-                        ]),
-                      ),
+                  // Tudo numa tela só: novo pedido, o que espera a aprovação
+                  // do gestor e o acompanhamento das já abertas/decididas.
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        _tituloSecao('Abrir um novo pedido'),
+                        _gridNovoPedido(),
+                        if (pendentes.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          _tituloSecao(
+                              'Aguardando sua aprovação (${pendentes.length})'),
+                          for (final s in pendentes) ...[
+                            _card(s),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                        const SizedBox(height: 24),
+                        _tituloSecao('Acompanhamento'),
+                        if (historico.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: Text('Nenhuma solicitação por aqui ainda.',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      color: AppColors.cinzaTexto)),
+                            ),
+                          )
+                        else
+                          for (final s in historico) ...[
+                            _card(s),
+                            const SizedBox(height: 12),
+                          ],
+                      ]),
                     ),
                   ),
-                  if (_aba == _AbaGestor.novo)
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      sliver: SliverToBoxAdapter(child: _gridNovoPedido()),
-                    )
-                  else if (lista.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            _aba == _AbaGestor.historico
-                                ? 'Nenhuma decisão registrada ainda.'
-                                : 'Nenhuma solicitação aguardando aprovação.',
-                            style: GoogleFonts.poppins(fontSize: 13, color: AppColors.cinzaTexto),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      sliver: SliverList.separated(
-                        itemCount: lista.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (_, i) => _card(lista[i]),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -312,21 +300,14 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
     );
   }
 
-  Widget _tabBtn(String label, bool ativo, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: ativo ? AppColors.laranja : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: ativo ? Colors.white : AppColors.cinzaTexto)),
-      ),
+  Widget _tituloSecao(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(texto,
+          style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.dark)),
     );
   }
 
@@ -353,9 +334,11 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        _labelTipoSolicitacaoAprovacao[tipo] ??
-                            _labelTipoSolicitacaoGestor[tipo] ??
-                            tipo,
+                        tituloComCodigo(
+                            s,
+                            _labelTipoSolicitacaoAprovacao[tipo] ??
+                                _labelTipoSolicitacaoGestor[tipo] ??
+                                tipo),
                         style: GoogleFonts.poppins(
                             fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dark)),
                     const SizedBox(height: 2),
