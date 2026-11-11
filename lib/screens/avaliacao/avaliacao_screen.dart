@@ -325,7 +325,8 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                       valor: _notas[pid]!,
                       onChanged: (v) => setState(() => _notas[pid] = v),
                       legendaBaixa: p['legenda_nota_1'] as String?,
-                      legendaAlta: p['legenda_nota_5'] as String?),
+                      legendaAlta: p['legenda_nota_5'] as String?,
+                      legendaMeio: [p['legenda_nota_2'] as String?, p['legenda_nota_3'] as String?, p['legenda_nota_4'] as String?]),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _comentarioCtrls[pid],

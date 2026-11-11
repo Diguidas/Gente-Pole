@@ -451,7 +451,8 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                               valor: notas[pid]!,
                               onChanged: (v) => setStateDialog(() => notas[pid] = v),
                               legendaBaixa: p['legenda_nota_1'] as String?,
-                              legendaAlta: p['legenda_nota_5'] as String?),
+                              legendaAlta: p['legenda_nota_5'] as String?,
+                      legendaMeio: [p['legenda_nota_2'] as String?, p['legenda_nota_3'] as String?, p['legenda_nota_4'] as String?]),
                           const SizedBox(height: 6),
                           TextField(
                             controller: comentarioCtrls[pid],

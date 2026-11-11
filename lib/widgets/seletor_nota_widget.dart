@@ -14,6 +14,8 @@ class SeletorNota1a5 extends StatelessWidget {
   final double alturaBotao;
   final String? legendaBaixa;
   final String? legendaAlta;
+  /// Legendas opcionais das notas 2, 3 e 4 (nessa ordem).
+  final List<String?>? legendaMeio;
 
   const SeletorNota1a5({
     super.key,
@@ -23,10 +25,20 @@ class SeletorNota1a5 extends StatelessWidget {
     this.alturaBotao = 40,
     this.legendaBaixa,
     this.legendaAlta,
+    this.legendaMeio,
   });
 
   static const descricaoBaixa = 'Não atende as expectativas';
   static const descricaoAlta = 'Supera muito as expectativas';
+
+  String? _meio(int k) {
+    final l = legendaMeio;
+    if (l == null || k >= l.length) return null;
+    final t = l[k]?.trim();
+    return (t == null || t.isEmpty) ? null : t;
+  }
+
+  bool get _temLegendaMeio => List.generate(3, _meio).any((t) => t != null);
 
   @override
   Widget build(BuildContext context) {
@@ -61,18 +73,40 @@ class SeletorNota1a5 extends StatelessWidget {
           }),
         ),
         const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: Text(legendaBaixa ?? descricaoBaixa,
-                  style: AppTextStyles.corpoMinimo),
-            ),
-            Expanded(
-              child: Text(legendaAlta ?? descricaoAlta,
-                  textAlign: TextAlign.right, style: AppTextStyles.corpoMinimo),
-            ),
-          ],
-        ),
+        if (_temLegendaMeio)
+          // Uma legenda embaixo de cada nota (1 a 5).
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(5, (i) {
+              final textos = [
+                legendaBaixa ?? descricaoBaixa,
+                ...List.generate(3, (k) => _meio(k) ?? ''),
+                legendaAlta ?? descricaoAlta,
+              ];
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: i < 4 ? 6 : 0),
+                  child: Text(textos[i],
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.corpoMinimo.copyWith(fontSize: 9)),
+                ),
+              );
+            }),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: Text(legendaBaixa ?? descricaoBaixa,
+                    style: AppTextStyles.corpoMinimo),
+              ),
+              Expanded(
+                child: Text(legendaAlta ?? descricaoAlta,
+                    textAlign: TextAlign.right,
+                    style: AppTextStyles.corpoMinimo),
+              ),
+            ],
+          ),
       ],
     );
   }

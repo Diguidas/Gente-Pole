@@ -23,6 +23,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   /// Se a filial do colaborador não tiver uma regra 'geral' liberando,
   /// a Lojinha fica só-consulta (sem catálogo, sem novo pedido).
   bool _liberadaParaCompra = true;
+  // Regra "geral" (produtos SAP) aberta agora. A Lojinha também abre só com
+  // exclusivos abertos (dia + horário + filial), independente da geral.
+  bool _liberadaGeral = true;
 
   // Limite de PEDIDOS (não itens) por tipo, configurado no gentepole_admin —
   // ex: 1 regular (SAP) + 1 exclusivo por semana.
@@ -90,14 +93,22 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   Future<void> _carregar() async {
     setState(() => _carregando = true);
     _dados = await _api.buscarDadosFuncionarioLojinha();
-    final liberada = await _api.lojinhaLiberadaParaFilial(
+    final liberadaGeral = await _api.lojinhaLiberadaParaFilial(
       _api.colaboradorAtual?.branch,
     );
+    var liberada = liberadaGeral;
+    if (!liberada) {
+      try {
+        final excl = await _api.buscarExclusivosLojinha();
+        liberada = excl.any((p) => p.disponivelHoje);
+      } catch (_) {}
+    }
     await _carregarLimitePedidos();
     if (!mounted) return;
     setState(() {
       _carregando = false;
       _liberadaParaCompra = liberada;
+      _liberadaGeral = liberadaGeral;
     });
     await _retentarSeValorZerado();
   }
@@ -328,6 +339,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                     onPedidoCriado: _carregar,
                                     sapEsgotado: _sapEsgotado,
                                     exclusivoEsgotado: _exclusivoEsgotado,
+                                    liberadaGeral: _liberadaGeral,
                                   ),
                                 ),
                               );

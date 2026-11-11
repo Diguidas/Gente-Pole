@@ -18,12 +18,17 @@ class LojinhaProdutosScreen extends StatefulWidget {
   final bool sapEsgotado;
   final bool exclusivoEsgotado;
 
+  /// false = a regra "geral" (produtos SAP) não está aberta agora para a
+  /// filial; só os exclusivos abertos aparecem no catálogo.
+  final bool liberadaGeral;
+
   const LojinhaProdutosScreen({
     super.key,
     required this.dadosFuncionario,
     required this.onPedidoCriado,
     this.sapEsgotado = false,
     this.exclusivoEsgotado = false,
+    this.liberadaGeral = true,
   });
 
   @override
@@ -185,6 +190,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       _filtrados = _todos.where((p) {
         if (!p.disponivelHoje) return false;
         if (widget.sapEsgotado && !p.isExclusivo) return false;
+        if (!widget.liberadaGeral && !p.isExclusivo) return false;
         if (widget.exclusivoEsgotado && p.isExclusivo) return false;
         if (_marcaSel != null && p.marca != _marcaSel) return false;
         if (_categoriaSel != null && p.categoria != _categoriaSel) return false;
