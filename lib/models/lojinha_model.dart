@@ -218,14 +218,28 @@ class CarrinhoItem {
 class LojinhaFuncionarioModel {
   final double limiteTotal;
   final double limiteDisp;
+  /// Limite antes dos descontos (LIMITEBRUTO). [limiteTotal] já vem descontado.
+  final double limiteBruto;
+  final double pensao;
+  final double emprestimos;
+  final double planoSaude;
+  /// Bonificação em aberto (OPEN_SPECIALS): só informativa.
+  final double bonificacao;
   final String bloqueio;
   final String centro;
   final List<LojinhaPedidoResumoModel> pedidos;
   final String mensagem;
 
+  double get totalDescontos => pensao + emprestimos + planoSaude;
+
   LojinhaFuncionarioModel({
     required this.limiteTotal,
     required this.limiteDisp,
+    this.limiteBruto = 0,
+    this.pensao = 0,
+    this.emprestimos = 0,
+    this.planoSaude = 0,
+    this.bonificacao = 0,
     required this.bloqueio,
     required this.centro,
     required this.pedidos,
@@ -253,7 +267,12 @@ class LojinhaFuncionarioModel {
     return LojinhaFuncionarioModel(
       limiteTotal: _parseDouble(j['LIMITETOTAL']),
       limiteDisp:  _parseDouble(j['LIMITEDISP']),
-      bloqueio:    (j['BLOQUEIO'] as String? ?? '').trim(),
+      limiteBruto: _parseDouble(j['LIMITEBRUTO']),
+      pensao:      _parseDouble(j['PENSAO']),
+      emprestimos: _parseDouble(j['EMPRESTIMOS']),
+      planoSaude:  _parseDouble(j['PLANOSSAUDE']),
+      bonificacao: _parseDouble(j['BONIFICACAO']),
+      bloqueio:   (j['BLOQUEIO'] as String? ?? '').trim(),
       centro:      (j['CENTRO']   as String? ?? '').trim(),
       mensagem:    (j['MENSAGEM'] as String? ?? '').trim(),
       pedidos:     pedidosJson

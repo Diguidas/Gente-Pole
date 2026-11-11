@@ -66,6 +66,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   // por cima do ombro) — lembrado entre sessões via SharedPreferences.
   static const _kValorOcultoKey = 'lojinha_valor_oculto';
   bool _valorOculto = false;
+  bool _detalheLimiteAberto = false;
 
   @override
   void initState() {
@@ -480,8 +481,94 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
             style: GoogleFonts.poppins(
                 color: AppColors.cinzaTexto, fontSize: 11),
           ),
+          if (!_valorOculto && d.totalDescontos > 0) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            InkWell(
+              onTap: () => setState(
+                  () => _detalheLimiteAberto = !_detalheLimiteAberto),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(children: [
+                  Expanded(
+                    child: Text('Como seu limite é calculado',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.dark)),
+                  ),
+                  AnimatedRotation(
+                    turns: _detalheLimiteAberto ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.keyboard_arrow_down_rounded,
+                        size: 20, color: AppColors.cinzaTexto),
+                  ),
+                ]),
+              ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: _detalheLimiteAberto
+                  ? Column(children: [
+                      _linhaLimite('Limite total', d.limiteBruto),
+                      if (d.pensao > 0) _linhaLimite('Pensão', -d.pensao),
+                      if (d.emprestimos > 0)
+                        _linhaLimite('Empréstimos', -d.emprestimos),
+                      if (d.planoSaude > 0)
+                        _linhaLimite('Plano de saúde', -d.planoSaude),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 4),
+                        child: Divider(height: 1),
+                      ),
+                      _linhaLimite('Limite para compras', d.limiteTotal,
+                          destaque: true),
+                      const SizedBox(height: 4),
+                    ])
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+          if (!_valorOculto && d.bonificacao > 0) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(children: [
+                const Icon(Icons.card_giftcard_outlined,
+                    size: 16, color: Color(0xFF16A34A)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                      'Você tem bonificação em aberto: ${_moeda(d.bonificacao)}. '
+                      'Ela ajuda a liberar crédito para suas compras.',
+                      style: GoogleFonts.poppins(
+                          fontSize: 11, color: const Color(0xFF166534))),
+                ),
+              ]),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _linhaLimite(String rotulo, double valor, {bool destaque = false}) {
+    final negativo = valor < 0;
+    final texto = '${negativo ? '- ' : ''}${_moeda(valor.abs())}';
+    final estilo = GoogleFonts.poppins(
+      fontSize: 11,
+      fontWeight: destaque ? FontWeight.w700 : FontWeight.w400,
+      color: negativo ? Colors.red.shade600 : AppColors.dark,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(rotulo, style: estilo),
+        Text(texto, style: estilo),
+      ]),
     );
   }
 
@@ -609,12 +696,14 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
           children: [
             Icon(Icons.block_rounded, color: Colors.red.shade600, size: 20),
             const SizedBox(width: 10),
-            Text(
-              'Bloqueado',
-              style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.red.shade700),
+            Expanded(
+              child: Text(
+                'Seu cadastro está bloqueado para compras. Procure o RH.',
+                style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red.shade700),
+              ),
             ),
           ],
         ),

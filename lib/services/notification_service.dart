@@ -12,6 +12,8 @@ import '../screens/nutricionista/nutricionista_screen.dart';
 import '../screens/fisioterapia/fisioterapia_screen.dart';
 import '../screens/consulta_medica/consulta_medica_screen.dart';
 import '../screens/gestor/candidatura_chat_sheet.dart';
+import '../screens/performance/performance_colab_screen.dart';
+import '../screens/performance/performance_gestor_screen.dart';
 import 'api_service.dart';
 
 // Handler de background — deve ser função top-level (fora de qualquer classe)
@@ -175,6 +177,16 @@ class NotificationService {
         AppNavigator.goToTab(2);
         AppNavigator.navigatorKey.currentState?.push(
           MaterialPageRoute(builder: (_) => const FisioterapiaScreen()),
+        );
+      case 'performance': // autoavaliação / avaliação de colega liberada
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const PerformanceColabScreen()),
+        );
+      case 'performance_gestor': // ciclo aberto: gestor escolhe as perguntas
+        AppNavigator.goToTab(2);
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const PerformanceGestorScreen()),
         );
       case 'servicos': // notificação antiga, de antes da rota específica
         AppNavigator.goToTab(2);

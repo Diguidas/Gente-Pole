@@ -5644,6 +5644,12 @@ class ApiService {
         rethrow;
       }
     }
+    // Avisa os gestores para escolherem as perguntas. Falha no aviso não
+    // pode desfazer o ciclo já criado.
+    try {
+      await _client.rpc('notificar_ciclo_avaliacao_aberto',
+          params: {'p_ciclo_id': cicloId});
+    } catch (_) {}
     return cicloId;
   }
 
