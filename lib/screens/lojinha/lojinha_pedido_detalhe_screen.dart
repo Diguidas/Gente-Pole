@@ -222,7 +222,7 @@ class _LojinhaPedidoDetalheScreenState
               const Icon(Icons.storefront_outlined,
                   color: Colors.teal, size: 18),
               const SizedBox(width: 8),
-              Text('Produto exclusivo',
+              Text('Produto ovos',
                   style: GoogleFonts.poppins(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

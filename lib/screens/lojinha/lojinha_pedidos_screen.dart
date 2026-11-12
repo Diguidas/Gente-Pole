@@ -160,7 +160,8 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                                   icone: Icons.local_shipping_outlined,
                                   label: 'Pedidos atuais',
                                   cor: AppColors.laranja,
-                                  descricao: 'Feitos essa semana — chegam nessa sexta.',
+                                  descricao:
+                                      'Aguardando entrega — produtos Pole chegam nessa sexta; produtos ovos, na sexta da semana seguinte.',
                                 ),
                                 const SizedBox(height: 10),
                                 ..._atuais.map((p) => _CardPedido(pedido: p, destacarDesconto: true)),
@@ -491,7 +492,7 @@ class _CardPedidoState extends State<_CardPedido> {
                       ),
                     if (pedido.isExclusivo)
                       _Tag(
-                        label: 'Exclusivo',
+                        label: 'Ovos',
                         icone: Icons.storefront_outlined,
                         cor: Colors.teal.shade600,
                         fundo: Colors.teal.shade50,

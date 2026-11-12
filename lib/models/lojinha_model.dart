@@ -441,16 +441,27 @@ class LojinhaPedidoResumoModel {
       int.parse(criacao.substring(6, 8)),
     );
     // weekday: Mon=1 … Sun=7
-    const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
-    return d.add(Duration(days: diasMap[d.weekday]!));
+    // Produtos ovos (exclusivos): feito numa semana, chega na sexta da
+    // semana seguinte (seg/ter/qua = +7 dias em relação ao SAP).
+    const diasSap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
+    const diasOvos = {1: 11, 2: 10, 3: 9, 4: 8, 5: 7, 6: 6, 7: 5};
+    final mapa = isExclusivo ? diasOvos : diasSap;
+    return d.add(Duration(days: mapa[d.weekday]!));
   }
 
-  /// Só mostra a tag de entrega pra pedidos feitos na semana vigente (que
-  /// chegam nessa sexta) — pedido de semana que já passou fica sem tag.
+  /// Tag de entrega. Produtos Pole: só pra pedidos feitos na semana vigente
+  /// (chegam nessa sexta). Produtos ovos: mostra a sexta de entrega (semana
+  /// seguinte) até ela passar. Pedido já entregue fica sem tag.
   String? get labelEntrega {
     final entrega = DateTime(dataEntrega.year, dataEntrega.month, dataEntrega.day);
     final hoje = DateTime.now();
     final hojeDate = DateTime(hoje.year, hoje.month, hoje.day);
+    if (isExclusivo) {
+      if (entrega.isBefore(hojeDate)) return null;
+      final dd = entrega.day.toString().padLeft(2, '0');
+      final mm = entrega.month.toString().padLeft(2, '0');
+      return 'Chega na sexta, $dd/$mm';
+    }
     const diasMap = {1: 4, 2: 3, 3: 2, 4: 8, 5: 7, 6: 6, 7: 5};
     final proximaSexta = hojeDate.add(Duration(days: diasMap[hojeDate.weekday]!));
     if (entrega == proximaSexta) return 'Chega nessa sexta';

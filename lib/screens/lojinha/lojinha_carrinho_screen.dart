@@ -97,12 +97,12 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
         if (_ultrapassaValor)
           'Ultrapassa o limite disponível de ${_moeda(widget.limiteDisp!)}',
         if (_ultrapassaLimiteItens)
-          'Limite de itens do período: ${widget.itensRestantes ?? widget.limiteQtdGlobal} SAP'
-              '${widget.limiteQtdExclusivo != null ? " e ${widget.itensRestantesExclusivo ?? widget.limiteQtdExclusivo} exclusivos" : ""}, a cada ${widget.periodoDiasGlobal} dias. Ajuste o carrinho.',
+          'Limite de itens do período: ${widget.itensRestantes ?? widget.limiteQtdGlobal} Pole'
+              '${widget.limiteQtdExclusivo != null ? " e ${widget.itensRestantesExclusivo ?? widget.limiteQtdExclusivo} ovos" : ""}, a cada ${widget.periodoDiasGlobal} dias. Ajuste o carrinho.',
         if (_ultrapassaLimitePedidos)
           widget.sapEsgotado && _temItemRegular
-              ? 'Você já usou seu pedido regular (SAP) do período. Remova os itens regulares do carrinho ou tente de novo mais tarde.'
-              : 'Você já usou seu pedido de produto exclusivo do período. Remova os itens exclusivos do carrinho ou tente de novo mais tarde.',
+              ? 'Você já usou seu pedido de produtos Pole do período. Remova os produtos Pole do carrinho ou tente de novo mais tarde.'
+              : 'Você já usou seu pedido de produtos ovos do período. Remova os produtos ovos do carrinho ou tente de novo mais tarde.',
       ];
 
   @override

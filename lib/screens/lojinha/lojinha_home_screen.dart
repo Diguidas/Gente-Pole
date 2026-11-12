@@ -26,6 +26,10 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   // Regra "geral" (produtos SAP) aberta agora. A Lojinha também abre só com
   // exclusivos abertos (dia + horário + filial), independente da geral.
   bool _liberadaGeral = true;
+  // Exclusivos abertos agora (dia + horário + filial) e se existe algum
+  // exclusivo cadastrado para a filial.
+  int _exclusivosLiberadosAgora = 0;
+  bool _temExclusivos = false;
 
   // Limite de PEDIDOS (não itens) por tipo, configurado no gentepole_admin —
   // ex: 1 regular (SAP) + 1 exclusivo por semana.
@@ -47,9 +51,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
 
   String get _resumoItensRestantes =>
       [
-        if (_limiteQtdSap != null) '${_qtdItens(_itensRestantesSap)} SAP',
+        if (_limiteQtdSap != null) '${_qtdItens(_itensRestantesSap)} Pole',
         if (_limiteQtdExclusivo != null)
-          '${_qtdItens(_itensRestantesExclusivo)} exclusivos',
+          '${_qtdItens(_itensRestantesExclusivo)} ovos',
       ].join(' · ') +
       ' disponíveis para compra';
 
@@ -58,9 +62,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     final per = 'a cada $dias dia${dias != 1 ? 's' : ''}';
     return 'Limite: ' +
         [
-          if (_limiteQtdSap != null) '${_qtdItens(_limiteQtdSap!)} SAP',
+          if (_limiteQtdSap != null) '${_qtdItens(_limiteQtdSap!)} Pole',
           if (_limiteQtdExclusivo != null)
-            '${_qtdItens(_limiteQtdExclusivo!)} exclusivos',
+            '${_qtdItens(_limiteQtdExclusivo!)} ovos',
         ].join(' + ') +
         ' $per';
   }
@@ -97,18 +101,22 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       _api.colaboradorAtual?.branch,
     );
     var liberada = liberadaGeral;
-    if (!liberada) {
-      try {
-        final excl = await _api.buscarExclusivosLojinha();
-        liberada = excl.any((p) => p.disponivelHoje);
-      } catch (_) {}
-    }
+    var exclusivosAgora = 0;
+    var temExclusivos = false;
+    try {
+      final excl = await _api.buscarExclusivosLojinha();
+      temExclusivos = excl.isNotEmpty;
+      exclusivosAgora = excl.where((p) => p.disponivelHoje).length;
+      if (!liberada) liberada = exclusivosAgora > 0;
+    } catch (_) {}
     await _carregarLimitePedidos();
     if (!mounted) return;
     setState(() {
       _carregando = false;
       _liberadaParaCompra = liberada;
       _liberadaGeral = liberadaGeral;
+      _exclusivosLiberadosAgora = exclusivosAgora;
+      _temExclusivos = temExclusivos;
     });
     await _retentarSeValorZerado();
   }
@@ -329,11 +337,13 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                 ? 'Você já realizou a compra liberada deste período'
                                 : _limiteItensAtingido
                                     ? 'Você já realizou a compra liberada deste período'
-                                    : 'Explorar produtos disponíveis',
+                                    : _nadaDisponivelAgora
+                                        ? 'Nenhum produto disponível agora'
+                                        : 'Explorar produtos disponíveis',
                             cor: AppColors.laranja,
                             bloqueado: (dados?.bloqueado ?? false) ||
                                 _limiteItensAtingido ||
-                                (_sapEsgotado && _exclusivoEsgotado),
+                                _nadaDisponivelAgora,
                             onTap: () async {
                               await Navigator.push(
                                 context,
@@ -700,21 +710,31 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     );
   }
 
-  /// Aviso de que o colaborador já fez o(s) pedido(s) liberado(s) do período
-  /// (limite de PEDIDOS por tipo). Nulo quando nenhum dos limites esgotou.
+  bool get _sapDisponivel => _liberadaGeral && !_sapEsgotado;
+  bool get _exclusivoDisponivel =>
+      !_exclusivoEsgotado && _exclusivosLiberadosAgora > 0;
+  bool get _nadaDisponivelAgora => !_sapDisponivel && !_exclusivoDisponivel;
+
+  /// Explica, por tipo, por que não dá para comprar agora (já usou o pedido do
+  /// período ou não está liberado neste momento). Nulo quando os dois tipos
+  /// estão disponíveis.
   Widget? _avisoPedidosUsados() {
-    final String? msg;
-    if (_sapEsgotado && _exclusivoEsgotado) {
-      msg = 'Você já realizou os pedidos liberados deste período '
-          '(produtos SAP e exclusivos).';
+    final linhas = <String>[];
+    if (!_liberadaGeral) {
+      linhas.add('Produtos Pole: não estão liberados neste momento.');
     } else if (_sapEsgotado) {
-      msg = 'Você já realizou o pedido de produtos SAP liberado deste '
-          'período. Os produtos exclusivos continuam disponíveis.';
-    } else if (_exclusivoEsgotado) {
-      msg = 'Você já realizou o pedido de produtos exclusivos liberado '
-          'deste período. Os produtos SAP continuam disponíveis.';
-    } else {
-      return null;
+      linhas.add(
+          'Produtos Pole: você já realizou o pedido liberado deste período.');
+    }
+    if (_exclusivoEsgotado) {
+      linhas.add(
+          'Produtos ovos: você já realizou o pedido liberado deste período.');
+    } else if (_exclusivosLiberadosAgora == 0 && _temExclusivos) {
+      linhas.add('Produtos ovos: não estão liberados neste momento.');
+    }
+    if (linhas.isEmpty) return null;
+    if (_nadaDisponivelAgora) {
+      linhas.insert(0, 'Nenhum produto disponível para compra agora.');
     }
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -725,17 +745,27 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
         border: Border.all(color: Colors.orange.shade200),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.check_circle_outline_rounded,
+          Icon(Icons.info_outline_rounded,
               color: Colors.orange.shade700, size: 20),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              msg,
-              style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.orange.shade900),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final l in linhas)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      l,
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange.shade900),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

@@ -269,7 +269,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           'Você só pode comprar mais $restantesTipo ${restantesTipo != 1 ? 'itens' : 'item'} '
-          '${excl ? "exclusivos" : "SAP"} a cada $_periodoDiasGlobal dias.',
+          '${excl ? "ovos" : "Pole"} a cada $_periodoDiasGlobal dias.',
           style: GoogleFonts.poppins(color: Colors.white),
         ),
         backgroundColor: Colors.red.shade700,

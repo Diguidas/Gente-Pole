@@ -308,7 +308,7 @@ class _LojinhaScreenState extends State<LojinhaScreen> {
                               ),
                             ),
                             Text(
-                              'Produtos exclusivos para você',
+                              'Produtos ovos para você',
                               style: GoogleFonts.poppins(
                                 color: Colors.white.withOpacity(0.8),
                                 fontSize: 13,
