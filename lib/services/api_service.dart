@@ -4725,6 +4725,12 @@ class ApiService {
   /// pelo tamanho da lista filtrada.
   bool feedTemMaisPaginas = true;
 
+  /// Limite do feed: posts e comunicados com mais de 30 dias saem da tela.
+  static String _corteFeedIso() => DateTime.now()
+      .toUtc()
+      .subtract(const Duration(days: 30))
+      .toIso8601String();
+
   Future<List<FeedPostModel>> buscarFeed({int pagina = 0}) async {
     final colab = colaboradorAtual;
     if (colab == null) return [];
@@ -4736,6 +4742,8 @@ class ApiService {
         .from('feed_posts')
         .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
         .or('status.eq.aprovado,autor_id.eq.${colab.id}')
+        // O feed só mostra os últimos 30 dias (os posts continuam no banco).
+        .gte('criado_em', _corteFeedIso())
         .order('criado_em', ascending: false)
         .range(inicio, inicio + _tamanhoPaginaFeed - 1);
     final linhas = data as List;
@@ -4795,6 +4803,7 @@ class ApiService {
       final comData = await _client
           .from('comunicados')
           .select()
+          .gte('criado_em', _corteFeedIso())
           .order('criado_em', ascending: false)
           .limit(30);
 

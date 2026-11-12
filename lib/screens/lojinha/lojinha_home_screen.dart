@@ -316,15 +316,19 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             const SizedBox(height: 16),
                           ],
 
+                          // ── Pedido(s) do período já realizado(s) ─────
+                          if (_avisoPedidosUsados() != null)
+                            _avisoPedidosUsados()!,
+
                           // ── Botões principais ────────────────────────
                           _botaoMenu(
                             context,
                             icone: Icons.add_shopping_cart_rounded,
                             titulo: 'Novo Pedido',
                             subtitulo: (_sapEsgotado && _exclusivoEsgotado)
-                                ? 'Você já usou seus pedidos deste período'
+                                ? 'Você já realizou a compra liberada deste período'
                                 : _limiteItensAtingido
-                                    ? 'Limite de compras atingido'
+                                    ? 'Você já realizou a compra liberada deste período'
                                     : 'Explorar produtos disponíveis',
                             cor: AppColors.laranja,
                             bloqueado: (dados?.bloqueado ?? false) ||
@@ -675,7 +679,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
               children: [
                 Text(
                   atingido
-                      ? 'Limite de compras atingido'
+                      ? 'Você já realizou a compra liberada deste período'
                       : _resumoItensRestantes,
                   style: GoogleFonts.poppins(
                     fontSize: 13,
@@ -689,6 +693,49 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                       fontSize: 11, color: AppColors.cinzaTexto),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Aviso de que o colaborador já fez o(s) pedido(s) liberado(s) do período
+  /// (limite de PEDIDOS por tipo). Nulo quando nenhum dos limites esgotou.
+  Widget? _avisoPedidosUsados() {
+    final String? msg;
+    if (_sapEsgotado && _exclusivoEsgotado) {
+      msg = 'Você já realizou os pedidos liberados deste período '
+          '(produtos SAP e exclusivos).';
+    } else if (_sapEsgotado) {
+      msg = 'Você já realizou o pedido de produtos SAP liberado deste '
+          'período. Os produtos exclusivos continuam disponíveis.';
+    } else if (_exclusivoEsgotado) {
+      msg = 'Você já realizou o pedido de produtos exclusivos liberado '
+          'deste período. Os produtos SAP continuam disponíveis.';
+    } else {
+      return null;
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle_outline_rounded,
+              color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              msg,
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange.shade900),
             ),
           ),
         ],

@@ -90,6 +90,19 @@ class _EnqueteCardState extends State<EnqueteCard> {
     return fim != null && !fim.isAfter(DateTime.now());
   }
 
+  /// "Encerra em dd/mm/aaaa às hh:mm" (ou "Encerrou em ..."); nulo quando a
+  /// enquete não tem data de encerramento.
+  String? get _textoFim {
+    final fim =
+        DateTime.tryParse(widget.enquete['encerra_em']?.toString() ?? '')
+            ?.toLocal();
+    if (fim == null) return null;
+    String d2(int n) => n.toString().padLeft(2, '0');
+    final data =
+        '${d2(fim.day)}/${d2(fim.month)}/${fim.year} às ${d2(fim.hour)}:${d2(fim.minute)}';
+    return fim.isAfter(DateTime.now()) ? 'Encerra em $data' : 'Encerrou em $data';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -200,6 +213,17 @@ class _EnqueteCardState extends State<EnqueteCard> {
                       fontSize: 11, color: AppColors.cinzaTexto)),
             ],
           ]),
+          if (_textoFim != null) ...[
+            const SizedBox(height: 4),
+            Row(children: [
+              const Icon(Icons.schedule_rounded,
+                  size: 13, color: AppColors.cinzaTexto),
+              const SizedBox(width: 4),
+              Text(_textoFim!,
+                  style: GoogleFonts.poppins(
+                      fontSize: 11, color: AppColors.cinzaTexto)),
+            ]),
+          ],
           const SizedBox(height: 8),
           Text(widget.enquete['pergunta']?.toString() ?? '',
               style: GoogleFonts.poppins(

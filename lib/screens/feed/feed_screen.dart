@@ -18,6 +18,7 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:gentepole/widgets/enquete_card.dart';
+import 'package:gentepole/widgets/texto_recolhivel.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -498,11 +499,13 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Posts + enquetes ativas intercalados por data de criação (mais novo primeiro).
   List<Widget> _postsComEnquetes(List<FeedPostModel> posts, int? meuId) {
-    final itens = <MapEntry<DateTime, Widget>>[
+    final itens = <({DateTime data, bool fixado, Widget widget})>[
       for (final p in posts)
-        MapEntry(
-          p.criadoEm,
-          _PostCard(
+        (
+          data: p.criadoEm,
+          fixado: comunicadoFixado(
+              p, p.enqueteId == null ? null : _enquetesComunicado[p.enqueteId]),
+          widget: _PostCard(
             post: p,
             meuId: meuId,
             onExcluir: () => _confirmarExclusao(p),
@@ -510,18 +513,23 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ),
       for (final e in _enquetes)
-        MapEntry(
-          DateTime.tryParse(e['criado_em']?.toString() ?? '') ??
+        (
+          data: DateTime.tryParse(e['criado_em']?.toString() ?? '') ??
               DateTime.fromMillisecondsSinceEpoch(0),
-          EnqueteCard(
+          fixado: false,
+          widget: EnqueteCard(
             key: ValueKey('enquete_${e['id']}'),
             enquete: e,
             meuId: meuId,
           ),
         ),
     ];
-    itens.sort((a, b) => b.key.compareTo(a.key));
-    return itens.map((e) => e.value).toList();
+    // Comunicados fixados sempre no topo; o resto por data (mais novo primeiro).
+    itens.sort((a, b) {
+      if (a.fixado != b.fixado) return a.fixado ? -1 : 1;
+      return b.data.compareTo(a.data);
+    });
+    return itens.map((e) => e.widget).toList();
   }
 
   void _onScroll() {
@@ -2811,6 +2819,21 @@ class _HumorCardState extends State<_HumorCard> {
 // _PostCard
 // ════════════════════════════════════════════════════════════════════════════════
 
+/// Regra do comunicado fixado (igual à do web/admin): fica no topo por 24h
+/// desde a criação, ou enquanto a enquete anexada estiver aberta (ativa e
+/// dentro do prazo de encerramento).
+bool comunicadoFixado(FeedPostModel p, Map<String, dynamic>? enquete) {
+  if (p.tipo != 'comunicado') return false;
+  if (enquete != null && enquete['ativa'] != false) {
+    final fim = DateTime.tryParse(enquete['encerra_em']?.toString() ?? '');
+    if (fim == null || fim.isAfter(DateTime.now())) return true;
+  }
+  // criadoEm dos comunicados vem deslocado em +3h (ver _parseComunicadoTs).
+  return DateTime.now().toUtc().difference(
+          p.criadoEm.subtract(const Duration(hours: 3))) <
+      const Duration(hours: 24);
+}
+
 class _PostCard extends StatelessWidget {
   /// Foto do usuário Gente Pole (avatar dos comunicados); carregada pela tela.
   static String? fotoGentePole;
@@ -3125,11 +3148,7 @@ class _PostCard extends StatelessWidget {
           if (post.temImagem) _imagensDoPost(),
 
           // ── Selo Fixado (comunicado < 24h) ─────────────────────────────────
-          if (post.tipo == 'comunicado' &&
-              DateTime.now().toUtc().difference(
-                    post.criadoEm.subtract(const Duration(hours: 3)),
-                  ) <
-                  const Duration(hours: 24))
+          if (comunicadoFixado(post, enquete))
             Padding(
               padding: EdgeInsets.fromLTRB(14, post.temImagem ? 12 : 0, 14, 6),
               child: Row(
@@ -3180,11 +3199,15 @@ class _PostCard extends StatelessWidget {
                 14,
                 16,
               ),
-              child: _buildConteudo(
-                post.conteudo!,
-                isAniversario,
-                isHumor,
-                isRespostaParabens,
+              child: TextoRecolhivel(
+                texto: post.conteudo!,
+                corLink: AppColors.laranja,
+                child: _buildConteudo(
+                  post.conteudo!,
+                  isAniversario,
+                  isHumor,
+                  isRespostaParabens,
+                ),
               ),
             ),
 
