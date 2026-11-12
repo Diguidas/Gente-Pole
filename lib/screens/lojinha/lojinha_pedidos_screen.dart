@@ -355,6 +355,7 @@ class _CardPedidoState extends State<_CardPedido> {
   LojinhaPedidoResumoModel get pedido => widget.pedido;
 
   Color get _corSituacao {
+    if (pedido.isRecusado) return AppColors.erro;
     if (pedido.isVigente) return Colors.green.shade600;
     if (pedido.isFuturo)  return Colors.blue.shade600;
     return Colors.grey.shade500;
@@ -466,6 +467,7 @@ class _CardPedidoState extends State<_CardPedido> {
               // ── Tags ─────────────────────────────────────────────
               if (labelEntrega != null ||
                   pedido.isRefaturado ||
+                  pedido.isRecusado ||
                   pedido.isExclusivo ||
                   widget.destacarDesconto) ...[
                 const SizedBox(height: 10),
@@ -473,6 +475,13 @@ class _CardPedidoState extends State<_CardPedido> {
                   spacing: 6,
                   runSpacing: 6,
                   children: [
+                    if (pedido.isRecusado)
+                      _Tag(
+                        label: 'Cancelado',
+                        icone: Icons.block_rounded,
+                        cor: AppColors.erro,
+                        fundo: AppColors.erro.withOpacity(0.1),
+                      ),
                     if (widget.destacarDesconto)
                       _Tag(
                         label: pedido.isVigente ? 'Desconto atual' : 'Próximo desconto',

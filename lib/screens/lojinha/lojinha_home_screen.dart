@@ -783,7 +783,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   }
 
   Widget _ultimoPedidoCard(LojinhaPedidoResumoModel p, {required bool recalculando}) {
-    final cor = p.isVigente ? Colors.green.shade600 : AppColors.laranja;
+    final cor = p.isRecusado
+        ? AppColors.erro
+        : (p.isVigente ? Colors.green.shade600 : AppColors.laranja);
     final aguardandoValor = recalculando && p.valorTotal == 0;
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -835,9 +837,18 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(
                               fontSize: 13, fontWeight: FontWeight.w700)),
-                      Text(p.criacaoFormatada,
+                      Text(
+                          p.isRecusado
+                              ? '${p.criacaoFormatada} · Cancelado'
+                              : p.criacaoFormatada,
                           style: GoogleFonts.poppins(
-                              fontSize: 11, color: AppColors.cinzaTexto)),
+                              fontSize: 11,
+                              fontWeight: p.isRecusado
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: p.isRecusado
+                                  ? AppColors.erro
+                                  : AppColors.cinzaTexto)),
                     ],
                   ),
                 ),

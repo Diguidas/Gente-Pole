@@ -403,6 +403,10 @@ class LojinhaPedidoResumoModel {
 
   bool get isRefaturado => refaturado.isNotEmpty;
 
+  /// SAP devolve STATUS = 'Recusado'; no app aparece como "Cancelado". É o
+  /// único status que recebe sinalização, os demais não aparecem.
+  bool get isRecusado => status.toLowerCase() == 'recusado';
+
   /// Formata data yyyyMMdd → dd/MM/yyyy
   String get criacaoFormatada {
     if (criacao.length != 8) return criacao;
@@ -510,6 +514,7 @@ class LojinhaPedidoItemModel {
   final double valorUnitario;
   final String recusa;
   final String notificacoes;
+  final String status;
 
   LojinhaPedidoItemModel({
     required this.item,
@@ -520,9 +525,14 @@ class LojinhaPedidoItemModel {
     required this.valorUnitario,
     required this.recusa,
     required this.notificacoes,
+    this.status = '',
   });
 
   double get valorTotal => quantidade * valorUnitario;
+
+  /// Item cortado: STATUS "Recusado" ou motivo preenchido em RECUSA.
+  bool get isRecusado =>
+      status.toLowerCase() == 'recusado' || recusa.isNotEmpty;
 
   factory LojinhaPedidoItemModel.fromJson(Map<String, dynamic> j) =>
       LojinhaPedidoItemModel(
@@ -534,5 +544,6 @@ class LojinhaPedidoItemModel {
         valorUnitario: double.tryParse((j['VALOR_UNITARIO'] as String).trim()) ?? 0,
         recusa:        (j['RECUSA'] as String? ?? '').trim(),
         notificacoes:  (j['NOTIFICACOES'] as String? ?? '').trim(),
+        status:        (j['STATUS'] as String? ?? '').trim(),
       );
 }

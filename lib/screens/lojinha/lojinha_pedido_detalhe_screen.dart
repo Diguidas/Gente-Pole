@@ -304,7 +304,12 @@ class _LojinhaPedidoDetalheScreenState
 
   Widget _conteudo() {
     final d = _detalhe!;
-    final totalPedido = d.itens.fold(0.0, (s, i) => s + i.valorTotal);
+    // Itens cancelados não entram no total; o valor cortado aparece à parte.
+    final totalPedido =
+        d.itens.where((i) => !i.isRecusado).fold(0.0, (s, i) => s + i.valorTotal);
+    final totalCancelado =
+        d.itens.where((i) => i.isRecusado).fold(0.0, (s, i) => s + i.valorTotal);
+    final qtdCancelados = d.itens.where((i) => i.isRecusado).length;
 
     // Tag de entrega (calculada a partir da criação, se disponível)
     String? labelEntrega;
@@ -323,6 +328,33 @@ class _LojinhaPedidoDetalheScreenState
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // ── Aviso de cancelamento ────────────────────────────────────
+        if (qtdCancelados > 0) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.erro.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.erro.withOpacity(0.3)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.block_rounded, color: AppColors.erro, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                    qtdCancelados == d.itens.length
+                        ? 'Pedido cancelado. Nenhum item será faturado.'
+                        : '$qtdCancelados de ${d.itens.length} itens foram cancelados e não serão faturados.',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.erro)),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 14),
+        ],
+
         // ── Tag de entrega ───────────────────────────────────────────
         if (labelEntrega != null) ...[
           Container(
@@ -385,8 +417,13 @@ class _LojinhaPedidoDetalheScreenState
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: item.isRecusado
+                      ? AppColors.erro.withOpacity(0.04)
+                      : Colors.white,
                   borderRadius: BorderRadius.circular(16),
+                  border: item.isRecusado
+                      ? Border.all(color: AppColors.erro.withOpacity(0.35))
+                      : null,
                   boxShadow: [
                     BoxShadow(
                         color: Colors.black.withOpacity(0.04),
@@ -399,10 +436,19 @@ class _LojinhaPedidoDetalheScreenState
                   Container(
                     width: 48, height: 48,
                     decoration: BoxDecoration(
-                        color: AppColors.laranja.withOpacity(0.1),
+                        color: (item.isRecusado
+                                ? AppColors.erro
+                                : AppColors.laranja)
+                            .withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12)),
-                    child: Icon(Icons.inventory_2_outlined,
-                        color: AppColors.laranja, size: 24),
+                    child: Icon(
+                        item.isRecusado
+                            ? Icons.block_rounded
+                            : Icons.inventory_2_outlined,
+                        color: item.isRecusado
+                            ? AppColors.erro
+                            : AppColors.laranja,
+                        size: 24),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -418,18 +464,22 @@ class _LojinhaPedidoDetalheScreenState
                           style: GoogleFonts.poppins(
                               fontSize: 12, color: AppColors.cinzaTexto),
                         ),
-                        if (item.recusa.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+                        if (item.isRecusado) ...[
+                          const SizedBox(height: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                                color: Colors.red.shade50,
+                                color: AppColors.erro.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(8)),
-                            child: Text('Recusa: ${item.recusa}',
+                            child: Text(
+                                item.recusa.isNotEmpty
+                                    ? 'Cancelado: ${item.recusa}'
+                                    : 'Cancelado',
                                 style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    color: Colors.red.shade600)),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.erro)),
                           ),
                         ],
                         if (item.notificacoes.isNotEmpty) ...[
@@ -447,10 +497,33 @@ class _LojinhaPedidoDetalheScreenState
                       style: GoogleFonts.poppins(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.laranja)),
+                          decoration: item.isRecusado
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: item.isRecusado
+                              ? AppColors.erro
+                              : AppColors.laranja)),
                 ],
               ),
             )),
+
+        if (totalCancelado > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Itens cancelados',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.erro)),
+                Text(_moeda(totalCancelado),
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.erro)),
+              ],
+            ),
+          ),
 
         const SizedBox(height: 8),
 

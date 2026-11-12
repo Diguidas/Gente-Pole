@@ -3392,17 +3392,35 @@ class ApiService {
   // ─── Humor do Dia ────────────────────────────────────────────
 
   /// Retorna o registro de humor do colaborador para hoje, ou null se não registrou.
+  ///
+  /// Humor registrado a partir das 18h conta como do dia seguinte (pensado
+  /// no turno da noite: fica visível para quem trabalha de dia). Quem já
+  /// respondeu hoje não responde de novo depois das 18h.
+  static const int horaCorteHumor = 18;
+
+  static String _dataHumorStr(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, "0")}-${d.day.toString().padLeft(2, "0")}';
+
+  /// Dia (yyyy-MM-dd) a que um humor feito em [momento] pertence.
+  static String diaDoHumor(DateTime momento) => _dataHumorStr(
+      momento.hour >= horaCorteHumor
+          ? DateTime(momento.year, momento.month, momento.day + 1)
+          : momento);
+
   Future<Map<String, dynamic>?> buscarHumorHoje() async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return null;
-    final hoje = DateTime.now();
-    final dataStr =
-        '${hoje.year}-${hoje.month.toString().padLeft(2, "0")}-${hoje.day.toString().padLeft(2, "0")}';
+    final agora = DateTime.now();
+    // Depois das 18h, um registro de hoje (feito antes) ou de amanhã (feito
+    // depois) já vale como "respondeu".
+    final datas = {_dataHumorStr(agora), diaDoHumor(agora)}.toList();
     return await _client
         .from('humor_registros')
         .select()
         .eq('colaborador_id', meuId)
-        .eq('data', dataStr)
+        .inFilter('data', datas)
+        .order('data', ascending: false)
+        .limit(1)
         .maybeSingle();
   }
 
@@ -3411,9 +3429,7 @@ class ApiService {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return false;
     try {
-      final hoje = DateTime.now();
-      final dataStr =
-          '${hoje.year}-${hoje.month.toString().padLeft(2, "0")}-${hoje.day.toString().padLeft(2, "0")}';
+      final dataStr = diaDoHumor(DateTime.now());
       await _client.from('humor_registros').insert({
         'colaborador_id': meuId,
         'nivel': nivel,
@@ -4730,13 +4746,16 @@ class ApiService {
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
           if (p.tipo == 'comunicado') return false;
-          // Post de humor vale só no dia em que foi publicado.
+          // Post de humor vale só no seu dia — feito a partir das 18h, conta
+          // como do dia seguinte (o autor vê o próprio post já no mesmo dia).
           if (p.tipo == 'humor') {
             final c = p.criadoEm.toLocal();
             final hoje = DateTime.now();
-            if (c.year != hoje.year ||
-                c.month != hoje.month ||
-                c.day != hoje.day) {
+            final mesmoDiaCivil = c.year == hoje.year &&
+                c.month == hoje.month &&
+                c.day == hoje.day;
+            final valeHoje = diaDoHumor(c) == _dataHumorStr(hoje);
+            if (!valeHoje && !(mesmoDiaCivil && p.autorId == colab.id)) {
               return false;
             }
           }
