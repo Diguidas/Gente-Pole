@@ -364,6 +364,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = iphoneos;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -490,6 +491,7 @@
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
@@ -543,6 +545,7 @@
 				SUPPORTED_PLATFORMS = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
