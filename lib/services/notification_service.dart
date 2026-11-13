@@ -36,7 +36,11 @@ class NotificationService {
 
   // Diagnóstico temporário (iOS): mostra na tela até onde o init chegou.
   static void _mostrarTrace(List<String> trace, String titulo) {
-    if (!Platform.isIOS) return;
+    // Faixa na tela desligada (era só para o diagnóstico). Para reativar,
+    // troque este return pelo bloco abaixo.
+    debugPrint('$titulo\n${trace.join('\n')}');
+    return;
+    // ignore: dead_code
     final messenger = scaffoldMessengerKey.currentState;
     if (messenger == null) return;
     final texto = '$titulo\n${trace.join('\n')}';
@@ -85,13 +89,7 @@ class NotificationService {
     );
     trace.add('2 permissão: ${settings.authorizationStatus.name}');
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      if (Platform.isIOS) {
-        ErrorReporter.report(
-          Exception('Permissão de notificações negada no iPhone'),
-          null,
-          contexto: 'Notificações iOS',
-        );
-      }
+      // Usuário negou: não mostra erro, o app só fica sem push.
       return;
     }
 
@@ -158,15 +156,6 @@ class NotificationService {
           trace.add('5b iOS nativo: erro ao ler ($e)');
         }
       }
-      if (apns == null) {
-        // Diagnóstico temporário: o iOS não entregou o token APNs.
-        ErrorReporter.report(
-          Exception('Token APNs não recebido (permissão: '
-              '${settings.authorizationStatus.name})'),
-          null,
-          contexto: 'Notificações iOS',
-        );
-      }
     }
     try {
       final token =
@@ -178,9 +167,7 @@ class NotificationService {
     } catch (e, s) {
       trace.add('6 ERRO token: $e');
       // onTokenRefresh abaixo salva quando o token ficar disponível.
-      if (Platform.isIOS) {
-        ErrorReporter.report(e, s, contexto: 'Notificações iOS (token FCM)');
-      }
+      debugPrint('Notificações: falha ao obter token FCM: $e\n$s');
     }
     _fcm.onTokenRefresh.listen(ApiService().salvarFcmToken);
   }
