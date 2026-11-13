@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_navigator.dart';
 import '../core/error_reporter.dart';
 import '../screens/ti/chamados_ti_screen.dart';
@@ -147,6 +148,16 @@ class NotificationService {
         if (apns == null) await Future.delayed(const Duration(seconds: 1));
       }
       trace.add('5 token APNs: ${apns == null ? "NULO" : "ok"}');
+      if (apns == null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.reload();
+          trace.add('5b iOS nativo: '
+              '${prefs.getString('apns_status') ?? "nenhum retorno do iOS"}');
+        } catch (e) {
+          trace.add('5b iOS nativo: erro ao ler ($e)');
+        }
+      }
       if (apns == null) {
         // Diagnóstico temporário: o iOS não entregou o token APNs.
         ErrorReporter.report(
