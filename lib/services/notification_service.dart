@@ -76,8 +76,21 @@ class NotificationService {
     if (initial != null) _navigate(initial.data);
 
     // Salva token FCM no Supabase e escuta renovações
-    final token = await _fcm.getToken();
-    if (token != null) await ApiService().salvarFcmToken(token);
+    // No iOS o token FCM só existe depois que a Apple entrega o token APNs
+    // (pode levar alguns segundos após a permissão). Espera até ~15s.
+    if (Platform.isIOS) {
+      String? apns;
+      for (var i = 0; i < 15 && apns == null; i++) {
+        apns = await _fcm.getAPNSToken();
+        if (apns == null) await Future.delayed(const Duration(seconds: 1));
+      }
+    }
+    try {
+      final token = await _fcm.getToken();
+      if (token != null) await ApiService().salvarFcmToken(token);
+    } catch (_) {
+      // onTokenRefresh abaixo salva quando o token ficar disponível.
+    }
     _fcm.onTokenRefresh.listen(ApiService().salvarFcmToken);
   }
 
