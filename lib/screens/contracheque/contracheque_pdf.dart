@@ -43,7 +43,7 @@ Future<void> compartilharContrachequePdf({
 
   pw.MemoryImage? logo;
   try {
-    final bytes = await rootBundle.load('assets/logo1.png');
+    final bytes = await rootBundle.load('assets/logo_pole_trim.png');
     logo = pw.MemoryImage(bytes.buffer.asUint8List());
   } catch (_) {}
 
@@ -120,7 +120,7 @@ Future<void> compartilharContrachequePdf({
           decoration: pw.BoxDecoration(border: pw.Border.all(color: borda)),
           padding: const pw.EdgeInsets.all(8),
           child: pw.Row(children: [
-            if (logo != null) pw.SizedBox(height: 44, child: pw.Image(logo)),
+            if (logo != null) pw.SizedBox(height: 40, child: pw.Image(logo)),
             pw.SizedBox(width: 10),
             pw.Text(
                 nomePeriodo == 'Folha Mensal'
@@ -212,7 +212,7 @@ Future<void> compartilharContrachequePdf({
           ]),
         ),
         pw.SizedBox(height: 8),
-        pw.Text('Documento gerado pelo app Gente Pole.',
+        pw.Text('Documento gerado pelo Gente Pole.',
             style: const pw.TextStyle(fontSize: 7.5, color: cinza)),
       ],
     ),
