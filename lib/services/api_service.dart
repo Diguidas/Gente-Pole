@@ -539,9 +539,22 @@ class ApiService {
       ..sort((a, b) => (a['periodo'] as int).compareTo(b['periodo'] as int));
   }
 
+  /// Códigos de desconto de pensão alimentícia (lista do DP, sem o 0125 —
+  /// que é "Faltas x Suspensão" — e com 0592/0838, que o catálogo também
+  /// chama de pensão). Estornos (proventos) ficam de fora.
+  static const _codigosPensaoDesconto = {
+    '0013', '0222', '0256', '0257', '0284', '0285', '0287', '0288', '0289',
+    '0373', '0378', '0592', '0838',
+  };
+
   /// Busca o contracheque do colaborador logado, já traduzido (código ->
   /// descrição) e separado em proventos/descontos. [periodo]: 2 = Folha
   /// Mensal (padrão), 3 = Férias, 6 = Complementar, 7 = 13º Salário.
+  ///
+  /// Além dos eventos (com a referência), devolve `resumo` (bases e FGTS do
+  /// mês), `filial` (razão social e CNPJ) e `pensao` (soma dos descontos de
+  /// pensão alimentícia). `resumo`/`filial` ficam nulos nos meses que ainda
+  /// não foram buscados de novo pelo DP com a consulta atualizada.
   Future<Map<String, dynamic>?> buscarContracheque({
     required int mes,
     required int ano,
@@ -556,7 +569,7 @@ class ApiService {
 
     final linhas = await _client
         .from('folha_eventos')
-        .select('codigo_evento, valor')
+        .select('codigo_evento, valor, referencia, empresa, filial')
         .eq('mes', mes)
         .eq('ano', ano)
         .eq('periodo', periodo)
@@ -569,6 +582,9 @@ class ApiService {
         'totalProventos': 0,
         'totalDescontos': 0,
         'liquido': 0,
+        'pensao': 0,
+        'resumo': null,
+        'filial': null,
       };
     }
 
@@ -583,19 +599,55 @@ class ApiService {
 
     double totalProventos = 0;
     double totalDescontos = 0;
+    double pensao = 0;
     final eventos = lista.map((l) {
       final info = catalogoPorCodigo[l['codigo_evento']];
       final tipo = info?['tipo'] as String? ?? 'Provento';
       final valor = (l['valor'] as num).toDouble();
       if (tipo == 'Provento') totalProventos += valor;
-      if (tipo == 'Desconto') totalDescontos += valor;
+      if (tipo == 'Desconto') {
+        totalDescontos += valor;
+        if (_codigosPensaoDesconto.contains(l['codigo_evento'])) pensao += valor;
+      }
       return {
         'codigo': l['codigo_evento'],
         'descricao': info?['descricao'] as String? ?? 'Evento ${l['codigo_evento']}',
         'tipo': tipo,
+        'referencia': l['referencia'],
         'valor': valor,
       };
-    }).toList();
+    }).toList()
+      ..sort((a, b) => '${a['codigo']}'.compareTo('${b['codigo']}'));
+
+    // Bases/FGTS e dados da filial: só existem depois que o DP busca o mês
+    // com a consulta atualizada — falha ou ausência não pode quebrar o
+    // contracheque.
+    final empresa = lista.first['empresa']?.toString();
+    final filialCod = lista.first['filial'];
+    Map<String, dynamic>? resumo;
+    Map<String, dynamic>? filial;
+    try {
+      final r = await _client
+          .from('folha_resumo')
+          .select('base_fgts, base_irrf, base_inss, fgts_mes')
+          .eq('mes', mes)
+          .eq('ano', ano)
+          .eq('periodo', periodo)
+          .eq('matricula', matricula)
+          .maybeSingle();
+      if (r != null) resumo = Map<String, dynamic>.from(r);
+    } catch (_) {}
+    try {
+      if (empresa != null && filialCod != null) {
+        final f = await _client
+            .from('folha_filiais')
+            .select()
+            .eq('empresa', empresa)
+            .eq('filial', filialCod)
+            .maybeSingle();
+        if (f != null) filial = Map<String, dynamic>.from(f);
+      }
+    } catch (_) {}
 
     return {
       'ok': true,
@@ -603,6 +655,9 @@ class ApiService {
       'totalProventos': totalProventos,
       'totalDescontos': totalDescontos,
       'liquido': totalProventos - totalDescontos,
+      'pensao': pensao,
+      'resumo': resumo,
+      'filial': filial,
     };
   }
 

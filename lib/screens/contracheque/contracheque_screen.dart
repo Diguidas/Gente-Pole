@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import 'contracheque_pdf.dart';
 
 const _corContracheque = Color(0xFF0F766E);
 
@@ -260,7 +261,34 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
     }
   }
 
-  String _moeda(num v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+  bool _exportando = false;
+
+  String _moeda(num v) => 'R\$ ${formatarValorFolha(v)}';
+
+  /// Gera o PDF do demonstrativo e abre a folha de compartilhar do celular.
+  Future<void> _exportarPdf() async {
+    final folha = _folha;
+    final colab = _api.colaboradorAtual;
+    if (folha == null || colab == null || _exportando) return;
+    setState(() => _exportando = true);
+    try {
+      await compartilharContrachequePdf(
+        folha: folha,
+        nomePeriodo: widget.nomePeriodo,
+        mes: widget.mes,
+        ano: widget.ano,
+        matricula: colab.matricula,
+        colab: colab,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Não foi possível gerar o PDF: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exportando = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -313,6 +341,9 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
     final totalProventos = (folha['totalProventos'] as num).toDouble();
     final totalDescontos = (folha['totalDescontos'] as num).toDouble();
     final liquido = (folha['liquido'] as num).toDouble();
+    final pensao = (folha['pensao'] as num?)?.toDouble() ?? 0;
+    final resumo = folha['resumo'] as Map<String, dynamic>?;
+    final filial = folha['filial'] as Map<String, dynamic>?;
 
     if (eventos.isEmpty) {
       return Center(
@@ -320,6 +351,9 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
             style: GoogleFonts.poppins(fontSize: 14, color: AppColors.cinzaTexto)),
       );
     }
+
+    final razao = (filial?['razao_social_filial'] ?? filial?['razao_social_empresa'])?.toString();
+    final cnpj = (filial?['cnpj_filial'] ?? filial?['cnpj_empresa'])?.toString();
 
     return RefreshIndicator(
       onRefresh: _carregar,
@@ -342,7 +376,13 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
                 Text('${_mesNome(widget.mes)} de ${widget.ano} · ${widget.nomePeriodo}',
                     style: GoogleFonts.poppins(
                         fontSize: 12, color: Colors.white.withOpacity(0.8))),
-                const SizedBox(height: 6),
+                if (razao != null) ...[
+                  const SizedBox(height: 2),
+                  Text(cnpj != null ? '$razao · CNPJ $cnpj' : razao,
+                      style: GoogleFonts.poppins(
+                          fontSize: 10.5, color: Colors.white.withOpacity(0.65))),
+                ],
+                const SizedBox(height: 8),
                 Text('Líquido a receber',
                     style: GoogleFonts.poppins(
                         fontSize: 12, color: Colors.white.withOpacity(0.8))),
@@ -352,14 +392,32 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: _exportando ? null : _exportarPdf,
+              icon: _exportando
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _corContracheque))
+                  : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: Text('Exportar PDF', style: GoogleFonts.poppins(fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _corContracheque,
+                side: const BorderSide(color: _corContracheque),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(children: [
             Expanded(
-              child: _cardResumo('Proventos', totalProventos, AppColors.sucesso),
+              child: _cardResumo('Total de proventos', totalProventos, AppColors.sucesso),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _cardResumo('Descontos', totalDescontos, AppColors.erro),
+              child: _cardResumo('Total de descontos', totalDescontos, AppColors.erro),
             ),
           ]),
           const SizedBox(height: 24),
@@ -377,6 +435,10 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
                     fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dark)),
             const SizedBox(height: 8),
             ...descontos.map((e) => _linhaEvento(e, AppColors.erro)),
+          ],
+          if (resumo != null) ...[
+            const SizedBox(height: 24),
+            _bases(resumo, pensao),
           ],
         ],
       ),
@@ -402,15 +464,25 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
           Text(titulo,
               style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
           const SizedBox(height: 4),
-          Text(_moeda(valor),
-              style: GoogleFonts.poppins(
-                  fontSize: 16, fontWeight: FontWeight.w700, color: cor)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(_moeda(valor),
+                style: GoogleFonts.poppins(
+                    fontSize: 16, fontWeight: FontWeight.w700, color: cor)),
+          ),
         ],
       ),
     );
   }
 
+  /// Um evento: descrição com código e referência embaixo, e o valor.
   Widget _linhaEvento(Map<String, dynamic> e, Color cor) {
+    final ref = (e['referencia'] as num?)?.toDouble();
+    final detalhe = [
+      'Cód. ${e['codigo']}',
+      if (ref != null && ref != 0) 'Ref. ${formatarValorFolha(ref)}',
+    ].join(' · ');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -420,13 +492,62 @@ class _ContrachequeDetalheScreenState extends State<ContrachequeDetalheScreen> {
       ),
       child: Row(children: [
         Expanded(
-          child: Text(e['descricao'] as String? ?? '',
-              style: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.dark)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(e['descricao'] as String? ?? '',
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.dark)),
+              Text(detalhe,
+                  style: GoogleFonts.poppins(fontSize: 10.5, color: AppColors.cinzaTexto)),
+            ],
+          ),
         ),
+        const SizedBox(width: 8),
         Text(_moeda((e['valor'] as num)),
             style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: cor)),
       ]),
+    );
+  }
+
+  /// Bases de cálculo e FGTS do mês (só aparecem quando o mês foi buscado com
+  /// a consulta atualizada).
+  Widget _bases(Map<String, dynamic> resumo, double pensao) {
+    final itens = <(String, double)>[
+      ('Base para FGTS', ((resumo['base_fgts'] ?? 0) as num).toDouble()),
+      ('FGTS do mês', ((resumo['fgts_mes'] ?? 0) as num).toDouble()),
+      ('Base de cálculo IRRF', ((resumo['base_irrf'] ?? 0) as num).toDouble()),
+      ('Salário de contribuição INSS', ((resumo['base_inss'] ?? 0) as num).toDouble()),
+      if (pensao > 0) ('Pensão alimentícia', pensao),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Bases e encargos',
+              style: GoogleFonts.poppins(
+                  fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.dark)),
+          const SizedBox(height: 10),
+          for (final it in itens)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(children: [
+                Expanded(
+                  child: Text(it.$1,
+                      style: GoogleFonts.poppins(fontSize: 12.5, color: AppColors.cinzaTexto)),
+                ),
+                Text(_moeda(it.$2),
+                    style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+        ],
+      ),
     );
   }
 }
