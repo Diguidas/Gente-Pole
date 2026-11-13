@@ -55,6 +55,8 @@ class NotificationService {
   static Future<void> init() async {
     final trace = <String>[];
     var terminou = false;
+    trace.add('0 init chamado');
+    _mostrarTrace(trace, 'Notificações iOS: init chamado');
     if (Platform.isIOS) {
       Future.delayed(const Duration(seconds: 25), () {
         if (!terminou) _mostrarTrace(trace, 'Notificações iOS: TRAVOU em');
@@ -92,6 +94,8 @@ class NotificationService {
       return;
     }
 
+    await _salvarToken(settings, trace);
+
     // Cria canal Android (obrigatório Android 8+)
     if (Platform.isAndroid) {
       const channel = AndroidNotificationChannel(
@@ -112,7 +116,7 @@ class NotificationService {
         iOS: DarwinInitializationSettings(),
       ),
       onDidReceiveNotificationResponse: (r) => _navigate(_decodePayload(r.payload)),
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () => null);
 
     trace.add('3 notificação local ok');
     // Notificação em foreground → exibe local
@@ -122,11 +126,18 @@ class NotificationService {
     FirebaseMessaging.onMessageOpenedApp.listen((m) => _navigate(m.data));
 
     // Toque com app fechado
-    final initial = await _fcm.getInitialMessage();
+    final initial = await _fcm
+        .getInitialMessage()
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
     if (initial != null) _navigate(initial.data);
     trace.add('4 mensagem inicial ok');
 
-    // Salva token FCM no Supabase e escuta renovações
+  }
+
+  /// Pega o token FCM e grava no banco. Roda logo depois da permissão, antes
+  /// dos passos que podem demorar, para o token ser salvo mesmo se eles travarem.
+  static Future<void> _salvarToken(
+      NotificationSettings settings, List<String> trace) async {
     // No iOS o token FCM só existe depois que a Apple entrega o token APNs
     // (pode levar alguns segundos após a permissão). Espera até ~15s.
     if (Platform.isIOS) {
@@ -147,7 +158,8 @@ class NotificationService {
       }
     }
     try {
-      final token = await _fcm.getToken();
+      final token =
+          await _fcm.getToken().timeout(const Duration(seconds: 20));
       trace.add('6 token FCM: ${token == null ? "NULO" : "${token.substring(0, 8)}..."}');
       if (token != null) {
         trace.add('7 gravou no banco: ${await ApiService().salvarFcmToken(token)}');
