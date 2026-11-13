@@ -3,7 +3,6 @@ import 'package:gentepole/screens/massoterapia/massoterapia_screen.dart';
 import 'package:gentepole/screens/nutricionista/nutricionista_screen.dart';
 import 'package:gentepole/screens/conexoes/conexoes_do_bem_screen.dart';
 import 'package:gentepole/screens/fisioterapia/fisioterapia_screen.dart';
-import 'package:gentepole/screens/consulta_medica/consulta_medica_screen.dart';
 import 'plantao_psicologico_screen.dart';
 import 'performance/performance_widgets.dart';
 
@@ -44,12 +43,6 @@ class BemNaPoleScreen extends StatelessWidget {
           titulo: 'Fisioterapia',
           descricao: 'Acompanhe suas sessões e exercícios',
           onTap: () => _abrir(context, const FisioterapiaScreen()),
-        ),
-        PerformanceCard(
-          icone: Icons.medical_information_outlined,
-          titulo: 'Consulta médica',
-          descricao: 'Solicite e acompanhe sua consulta',
-          onTap: () => _abrir(context, const ConsultaMedicaScreen()),
         ),
         PerformanceCard(
           icone: Icons.psychology_outlined,

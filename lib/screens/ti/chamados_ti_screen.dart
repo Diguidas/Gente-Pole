@@ -546,8 +546,15 @@ class _DialogAvaliacaoState extends State<_DialogAvaliacao> {
     super.dispose();
   }
 
+  /// Nota 3 ou menos exige o motivo por escrito.
+  bool get _comentarioObrigatorio => _nota != null && _nota! <= 3;
+  bool get _podeEnviar =>
+      _nota != null &&
+      !_enviando &&
+      (!_comentarioObrigatorio || _comentarioCtrl.text.trim().isNotEmpty);
+
   Future<void> _enviar() async {
-    if (_nota == null) return;
+    if (!_podeEnviar) return;
     setState(() => _enviando = true);
     try {
       await ApiService().avaliarChamadoTI(
@@ -606,18 +613,18 @@ class _DialogAvaliacaoState extends State<_DialogAvaliacao> {
             TextField(
               controller: _comentarioCtrl,
               maxLines: 3,
-              decoration: const InputDecoration(hintText: 'Quer contar mais alguma coisa? (opcional)'),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                  hintText: _comentarioObrigatorio
+                      ? 'Conta pra gente o que aconteceu (obrigatório)'
+                      : 'Quer contar mais alguma coisa? (opcional)'),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: Text('Agora não', style: TextStyle(color: AppColors.cinzaTexto)),
-        ),
         ElevatedButton(
-          onPressed: (_nota == null || _enviando) ? null : _enviar,
+          onPressed: _podeEnviar ? _enviar : null,
           style: ElevatedButton.styleFrom(backgroundColor: _corTi),
           child: _enviando
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

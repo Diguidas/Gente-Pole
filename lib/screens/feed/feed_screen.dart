@@ -507,6 +507,7 @@ class _FeedScreenState extends State<FeedScreen> {
           fixado: comunicadoFixado(
               p, p.enqueteId == null ? null : _enquetesComunicado[p.enqueteId]),
           widget: _PostCard(
+            key: ValueKey('post_${p.id}'),
             post: p,
             meuId: meuId,
             onExcluir: () => _confirmarExclusao(p),
@@ -2852,6 +2853,7 @@ class _PostCard extends StatelessWidget {
   final Map<String, dynamic>? enquete;
 
   const _PostCard({
+    super.key,
     required this.post,
     required this.meuId,
     required this.onExcluir,
@@ -3231,7 +3233,12 @@ class _PostCard extends StatelessWidget {
             ),
 
           // ── Reações ─────────────────────────────────────────────────────────
-          if (!preview) _ReacoesBar(postId: post.id, meuId: meuId),
+          if (!preview)
+            _ReacoesBar(
+              key: ValueKey('reacoes_${post.id}'),
+              postId: post.id,
+              meuId: meuId,
+            ),
         ],
       ),
     );
@@ -3530,7 +3537,7 @@ class _PostCard extends StatelessWidget {
 class _ReacoesBar extends StatefulWidget {
   final int postId;
   final int? meuId;
-  const _ReacoesBar({required this.postId, required this.meuId});
+  const _ReacoesBar({super.key, required this.postId, required this.meuId});
 
   @override
   State<_ReacoesBar> createState() => _ReacoesBarState();
@@ -3555,10 +3562,21 @@ class _ReacoesBarState extends State<_ReacoesBar> {
     _carregar();
   }
 
+  @override
+  void didUpdateWidget(covariant _ReacoesBar old) {
+    super.didUpdateWidget(old);
+    if (old.postId != widget.postId) {
+      _reacoes = [];
+      _carregar();
+    }
+  }
+
   Future<void> _carregar() async {
+    final postId = widget.postId;
     try {
-      final r = await _api.buscarReacoesPost(widget.postId);
-      if (mounted) setState(() => _reacoes = r);
+      final r = await _api.buscarReacoesPost(postId);
+      // Descarta resposta de um post que não é mais o desta barra.
+      if (mounted && postId == widget.postId) setState(() => _reacoes = r);
     } catch (_) {
       // falha silenciosa — a barra some, mas não trava o post
     }
