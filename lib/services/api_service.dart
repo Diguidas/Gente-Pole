@@ -4085,7 +4085,7 @@ class ApiService {
     // Verifica se já existe candidatura para esse candidato+vaga
     final existente = await _client
         .from('candidaturas')
-        .select('id, indicado_por_id')
+        .select('id, indicado_por_id, status_indicacao')
         .eq('candidato_id', candidatoId)
         .eq('vaga_id', vagaId)
         .maybeSingle();
@@ -4101,8 +4101,13 @@ class ApiService {
     };
 
     if (existente != null) {
-      // Já tem candidatura — atualiza o indicador
-      if (existente['indicado_por_id'] != null) throw Exception('já indicado');
+      // Uma indicação por pessoa em cada vaga: bloqueia se já há indicador
+      // OU indicação pendente de confirmação (candidato que se inscreveu
+      // sozinho e informou a matrícula de quem o indicou).
+      if (existente['indicado_por_id'] != null ||
+          existente['status_indicacao'] == 'pendente') {
+        throw Exception('já indicado');
+      }
       await _client
           .from('candidaturas')
           .update(indicacao)
@@ -5053,11 +5058,15 @@ class ApiService {
         .take(4)
         .toList();
 
+    // Cada palavra digitada vira um pedaço do nome ("diego coelho" acha
+    // "ANTONIO DIEGO FREITAS COELHO").
+    final padrao = q.trim().split(RegExp(r'\s+')).join('%');
     final colabs = await _client
         .from('colaboradores')
         .select('id, nome, cargo')
         .eq('demitido', false)
-        .ilike('nome', '%$q%')
+        .ilike('nome', '%$padrao%')
+        .order('nome')
         .limit(6);
 
     final sugestoes = <Map<String, String>>[];
@@ -5090,6 +5099,19 @@ class ApiService {
     }
 
     return sugestoes;
+  }
+
+  /// Dados da pessoa de uma menção `@[Nome Completo]` (nome exato). Nulo se o
+  /// nome não for de um colaborador (ex.: um setor).
+  Future<Map<String, dynamic>?> buscarColaboradorPorNomeExato(
+      String nome) async {
+    final res = await _client
+        .from('colaboradores')
+        .select('id, nome, setor, cargo, foto_url')
+        .eq('nome', nome)
+        .limit(1);
+    final l = res as List;
+    return l.isEmpty ? null : Map<String, dynamic>.from(l.first as Map);
   }
 
   // ─── Indicações pendentes ────────────────────────────────────────────────

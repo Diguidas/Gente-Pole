@@ -12,6 +12,7 @@ import '../../services/api_service.dart';
 const Map<String, String> _labelTagIndicacao = {
   'administrativo': 'Administrativo',
   'marketing': 'Marketing',
+  'merchandising': 'Merchandising',
   'servicos_gerais': 'Serviços Gerais',
   'refeitorio': 'Refeitório',
   'comercial': 'Comercial',

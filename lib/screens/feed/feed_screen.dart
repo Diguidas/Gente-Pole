@@ -18,6 +18,7 @@ import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:gentepole/widgets/enquete_card.dart';
+import 'package:gentepole/widgets/mencao.dart';
 import 'package:gentepole/widgets/texto_recolhivel.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -2067,6 +2068,8 @@ class _InlineComposerState extends State<_InlineComposer> {
                       TextField(
                         controller: _ctrl,
                         focusNode: _focusNode,
+                        // Backspace numa @[Nome] apaga a menção inteira.
+                        inputFormatters: [MencaoApagaInteira()],
                         maxLines: _expandido ? null : 1,
                         minLines: _expandido ? 3 : 1,
                         style: AppTextStyles.corpoNormal,
@@ -3354,9 +3357,19 @@ class _PostCard extends StatelessWidget {
         spans.addAll(_comLinks(texto.substring(last, m.start), fontSize));
       }
       final bruto = m.group(0)!;
-      final exibido = bruto.startsWith('@[') && bruto.endsWith(']')
-          ? '@${bruto.substring(2, bruto.length - 1)}'
-          : bruto;
+      // @[Nome Completo]: nome colorido; tocar mostra o cartão com foto,
+      // nome e setor da pessoa.
+      if (bruto.startsWith('@[') && bruto.endsWith(']')) {
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: MencaoChip(
+              nome: bruto.substring(2, bruto.length - 1), fontSize: fontSize),
+        ));
+        last = m.end;
+        continue;
+      }
+      final exibido = bruto;
       spans.add(
         TextSpan(
           text: exibido,
