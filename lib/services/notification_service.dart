@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/app_navigator.dart';
 import '../core/error_reporter.dart';
@@ -32,7 +33,44 @@ class NotificationService {
   static const _channelId = 'gentepole_default';
   static const _channelName = 'Gente Pole';
 
+  // Diagnóstico temporário (iOS): mostra na tela até onde o init chegou.
+  static void _mostrarTrace(List<String> trace, String titulo) {
+    if (!Platform.isIOS) return;
+    final messenger = scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    final texto = '$titulo\n${trace.join('\n')}';
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      backgroundColor: Colors.blueGrey.shade800,
+      duration: const Duration(seconds: 40),
+      content: Text(texto),
+      action: SnackBarAction(
+        label: 'COPIAR',
+        textColor: Colors.white,
+        onPressed: () => Clipboard.setData(ClipboardData(text: texto)),
+      ),
+    ));
+  }
+
   static Future<void> init() async {
+    final trace = <String>[];
+    var terminou = false;
+    if (Platform.isIOS) {
+      Future.delayed(const Duration(seconds: 25), () {
+        if (!terminou) _mostrarTrace(trace, 'Notificações iOS: TRAVOU em');
+      });
+    }
+    try {
+      await _initInterno(trace);
+    } catch (e) {
+      trace.add('ERRO: $e');
+    }
+    terminou = true;
+    _mostrarTrace(trace, 'Notificações iOS (diagnóstico)');
+  }
+
+  static Future<void> _initInterno(List<String> trace) async {
+    trace.add('1 iniciou');
     // Registra handler de background
     FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
 
@@ -42,6 +80,7 @@ class NotificationService {
       badge: true,
       sound: true,
     );
+    trace.add('2 permissão: ${settings.authorizationStatus.name}');
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
       if (Platform.isIOS) {
         ErrorReporter.report(
@@ -75,6 +114,7 @@ class NotificationService {
       onDidReceiveNotificationResponse: (r) => _navigate(_decodePayload(r.payload)),
     );
 
+    trace.add('3 notificação local ok');
     // Notificação em foreground → exibe local
     FirebaseMessaging.onMessage.listen(_showLocal);
 
@@ -84,6 +124,7 @@ class NotificationService {
     // Toque com app fechado
     final initial = await _fcm.getInitialMessage();
     if (initial != null) _navigate(initial.data);
+    trace.add('4 mensagem inicial ok');
 
     // Salva token FCM no Supabase e escuta renovações
     // No iOS o token FCM só existe depois que a Apple entrega o token APNs
@@ -94,6 +135,7 @@ class NotificationService {
         apns = await _fcm.getAPNSToken();
         if (apns == null) await Future.delayed(const Duration(seconds: 1));
       }
+      trace.add('5 token APNs: ${apns == null ? "NULO" : "ok"}');
       if (apns == null) {
         // Diagnóstico temporário: o iOS não entregou o token APNs.
         ErrorReporter.report(
@@ -106,8 +148,12 @@ class NotificationService {
     }
     try {
       final token = await _fcm.getToken();
-      if (token != null) await ApiService().salvarFcmToken(token);
+      trace.add('6 token FCM: ${token == null ? "NULO" : "${token.substring(0, 8)}..."}');
+      if (token != null) {
+        trace.add('7 gravou no banco: ${await ApiService().salvarFcmToken(token)}');
+      }
     } catch (e, s) {
+      trace.add('6 ERRO token: $e');
       // onTokenRefresh abaixo salva quando o token ficar disponível.
       if (Platform.isIOS) {
         ErrorReporter.report(e, s, contexto: 'Notificações iOS (token FCM)');

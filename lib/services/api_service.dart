@@ -276,15 +276,19 @@ class ApiService {
   }
 
   /// Salva (ou atualiza) o FCM token do colaborador logado no banco.
-  Future<void> salvarFcmToken(String token) async {
+  /// Retorna 'ok' ou o motivo da falha (usado no diagnóstico de notificações).
+  Future<String> salvarFcmToken(String token) async {
     final id = colaboradorAtual?.id;
-    if (id == null) return;
+    if (id == null) return 'sem colaborador logado';
     try {
       await _client
           .from('colaboradores')
           .update({'fcm_token': token})
           .eq('id', id);
-    } catch (_) {}
+      return 'ok';
+    } catch (e) {
+      return 'erro: $e';
+    }
   }
 
   /// Config de versão mínima/recomendada do app (ver VersionCheckService) —
