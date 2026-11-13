@@ -39,6 +39,8 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      vars:
+        APP_STORE_APPLE_ID: 6834205784
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.polealimentos.gentepole
@@ -54,7 +56,7 @@ workflows:
 
       - name: Build IPA assinado
         script: |
-          BUILD_NUMBER=$(($(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID") + 1))
+          BUILD_NUMBER=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1))
           flutter build ipa --release --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
