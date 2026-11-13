@@ -24,8 +24,10 @@ void main() {
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplYmp0cG11Z2NucHh4a2RleHlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5MDUxNDEsImV4cCI6MjEwNDQ4MTE0MX0.8hUBMXaBJvKMWywd6xRQ0t_UvJoKaCkyjhkjZW0Bknk',
     );
 
-    if (!defaultTargetPlatform.name.contains('iOS') || kIsWeb) {
+    try {
       await Firebase.initializeApp();
+    } catch (e, s) {
+      ErrorReporter.report(e, s, contexto: 'Falha ao inicializar Firebase');
     }
 
     final sessaoAtiva = await ApiService().restaurarSessao();
@@ -43,6 +45,14 @@ void main() {
     }
 
     runApp(GentePoleApp(sessaoAtiva: sessaoAtiva));
+    if (sessaoAtiva && defaultTargetPlatform == TargetPlatform.iOS) {
+      // No iOS o pedido de permissao espera o usuario responder; por isso roda
+      // depois do runApp e sem await, para nao travar a abertura do app.
+      unawaited(NotificationService.init().catchError((Object e, StackTrace s) {
+        ErrorReporter.report(e, s,
+            contexto: 'Falha ao inicializar notificacoes (iOS)');
+      }));
+    }
     // Roda independente de login (pega quem ainda tá na tela de login) e
     // nunca trava o app se falhar (sem internet, config ausente etc).
     VersionCheckService.verificarNoInicio();
