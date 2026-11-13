@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/app_navigator.dart';
+import '../core/error_reporter.dart';
 import '../screens/ti/chamados_ti_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/gestor/vagas_gestor_screen.dart';
@@ -84,12 +85,24 @@ class NotificationService {
         apns = await _fcm.getAPNSToken();
         if (apns == null) await Future.delayed(const Duration(seconds: 1));
       }
+      if (apns == null) {
+        // Diagnóstico temporário: o iOS não entregou o token APNs.
+        ErrorReporter.report(
+          Exception('Token APNs não recebido (permissão: '
+              '${settings.authorizationStatus.name})'),
+          null,
+          contexto: 'Notificações iOS',
+        );
+      }
     }
     try {
       final token = await _fcm.getToken();
       if (token != null) await ApiService().salvarFcmToken(token);
-    } catch (_) {
+    } catch (e, s) {
       // onTokenRefresh abaixo salva quando o token ficar disponível.
+      if (Platform.isIOS) {
+        ErrorReporter.report(e, s, contexto: 'Notificações iOS (token FCM)');
+      }
     }
     _fcm.onTokenRefresh.listen(ApiService().salvarFcmToken);
   }
