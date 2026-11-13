@@ -24,9 +24,11 @@ void main() {
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplYmp0cG11Z2NucHh4a2RleHlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5MDUxNDEsImV4cCI6MjEwNDQ4MTE0MX0.8hUBMXaBJvKMWywd6xRQ0t_UvJoKaCkyjhkjZW0Bknk',
     );
 
+    Object? erroFirebase;
     try {
       await Firebase.initializeApp();
     } catch (e, s) {
+      erroFirebase = e;
       ErrorReporter.report(e, s, contexto: 'Falha ao inicializar Firebase');
     }
 
@@ -45,6 +47,13 @@ void main() {
     }
 
     runApp(GentePoleApp(sessaoAtiva: sessaoAtiva));
+    if (erroFirebase != null) {
+      // Antes do runApp não há tela para mostrar a faixa de erro; reexibe depois.
+      Future.delayed(const Duration(seconds: 3), () {
+        ErrorReporter.report(erroFirebase!, null,
+            contexto: 'Firebase não iniciou');
+      });
+    }
     if (sessaoAtiva && defaultTargetPlatform == TargetPlatform.iOS) {
       // No iOS o pedido de permissao espera o usuario responder; por isso roda
       // depois do runApp e sem await, para nao travar a abertura do app.

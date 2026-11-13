@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/error_reporter.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
@@ -241,7 +242,9 @@ class _LoginScreenState extends State<LoginScreen>
     // demorar/travar aguardando a resposta do usuário ao diálogo do sistema
     // (mesmo motivo pelo qual main.dart já pula essa chamada no iOS ao
     // restaurar sessão). Dispara em segundo plano, depois de já ter entrado.
-    NotificationService.init().catchError((Object e, StackTrace s) {});
+    NotificationService.init().catchError((Object e, StackTrace s) {
+      ErrorReporter.report(e, s, contexto: 'Notificações (login)');
+    });
   }
 
   void _resetar() {

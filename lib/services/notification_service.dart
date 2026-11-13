@@ -42,7 +42,16 @@ class NotificationService {
       badge: true,
       sound: true,
     );
-    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      if (Platform.isIOS) {
+        ErrorReporter.report(
+          Exception('Permissão de notificações negada no iPhone'),
+          null,
+          contexto: 'Notificações iOS',
+        );
+      }
+      return;
+    }
 
     // Cria canal Android (obrigatório Android 8+)
     if (Platform.isAndroid) {
