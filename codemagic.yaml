@@ -49,9 +49,6 @@ workflows:
       - name: Generate app icons
         script: dart run flutter_launcher_icons
 
-      - name: Pod install
-        script: cd ios && pod install
-
       - name: Set up code signing
         script: xcode-project use-profiles
 
