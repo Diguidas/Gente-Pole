@@ -25,11 +25,17 @@ class VersionCheckService {
       final config = await ApiService().buscarConfigVersaoApp();
       if (config == null) return;
 
-      final urlLoja = config['url_play_store'] as String?;
+      // Cada plataforma tem a sua configuração: no iPhone vale a da App Store
+      // (em branco = sem aviso); no Android, a da Play Store.
+      final ios = defaultTargetPlatform == TargetPlatform.iOS;
+      final urlLoja =
+          config[ios ? 'url_app_store' : 'url_play_store'] as String?;
       if (urlLoja == null || urlLoja.isEmpty) return;
 
-      final versaoMinima = config['versao_minima'] as String?;
-      final versaoRecomendada = config['versao_recomendada'] as String?;
+      final versaoMinima =
+          config[ios ? 'ios_versao_minima' : 'versao_minima'] as String?;
+      final versaoRecomendada = config[
+          ios ? 'ios_versao_recomendada' : 'versao_recomendada'] as String?;
       final mensagem = config['mensagem'] as String?;
       final versaoAtual = info.version;
 
