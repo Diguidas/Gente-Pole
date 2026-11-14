@@ -5,6 +5,7 @@ import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/grid_9box.dart';
 import '../../widgets/seletor_nota_widget.dart';
+import '../../widgets/titulo_setor.dart';
 
 const _indigo = Color(0xFF6366F1);
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
@@ -138,12 +139,11 @@ class _AvaliarPeriodoExperienciaGestorScreenState
         r['pergunta_id'] as int: r
     };
 
-    final notas = <int, int>{};
+    final notas = <int, int?>{};
     final comentarioCtrls = <int, TextEditingController>{};
     for (final p in perguntas) {
       final pid = p['id'] as int;
-      notas[pid] =
-          ((respostasGestor[pid]?['nota'] as int?) ?? 3).clamp(1, 5);
+      notas[pid] = (respostasGestor[pid]?['nota'] as int?)?.clamp(1, 5);
       comentarioCtrls[pid] = TextEditingController(
           text: respostasGestor[pid]?['comentario'] as String? ?? '');
     }
@@ -223,7 +223,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                           ],
                           const SizedBox(height: 8),
                           SeletorNota1a5(
-                              valor: notas[pid]!,
+                              valor: notas[pid],
                               corSelecionada: _indigo,
                               onChanged: (v) => setStateDialog(() => notas[pid] = v),
                               legendaBaixa: p['legenda_nota_1'] as String?,
@@ -257,6 +257,11 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                 child: const Text('Cancelar')),
             ElevatedButton(
               onPressed: () {
+                if (perguntas.any((p) => notas[p['id'] as int] == null)) {
+                  setStateDialog(() =>
+                      erroDialog = 'Escolha uma nota de 1 a 5 em todas as perguntas.');
+                  return;
+                }
                 final semComentario = perguntas.any(
                     (p) => comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
                 if (semComentario) {
@@ -359,6 +364,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -399,7 +405,16 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                 style: AppTextStyles.corpoMedio
                     .copyWith(fontWeight: FontWeight.w600)),
           ),
-          ..._avaliacoes.map((avaliacao) {
+          ...intercalarSetores<Map<String, dynamic>>(
+                  _avaliacoes,
+                  (a) => (a['colaboradores'] as Map?)?['setor'] as String?)
+              .map((item) {
+          if (item is CabecalhoSetorItem) {
+            return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TituloSetor(item));
+          }
+          final avaliacao = item as Map<String, dynamic>;
           final colab = avaliacao['colaboradores'] as Map?;
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -485,7 +500,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
           Text(
               _avaliadas.isEmpty
                   ? 'Nenhuma avaliação concluída ainda. Quando você avaliar, os colaboradores aparecem na matriz.'
-                  : 'Toque num nome para ver as notas e o detalhe.',
+                  : 'Toque num quadrante para ver a descrição e as pessoas.',
               style: AppTextStyles.corpoMinimo),
           const SizedBox(height: 14),
           Grid9Box(

@@ -91,7 +91,6 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final setor = _api.colaboradorAtual?.setor ?? '';
 
     return Scaffold(
       body: Stack(
@@ -126,14 +125,6 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if (setor.isNotEmpty)
-                              Text(
-                                setor,
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 12,
-                                ),
-                              ),
                           ],
                         ),
                       ),
@@ -143,6 +134,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 24),
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:
@@ -281,7 +273,7 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
                                   ),
                                 )
                               else
-                                ...equipe.map((c) => _cardColaborador(c)),
+                                ..._cardsPorSetor(equipe),
                             ],
                           ),
                         );
@@ -301,6 +293,39 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
     if (dias == 0) return 'Aniversário hoje!';
     if (dias == 1) return 'Aniversário amanhã';
     return 'Faltam $dias dias p/ aniversário';
+  }
+
+  Widget _tituloSetor(String setor, int qtd, {bool primeiro = false}) => Padding(
+        padding: EdgeInsets.only(top: primeiro ? 0 : 10, bottom: 8),
+        child: Row(children: [
+          const Icon(Icons.business_outlined, size: 15, color: AppColors.cinzaTexto),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(setor,
+                style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark)),
+          ),
+          Text('$qtd',
+              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto)),
+        ]),
+      );
+
+  /// Quem lidera mais de um setor vê a equipe separada por setor; com um
+  /// setor só, a lista segue corrida como sempre.
+  List<Widget> _cardsPorSetor(List<ColaboradorModel> equipe) {
+    final grupos = <String, List<ColaboradorModel>>{};
+    for (final c in equipe) {
+      final s = (c.setor ?? '').trim();
+      grupos.putIfAbsent(s.isEmpty ? 'Sem setor' : s, () => []).add(c);
+    }
+    if (grupos.length <= 1) return equipe.map(_cardColaborador).toList();
+    final nomes = grupos.keys.toList()..sort();
+    return [
+      for (var i = 0; i < nomes.length; i++) ...[
+        _tituloSetor(nomes[i], grupos[nomes[i]]!.length, primeiro: i == 0),
+        ...grupos[nomes[i]]!.map(_cardColaborador),
+      ],
+    ];
   }
 
   Widget _cardColaborador(ColaboradorModel c) {

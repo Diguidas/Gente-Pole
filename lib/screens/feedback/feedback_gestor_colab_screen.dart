@@ -171,6 +171,7 @@ class _FeedbackGestorColabScreenState extends State<FeedbackGestorColabScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:

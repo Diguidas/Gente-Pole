@@ -1,4 +1,3 @@
-import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
@@ -139,6 +138,10 @@ class Grid9Box extends StatelessWidget {
       required this.legendas,
       required this.onTapColaborador});
 
+  static const double _alturaCelula = 104;
+  // Largura da coluna do rótulo vertical + rótulos Baixo/Médio/Alto.
+  static const double _larguraEixo = 22 + 4 + 40 + 4;
+
   @override
   Widget build(BuildContext context) {
     final faixas = Faixas9Box.dasLegendas(legendas);
@@ -154,191 +157,268 @@ class Grid9Box extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Rótulo vertical "POTENCIAL" ─────────────────────────────
-              SizedBox(
-                width: 26,
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: Center(
-                    child: Text('POTENCIAL',
-                        style: GoogleFonts.poppins(
-                            fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.dark)),
-                  ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Rótulo vertical "POTENCIAL" ─────────────────────────────
+            SizedBox(
+              width: 22,
+              height: _alturaCelula * 3,
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Center(
+                  child: Text('POTENCIAL',
+                      style: GoogleFonts.poppins(
+                          fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.dark)),
                 ),
               ),
-              const SizedBox(width: 4),
-              SizedBox(
-                width: 46,
-                child: Column(
-                  children: [
-                    for (var p = 2; p >= 0; p--)
-                      Expanded(
-                        child: Center(
-                          child: Text(_labelsFaixaPotencial[p],
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.poppins(
-                                  fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.cinzaTexto)),
-                        ),
+            ),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: 40,
+              child: Column(
+                children: [
+                  for (var p = 2; p >= 0; p--)
+                    SizedBox(
+                      height: _alturaCelula,
+                      child: Center(
+                        child: Text(_labelsFaixaPotencial[p],
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                                fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.cinzaTexto)),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  children: [
-                    for (var p = 2; p >= 0; p--)
-                      Expanded(
-                        child: Row(
-                          children: [
-                            for (var d = 0; d < 3; d++)
-                              Expanded(
-                                child: _CelulaQuadrante(
-                                  info: _quadrantes[p][d],
-                                  legenda: legendas['p${p}_d$d'] ?? '',
-                                  colaboradores: celulas[p][d],
-                                  onTapColaborador: onTapColaborador,
-                                ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                children: [
+                  for (var p = 2; p >= 0; p--)
+                    SizedBox(
+                      height: _alturaCelula,
+                      child: Row(
+                        children: [
+                          for (var d = 0; d < 3; d++)
+                            Expanded(
+                              child: _CelulaQuadrante(
+                                info: _quadrantes[p][d],
+                                legenda: legendas['p${p}_d$d'] ?? '',
+                                colaboradores: celulas[p][d],
+                                pesos: pesos,
+                                onTapColaborador: onTapColaborador,
                               ),
-                          ],
-                        ),
+                            ),
+                        ],
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(height: 6),
         Row(
           children: [
-            const SizedBox(width: 76),
+            const SizedBox(width: _larguraEixo),
             for (var d = 0; d < 3; d++)
               Expanded(
                 child: Center(
                   child: Text(_labelsFaixaDesempenho[d],
                       textAlign: TextAlign.center,
                       style: GoogleFonts.poppins(
-                          fontSize: 10.5, fontWeight: FontWeight.w700, color: AppColors.cinzaTexto)),
+                          fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.cinzaTexto)),
                 ),
               ),
           ],
         ),
         const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(left: 76),
+        Center(
           child: Text('DESEMPENHO',
-              style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.dark)),
+              style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.dark)),
         ),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(left: 76),
-          child: Text('Régua das notas: ${faixas.descricao}',
-              style: GoogleFonts.poppins(fontSize: 10.5, color: AppColors.cinzaTexto)),
-        ),
+        const SizedBox(height: 10),
+        Text('Régua das notas: ${faixas.descricao}',
+            style: GoogleFonts.poppins(fontSize: 10.5, color: AppColors.cinzaTexto)),
       ],
     );
   }
 }
 
+/// Célula compacta: só o nome, a cor e quantas pessoas caíram ali. Ao tocar,
+/// abre uma folha com a descrição completa do quadrante e a lista de pessoas.
 class _CelulaQuadrante extends StatelessWidget {
   final _InfoQuadrante info;
   final String legenda;
   final List<Map<String, dynamic>> colaboradores;
+  final Map<int, Map<String, int>> pesos;
   final void Function(Map<String, dynamic> avaliacao) onTapColaborador;
 
   const _CelulaQuadrante({
     required this.info,
     required this.legenda,
     required this.colaboradores,
+    required this.pesos,
     required this.onTapColaborador,
   });
 
   @override
   Widget build(BuildContext context) {
+    final qtd = colaboradores.length;
+    final vazio = qtd == 0;
     return Padding(
       padding: const EdgeInsets.all(3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            constraints: const BoxConstraints(minHeight: 60),
-            width: double.infinity,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: info.cor,
-              borderRadius: BorderRadius.circular(10),
-            ),
+      child: Material(
+        color: vazio ? info.cor.withValues(alpha: 0.45) : info.cor,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _abrirFolha(context),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(children: [
+                  Icon(info.icone, size: 16, color: Colors.white),
+                  const Spacer(),
+                  const Icon(Icons.info_outline_rounded, size: 13, color: Colors.white70),
+                ]),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: Text(info.titulo,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                          fontSize: 10.5,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                ),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Icon(info.icone, size: 15, color: Colors.white),
+                    Text('$qtd',
+                        style: GoogleFonts.poppins(
+                            fontSize: 22,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white)),
                     const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(info.titulo,
-                          maxLines: 2,
-                          style: GoogleFonts.poppins(
-                              fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(qtd == 1 ? 'pessoa' : 'pessoas',
+                          style: GoogleFonts.poppins(fontSize: 9.5, color: Colors.white70)),
                     ),
                   ],
                 ),
-                if (colaboradores.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 2,
-                    children: colaboradores
-                        .map((a) => _ChipColaborador(
-                              avaliacao: a,
-                              onTap: () => onTapColaborador(a),
-                            ))
-                        .toList(),
-                  ),
-                ],
               ],
             ),
           ),
-          if (legenda.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(legenda,
-                style: GoogleFonts.poppins(
-                    fontSize: 9.5, color: AppColors.cinzaTexto, height: 1.3)),
-          ],
-        ],
+        ),
       ),
     );
   }
-}
 
-class _ChipColaborador extends StatelessWidget {
-  final Map<String, dynamic> avaliacao;
-  final VoidCallback onTap;
+  void _abrirFolha(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        builder: (_, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          children: [
+            Center(
+              child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 16),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: info.cor, shape: BoxShape.circle),
+                child: Icon(info.icone, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(info.titulo,
+                    style: GoogleFonts.poppins(
+                        fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
+              ),
+            ]),
+            if (legenda.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(legenda,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, height: 1.5, color: AppColors.cinzaTexto)),
+            ],
+            const SizedBox(height: 18),
+            Text(
+                colaboradores.isEmpty
+                    ? 'Ninguém neste quadrante.'
+                    : '${colaboradores.length} ${colaboradores.length == 1 ? 'pessoa' : 'pessoas'} neste quadrante',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.dark)),
+            const SizedBox(height: 8),
+            for (final a in colaboradores) _linhaColaborador(ctx, a),
+          ],
+        ),
+      ),
+    );
+  }
 
-  const _ChipColaborador({required this.avaliacao, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final nome =
-        (avaliacao['colaboradores'] as Map?)?['nome'] as String? ?? '?';
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(20),
+  Widget _linhaColaborador(BuildContext ctx, Map<String, dynamic> a) {
+    final colab = a['colaboradores'] as Map?;
+    final nome = colab?['nome'] as String? ?? '?';
+    final cargo = colab?['cargo'] as String?;
+    final d = nota9BoxDecimal(a, 'desempenho', pesos);
+    final p = nota9BoxDecimal(a, 'potencial', pesos);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: const Color(0xFFF8F9FC),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            Navigator.pop(ctx);
+            onTapColaborador(a);
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(nome,
+                        style: GoogleFonts.poppins(
+                            fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.dark)),
+                    if (cargo != null && cargo.isNotEmpty)
+                      Text(cargo,
+                          style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.cinzaTexto)),
+                    if (d != null && p != null)
+                      Text('Desempenho ${fmtNota(d)} · Potencial ${fmtNota(p)}',
+                          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.cinzaTexto),
+            ]),
           ),
-          child: Text(nomeCurto(nome, (avaliacao['colaboradores'] as Map?)?['apelido'] as String?),
-              style: GoogleFonts.poppins(fontSize: 10)),
         ),
       ),
     );

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 import '../solicitacoes/solicitacoes_screen.dart'
-    show PayloadSolicitacaoView, codigoSolicitacao, tituloComCodigo;
+    show PayloadSolicitacaoView, codigoSolicitacao, nomeTipoSolicitacao, tituloComCodigo;
 import 'solicitacoes_gestor_formularios.dart';
 
 // Só pra exibir o histórico corretamente — não controla o que pode ser
@@ -131,7 +132,7 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
         content: SizedBox(
           width: 380,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(_labelTipoSolicitacaoAprovacao[s['tipo']] ?? s['tipo'] as String,
+            Text(_labelTipoSolicitacaoAprovacao[s['tipo']] ?? nomeTipoSolicitacao(s['tipo'] as String),
                 style: GoogleFonts.poppins(
                     fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.laranja)),
             const SizedBox(height: 4),
@@ -188,31 +189,13 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
     final historico = _historico;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
+      appBar: const AppBarGradiente(titulo: 'Solicitações'),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.laranja))
           : RefreshIndicator(
               onRefresh: _carregar,
               child: CustomScrollView(
                 slivers: [
-                  SliverToBoxAdapter(
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                        child: Row(children: [
-                          GestureDetector(
-                            onTap: () => Navigator.pop(context),
-                            child: const Icon(Icons.arrow_back_ios_new_rounded,
-                                color: AppColors.dark, size: 20),
-                          ),
-                          const SizedBox(width: 12),
-                          Text('Solicitações',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.dark)),
-                        ]),
-                      ),
-                    ),
-                  ),
                   // Tudo numa tela só: novo pedido, o que espera a aprovação
                   // do gestor e o acompanhamento das já abertas/decididas.
                   SliverPadding(
@@ -338,7 +321,7 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
                             s,
                             _labelTipoSolicitacaoAprovacao[tipo] ??
                                 _labelTipoSolicitacaoGestor[tipo] ??
-                                tipo),
+                                nomeTipoSolicitacao(tipo)),
                         style: GoogleFonts.poppins(
                             fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.dark)),
                     const SizedBox(height: 2),

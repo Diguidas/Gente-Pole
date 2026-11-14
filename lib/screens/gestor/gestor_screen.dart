@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
 import 'vagas_gestor_screen.dart';
-import 'matriz_9box_screen.dart';
 import 'minha_equipe_screen.dart';
 import 'solicitacoes_gestor_screen.dart';
 import 'facilites_gestor_screen.dart';
@@ -47,7 +46,6 @@ class _GestorScreenState extends State<GestorScreen> {
   @override
   Widget build(BuildContext context) {
     final nome = _api.colaboradorAtual?.primeiroNome ?? 'Gestor';
-    final setor = _api.colaboradorAtual?.setor ?? '';
 
     return Scaffold(
       body: Stack(
@@ -97,49 +95,11 @@ class _GestorScreenState extends State<GestorScreen> {
                   ),
                 ),
 
-                if (setor.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.business_outlined,
-                                    color: Colors.white, size: 14),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    setor,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
                 // ── Corpo ────────────────────────────────────────────────
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 28),
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:
@@ -201,32 +161,12 @@ class _GestorScreenState extends State<GestorScreen> {
                                   icone: Icons.group_outlined,
                                   titulo: 'Minha Equipe',
                                   subtitulo:
-                                      'Veja os colaboradores do seu setor',
+                                      'Veja os colaboradores da sua equipe',
                                   cor: const Color(0xFF6366F1),
                                   onTap: () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => const MinhaEquipeScreen(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-
-                              // A Matriz 9Box faz parte de "Avaliar equipe": some junto
-                              // quando essa funcionalidade está bloqueada (igual ao web).
-                              if (!_bloqueadas
-                                  .contains('avaliar_equipe_gestor')) ...[
-                                _BotaoGestor(
-                                  icone: Icons.grid_view_rounded,
-                                  titulo: 'Matriz 9Box',
-                                  subtitulo:
-                                      'Desempenho x potencial da sua equipe',
-                                  cor: AppColors.magenta,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const Matriz9BoxScreen(),
                                     ),
                                   ),
                                 ),

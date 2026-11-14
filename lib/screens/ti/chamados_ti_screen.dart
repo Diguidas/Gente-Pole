@@ -44,15 +44,32 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
   @override
   void initState() {
     super.initState();
-    _carregar();
+    // Já carregado em segundo plano ao entrar no app: mostra na hora e
+    // atualiza em silêncio por cima.
+    final cache = _api.chamadosTiEmCache();
+    if (cache != null) {
+      _chamados = cache.chamados;
+      _status = cache.status;
+      _avaliados = cache.avaliados;
+      _loading = false;
+    }
+    _carregar(silencioso: cache != null);
   }
 
-  Future<void> _carregar() async {
-    setState(() => _loading = true);
+  Future<void> _carregar({bool silencioso = false}) async {
+    if (!silencioso) setState(() => _loading = true);
     final chamados = await _api.listarMeusChamadosTI();
     final ids = chamados.map((c) => c['azure_work_item_id'] as int).toList();
     final status = await _api.buscarStatusChamadosAzure(ids);
     final avaliados = await _api.listarChamadosTIAvaliados(ids);
+    final colabId = _api.colaboradorAtual?.id.toString();
+    if (colabId != null) {
+      _api.guardarChamadosTiCache(ChamadosTiSnapshot(
+          colaboradorId: colabId,
+          chamados: chamados,
+          status: status,
+          avaliados: avaliados));
+    }
     if (!mounted) return;
     setState(() {
       _chamados = chamados;

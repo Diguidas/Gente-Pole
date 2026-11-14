@@ -21,6 +21,33 @@ const Map<String, String> _labelTipoSolicitacao = {
   'rota': 'Rota',
 };
 
+const Map<String, String> _nomesTipoSolicitacao = {
+  'adesao_beneficio': 'Adesão de Benefício',
+  'adiantamento_13': 'Adiantamento de 13º',
+  'comunicado_interno': 'Comunicado Interno',
+  'cracha': 'Crachá',
+  'incentivo_educacional': 'Incentivo Educacional',
+  'moveis_administrativos': 'Móveis Administrativos',
+  'reembolso_sesmt': 'Reembolso SESMT',
+  'rota': 'Rota',
+  'swile': 'Swile',
+  'treinamento': 'Treinamento',
+  'uber': 'Uber',
+  'uber_fixo': 'Uber Fixo',
+};
+
+/// Nome amigável de um tipo de solicitação ("uber_fixo" → "Uber Fixo").
+/// Tipo desconhecido nunca aparece cru: vira "Palavras Com Inicial Maiúscula".
+String nomeTipoSolicitacao(String tipo) {
+  final conhecido = _nomesTipoSolicitacao[tipo];
+  if (conhecido != null) return conhecido;
+  return tipo
+      .split(RegExp(r'[_\s]+'))
+      .where((p) => p.isNotEmpty)
+      .map((p) => p[0].toUpperCase() + p.substring(1))
+      .join(' ');
+}
+
 const Map<String, IconData> _iconeTipoSolicitacao = {
   'adesao_beneficio': Icons.card_giftcard_outlined,
   'comunicado_interno': Icons.campaign_outlined,
@@ -28,6 +55,12 @@ const Map<String, IconData> _iconeTipoSolicitacao = {
   'cracha': Icons.badge_outlined,
   'treinamento': Icons.menu_book_outlined,
   'rota': Icons.alt_route_outlined,
+  'uber': Icons.local_taxi_outlined,
+  'uber_fixo': Icons.local_taxi_outlined,
+  'swile': Icons.card_giftcard_outlined,
+  'adiantamento_13': Icons.payments_outlined,
+  'moveis_administrativos': Icons.chair_outlined,
+  'reembolso_sesmt': Icons.medical_services_outlined,
 };
 
 // Tipos que aparecem no grid de "novo pedido" — igual ao web
@@ -378,6 +411,7 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:
@@ -536,6 +570,12 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
     ];
   }
 
+  String? _dataAbertura(Map<String, dynamic> s) {
+    final d = DateTime.tryParse('${s['criado_em'] ?? ''}')?.toLocal();
+    if (d == null) return null;
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
   Widget _cardSolicitacao(Map<String, dynamic> s) {
     final tipo = s['tipo'] as String;
     final status = s['status'] as String? ?? 'pendente';
@@ -553,18 +593,29 @@ class _SolicitacoesScreenState extends State<SolicitacoesScreen> {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(_iconeTipoSolicitacao[tipo] ?? Icons.assignment_outlined,
-                color: _corSolicitacoes, size: 20),
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: _corSolicitacoes.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(_iconeTipoSolicitacao[tipo] ?? Icons.assignment_outlined,
+                  color: _corSolicitacoes, size: 20),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? tipo),
+                  Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? nomeTipoSolicitacao(tipo)),
                       style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: AppColors.dark)),
+                  if (_dataAbertura(s) != null)
+                    Text('Aberta em ${_dataAbertura(s)}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 11.5, color: AppColors.cinzaTexto)),
                   if (s['motivo_recusa_gestor'] != null)
                     Text('Motivo: ${s['motivo_recusa_gestor']}',
                         style: GoogleFonts.poppins(
@@ -800,7 +851,7 @@ class _DialogDetalheSolicitacaoState extends State<_DialogDetalheSolicitacao> {
                       color: _corSolicitacoes, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? tipo),
+                    child: Text(tituloComCodigo(s, _labelTipoSolicitacao[tipo] ?? nomeTipoSolicitacao(tipo)),
                         style: GoogleFonts.poppins(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,

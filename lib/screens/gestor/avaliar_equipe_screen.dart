@@ -2,6 +2,7 @@ import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import '../../widgets/matriz_9box_equipe_card.dart';
 import '../../widgets/seletor_nota_widget.dart';
 import 'avaliacao_template_picker_dialog.dart';
 
@@ -311,28 +312,29 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
     final perguntasJaLiberadas = avaliacao['perguntas_liberadas'] as bool? ?? false;
     var templateId = avaliacao['template_id'] as int?;
 
-    List<Map<String, dynamic>> perguntas;
+    List<Map<String, dynamic>> perguntas = [];
     if (perguntasJaLiberadas) {
       // O gestor já decidiu antes (template ou padrão) — reabre com
       // exatamente o mesmo conjunto, sem perguntar de novo.
       perguntas = await _api.perguntasDaAvaliacao(avaliacao,
           funcao: funcao, setor: setorColab);
-    } else {
-      // Escolha do gestor: um template pronto, ou "usar perguntas padrão"
-      // explicitamente. Fechar sem decidir não avança — só depois dessa
-      // decisão o colaborador e os colegas ficam liberados a responder.
-      final escolha = await showDialog<Object?>(
+    }
+    // Sem template e sem perguntas padrão (ex.: liberada com "padrão" numa
+    // função que só tem templates): deixa o gestor escolher um template.
+    if (!perguntasJaLiberadas || (templateId == null && perguntas.isEmpty)) {
+      // O gestor precisa escolher um template (função + setor). Fechar sem
+      // escolher não avança — só depois disso o colaborador e os colegas
+      // ficam liberados a responder.
+      final escolha = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (_) => AvaliacaoTemplatePickerDialog(
             setorColaborador: setorColab, funcaoColaborador: funcao),
       );
       if (!mounted || escolha == null) return;
 
-      templateId = escolha is Map<String, dynamic> ? escolha['id'] as int : null;
+      templateId = escolha['id'] as int;
       await _api.definirTemplateDaAvaliacao(avaliacaoId, templateId);
-      perguntas = templateId != null
-          ? await _api.listarPerguntasDoTemplate(templateId)
-          : await _api.listarPerguntasFuncao(funcao, setor: setorColab);
+      perguntas = await _api.listarPerguntasDoTemplate(templateId);
     }
     if (!mounted) return;
     if (perguntas.isEmpty) {
@@ -355,11 +357,13 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         r['pergunta_id'] as int: r
     };
 
-    final notas = <int, int>{};
+    final notas = <int, int?>{};
     final comentarioCtrls = <int, TextEditingController>{};
     for (final p in perguntas) {
       final pid = p['id'] as int;
-      notas[pid] = ((respostasGestor[pid]?['nota'] as int?) ?? 3).clamp(1, 5);
+      // Sem nota pré-selecionada: o gestor precisa escolher de propósito.
+      final notaSalva = respostasGestor[pid]?['nota'] as int?;
+      notas[pid] = notaSalva?.clamp(1, 5);
       comentarioCtrls[pid] =
           TextEditingController(text: respostasGestor[pid]?['comentario'] as String? ?? '');
     }
@@ -448,7 +452,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                           ],
                           const SizedBox(height: 8),
                           SeletorNota1a5(
-                              valor: notas[pid]!,
+                              valor: notas[pid],
                               onChanged: (v) => setStateDialog(() => notas[pid] = v),
                               legendaBaixa: p['legenda_nota_1'] as String?,
                               legendaAlta: p['legenda_nota_5'] as String?,
@@ -477,6 +481,11 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
             ElevatedButton(
               onPressed: () {
+                if (perguntas.any((p) => notas[p['id'] as int] == null)) {
+                  setStateDialog(() =>
+                      erroDialog = 'Escolha uma nota de 1 a 5 em todas as perguntas.');
+                  return;
+                }
                 final semComentario = perguntas
                     .any((p) => comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
                 if (semComentario) {
@@ -571,6 +580,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -598,6 +608,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
           _cabecalhoCiclo(),
+          const Matriz9BoxEquipeCard(),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Text('Nenhum ciclo de avaliação ativo no momento.',
@@ -611,6 +622,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
           _cabecalhoCiclo(),
+          const Matriz9BoxEquipeCard(),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Text('Nenhum colaborador no seu setor.',
@@ -627,10 +639,11 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
           _cabecalhoCiclo(),
-          ..._avaliacoes.map((avaliacao) {
+          const Matriz9BoxEquipeCard(),
+          ..._avaliacoesPorSetor().map((avaliacao) {
             final colab = avaliacao['colaboradores'] as Map?;
             final concluida = avaliacao['status'] == 'concluida';
-            return Container(
+            final card = Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -679,9 +692,57 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                 ),
               ),
             );
+            return _comCabecalhoSetor(avaliacao, card);
           }),
         ],
       ),
+    );
+  }
+
+  String _setorDe(Map<String, dynamic> a) {
+    final s = ((a['colaboradores'] as Map?)?['setor'] as String? ?? '').trim();
+    return s.isEmpty ? 'Sem setor' : s;
+  }
+
+  /// Ordenada por setor (e nome) só quando o líder tem mais de um setor.
+  List<Map<String, dynamic>> _avaliacoesPorSetor() {
+    if (_avaliacoes.map(_setorDe).toSet().length <= 1) return _avaliacoes;
+    final lista = [..._avaliacoes];
+    lista.sort((a, b) {
+      final s = _setorDe(a).compareTo(_setorDe(b));
+      if (s != 0) return s;
+      final na = ((a['colaboradores'] as Map?)?['nome'] as String? ?? '').toLowerCase();
+      final nb = ((b['colaboradores'] as Map?)?['nome'] as String? ?? '').toLowerCase();
+      return na.compareTo(nb);
+    });
+    return lista;
+  }
+
+  /// Título do setor antes do primeiro liderado de cada setor.
+  Widget _comCabecalhoSetor(Map<String, dynamic> a, Widget card) {
+    final lista = _avaliacoesPorSetor();
+    if (identical(lista, _avaliacoes)) return card;
+    final i = lista.indexOf(a);
+    final setor = _setorDe(a);
+    if (i > 0 && _setorDe(lista[i - 1]) == setor) return card;
+    final qtd = lista.where((x) => _setorDe(x) == setor).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(top: i == 0 ? 0 : 10, bottom: 8),
+          child: Row(children: [
+            const Icon(Icons.business_outlined, size: 15, color: AppColors.cinzaTexto),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(setor,
+                  style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            Text('$qtd', style: AppTextStyles.corpoMinimo),
+          ]),
+        ),
+        card,
+      ],
     );
   }
 }

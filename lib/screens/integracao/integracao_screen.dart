@@ -80,6 +80,7 @@ class _IntegracaoScreenState extends State<IntegracaoScreen> {
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 24),
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
+import '../../widgets/titulo_setor.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 
@@ -165,13 +167,7 @@ class _PdiGestorScreenState extends State<PdiGestorScreen> {
     final lista = _pdis.where((g) => _pdiEncerrado(g) == _verHistorico).toList();
     return Scaffold(
       backgroundColor: AppColors.fundo,
-      appBar: AppBar(
-        title: Text('PDI da equipe',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.dark,
-        elevation: 0.5,
-      ),
+      appBar: const AppBarGradiente(titulo: 'PDI da equipe'),
       floatingActionButton: _loading || _erro != null || _equipe.isEmpty
           ? null
           : FloatingActionButton.extended(
@@ -224,7 +220,14 @@ class _PdiGestorScreenState extends State<PdiGestorScreen> {
                               style: AppTextStyles.corpoCinza),
                         )
                       else
-                        ...lista.map(_cardPdi),
+                        ...intercalarSetores<Map<String, dynamic>>(
+                                lista,
+                                (g) => _equipePorId[g['colaborador_id'] as int]?.setor)
+                            .map((item) => item is CabecalhoSetorItem
+                                ? Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: TituloSetor(item))
+                                : _cardPdi(item as Map<String, dynamic>)),
                     ],
                   ),
                 ),
@@ -717,17 +720,14 @@ class _PdiDetalheScreenState extends State<_PdiDetalheScreen> {
     final g = _grupo;
     return Scaffold(
       backgroundColor: AppColors.fundo,
-      appBar: AppBar(
-        title: Text(widget.nomeColaborador,
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16)),
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.dark,
-        elevation: 0.5,
+      appBar: AppBarGradiente(
+        titulo: widget.nomeColaborador,
+        subtitulo: 'PDI',
         actions: [
           if (g != null)
             IconButton(
               tooltip: 'Excluir PDI',
-              icon: const Icon(Icons.delete_outline, color: AppColors.erro),
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
               onPressed: _excluirPdi,
             ),
         ],

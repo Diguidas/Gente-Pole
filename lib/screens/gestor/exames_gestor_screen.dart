@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
+import '../../widgets/titulo_setor.dart';
 import '../../services/api_service.dart';
 
 const _rotulosTipo = {
@@ -95,19 +97,7 @@ class _ExamesGestorScreenState extends State<ExamesGestorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              size: 18, color: AppColors.dark),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text('Exames',
-            style: GoogleFonts.poppins(
-                fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark)),
-      ),
+      appBar: const AppBarGradiente(titulo: 'Exames'),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.magenta))
@@ -147,7 +137,11 @@ class _ExamesGestorScreenState extends State<ExamesGestorScreen> {
                         ],
                       ),
                     )
-                  : RefreshIndicator(
+                  : Builder(builder: (context) {
+                    final linhas = intercalarSetores<Map<String, dynamic>>(
+                        _exames,
+                        (e) => (e['colaborador'] as Map?)?['setor'] as String?);
+                    return RefreshIndicator(
                       onRefresh: _carregar,
                       color: AppColors.magenta,
                       child: ListView.separated(
@@ -157,10 +151,12 @@ class _ExamesGestorScreenState extends State<ExamesGestorScreen> {
                           20,
                           20 + MediaQuery.of(context).padding.bottom,
                         ),
-                        itemCount: _exames.length,
+                        itemCount: linhas.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (_, i) {
-                          final e = _exames[i];
+                          final item = linhas[i];
+                          if (item is CabecalhoSetorItem) return TituloSetor(item);
+                          final e = item as Map<String, dynamic>;
                           final colaborador =
                               e['colaborador'] as Map<String, dynamic>? ?? {};
                           final nome = colaborador['nome'] as String? ?? '—';
@@ -237,7 +233,8 @@ class _ExamesGestorScreenState extends State<ExamesGestorScreen> {
                           );
                         },
                       ),
-                    ),
+                    );
+                  }),
     );
   }
 

@@ -82,14 +82,15 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
       return;
     }
 
-    final notas = <int, int>{};
+    final notas = <int, int?>{};
     final comentarioCtrls = <int, TextEditingController>{};
     for (final p in perguntas) {
       final pid = p['id'] as int;
-      notas[pid] = 3;
+      notas[pid] = null;
       comentarioCtrls[pid] = TextEditingController();
     }
 
+    String? erroDialog;
     final salvou = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setStateDialog) {
@@ -102,7 +103,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: perguntas.map((p) {
+                children: [...perguntas.map((p) {
                   final pid = p['id'] as int;
                   final dimensao = p['dimensao'] as String? ?? 'desempenho';
                   return Padding(
@@ -132,7 +133,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                         ),
                         const SizedBox(height: 8),
                         SeletorNota1a5(
-                            valor: notas[pid]!,
+                            valor: notas[pid],
                             onChanged: (v) => setStateDialog(() => notas[pid] = v),
                             legendaBaixa: p['legenda_nota_1'] as String?,
                             legendaAlta: p['legenda_nota_5'] as String?,
@@ -146,14 +147,25 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
+                if (erroDialog != null)
+                  Text(erroDialog!,
+                      style: AppTextStyles.corpoMinimo.copyWith(color: AppColors.erro)),
+                ],
               ),
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () {
+                if (perguntas.any((p) => notas[p['id'] as int] == null)) {
+                  setStateDialog(() =>
+                      erroDialog = 'Escolha uma nota de 1 a 5 em todas as perguntas.');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.laranja),
               child: const Text('Salvar', style: TextStyle(color: Colors.white)),
             ),
@@ -238,6 +250,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),

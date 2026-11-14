@@ -43,6 +43,8 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
 
   bool _loading = true;
   bool _enviando = false;
+  // Eu sou o responsável fixo deste tipo de chamado (não posso abrir pra mim).
+  bool _souOResponsavelPadrao = false;
 
   @override
   void initState() {
@@ -60,7 +62,19 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
 
   Future<void> _carregarOpcoes() async {
     setState(() => _loading = true);
-    final membros = await _api.listarTiMembros();
+    final todosMembros = await _api.listarTiMembros();
+    // Ninguém abre chamado para si mesmo: tira a própria pessoa da lista de
+    // responsáveis (cruza por colaborador_id ou matrícula do ti_membro).
+    final eu = _api.colaboradorAtual;
+    bool souEu(Map<String, dynamic> m) =>
+        eu != null &&
+        (m['colaborador_id']?.toString() == eu.id.toString() ||
+            ((m['matricula']?.toString().trim() ?? '').isNotEmpty &&
+                m['matricula'].toString().trim() == eu.matricula.trim()));
+    final membros = todosMembros.where((m) => !souEu(m)).toList();
+    _souOResponsavelPadrao = widget.erroGentePole &&
+        todosMembros.any((m) =>
+            souEu(m) && m['azure_email'] == _emailResponsavelErroGentePole);
     final tipos = await _api.listarTiChamadoOpcoes('tipo_solicitacao');
     final departamentos = await _api.listarTiChamadoOpcoes('departamento');
     final urgencias = await _api.listarTiChamadoOpcoes('nivel_urgencia');
@@ -115,6 +129,10 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
     }
     if (_nivelUrgencia == null) {
       _snack('Selecione o nível de urgência.', erro: true);
+      return;
+    }
+    if (_souOResponsavelPadrao) {
+      _snack('Você é o responsável por este tipo de chamado — não dá para abrir um chamado para si mesmo.', erro: true);
       return;
     }
     if (_atribuidoPara == null) {
@@ -251,9 +269,7 @@ class _NovoChamadoTiScreenState extends State<NovoChamadoTiScreen> {
                     _label('Nível de urgência'),
                     DropdownButtonFormField<String>(
                       value: _nivelUrgencia,
-                      onChanged: widget.erroGentePole
-                          ? null
-                          : (v) => setState(() => _nivelUrgencia = v),
+                      onChanged: (v) => setState(() => _nivelUrgencia = v),
                       decoration: _decoracao('Selecione...'),
                       items: _niveisUrgencia.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                     ),

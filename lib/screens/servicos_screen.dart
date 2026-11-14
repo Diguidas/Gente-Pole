@@ -160,6 +160,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(

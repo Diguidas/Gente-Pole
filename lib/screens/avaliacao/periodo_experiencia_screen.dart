@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../services/api_service.dart';
 import '../pesquisa/pesquisa_resposta_screen.dart';
 
@@ -75,12 +76,7 @@ class _PeriodoExperienciaScreenState extends State<PeriodoExperienciaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.fundo,
-      appBar: AppBar(
-        title: const Text('Período de Experiência'),
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.dark,
-        elevation: 0.5,
-      ),
+      appBar: const AppBarGradiente(titulo: 'Período de Experiência'),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.magenta))

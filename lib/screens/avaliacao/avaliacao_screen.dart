@@ -25,7 +25,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
   String _tipoAvaliacao = 'gestor';
   List<Map<String, dynamic>> _perguntas = [];
 
-  final Map<int, int> _notas = {};
+  final Map<int, int?> _notas = {};
   final Map<int, TextEditingController> _comentarioCtrls = {};
 
   @override
@@ -94,7 +94,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
       _comentarioCtrls.clear();
       for (final p in perguntas) {
         final pid = p['id'] as int;
-        _notas[pid] = ((respostasColab[pid]?['nota'] as int?) ?? 3).clamp(1, 5);
+        _notas[pid] = (respostasColab[pid]?['nota'] as int?)?.clamp(1, 5);
         _comentarioCtrls[pid] = TextEditingController(
             text: respostasColab[pid]?['comentario'] as String? ?? '');
       }
@@ -118,6 +118,11 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
   Future<void> _salvar() async {
     if (_avaliacao == null) return;
+    if (_perguntas.any((p) => _notas[p['id'] as int] == null)) {
+      setState(() =>
+          _erroValidacao = 'Escolha uma nota de 1 a 5 em todas as perguntas.');
+      return;
+    }
     final semComentario = _perguntas
         .any((p) => _comentarioCtrls[p['id'] as int]!.text.trim().isEmpty);
     if (semComentario) {
@@ -203,6 +208,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -322,7 +328,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   ),
                   const SizedBox(height: 10),
                   SeletorNota1a5(
-                      valor: _notas[pid]!,
+                      valor: _notas[pid],
                       onChanged: (v) => setState(() => _notas[pid] = v),
                       legendaBaixa: p['legenda_nota_1'] as String?,
                       legendaAlta: p['legenda_nota_5'] as String?,

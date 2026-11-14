@@ -70,6 +70,7 @@ class _EnviarFeedbackScreenState extends State<EnviarFeedbackScreen> {
                 MediaQuery.of(ctx).padding.bottom,
           ),
           child: Container(
+            clipBehavior: Clip.antiAlias,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -315,6 +316,7 @@ class _EnviarFeedbackScreenState extends State<EnviarFeedbackScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(

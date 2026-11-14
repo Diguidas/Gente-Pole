@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../models/colaborador_model.dart';
 import '../../services/api_service.dart';
 import '../reserva_salas/layout_sala_screens.dart';
@@ -270,26 +271,12 @@ class _FacilitesGestorScreenState extends State<FacilitesGestorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
+      appBar: const AppBarGradiente(titulo: 'Facilites'),
       body: SafeArea(
+        top: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: AppColors.dark, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Text('Facilites',
-                    style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.dark)),
-              ]),
-            ),
             Expanded(
               child: _loading
                   ? const Center(

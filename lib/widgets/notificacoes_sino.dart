@@ -16,6 +16,7 @@ import '../screens/solicitacoes/solicitacoes_screen.dart';
 import '../screens/gestor/feedback_gestor_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/servicos_screen.dart';
+import '../screens/ti/chamados_ti_screen.dart';
 import '../services/api_service.dart';
 
 /// Sino de notificações — ícone com badge, fixo no topo direito, visível em
@@ -30,15 +31,38 @@ class NotificacoesSino extends StatefulWidget {
   State<NotificacoesSino> createState() => _NotificacoesSinoState();
 }
 
-class _NotificacoesSinoState extends State<NotificacoesSino> {
+class _NotificacoesSinoState extends State<NotificacoesSino>
+    with WidgetsBindingObserver {
   final _api = ApiService();
   int _contador = 0;
   bool _carregandoContador = false;
 
+  Timer? _timer;
+  // Última lista calculada: o sino abre direto com ela (sem esperar a rede)
+  // e o número do contador acompanha o que foi limpado na hora.
+  List<NotificacaoItem> _itens = [];
+  bool _jaCarregou = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _carregarContador();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _carregarContador();
+    // Atualiza o contador sozinho de tempos em tempos (sem precisar abrir o sino).
+    _timer = Timer.periodic(
+        const Duration(minutes: 2), (_) => _carregarContador());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _carregarContador() async {
@@ -46,7 +70,13 @@ class _NotificacoesSinoState extends State<NotificacoesSino> {
     _carregandoContador = true;
     try {
       final itens = await _api.listarNotificacoesSino();
-      if (mounted) setState(() => _contador = itens.length);
+      if (mounted) {
+        setState(() {
+          _itens = itens;
+          _jaCarregou = true;
+          _contador = itens.length;
+        });
+      }
     } catch (_) {
       // Silencioso: o sino não deve travar a navegação do app se uma das
       // categorias falhar (ex: tabela nova ainda não migrada no banco).
@@ -60,10 +90,19 @@ class _NotificacoesSinoState extends State<NotificacoesSino> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => const _NotificacoesSheet(),
+      builder: (_) => _NotificacoesSheet(
+        itensIniciais: _itens,
+        jaCarregou: _jaCarregou,
+        onMudou: (lista) {
+          if (!mounted) return;
+          setState(() {
+            _itens = List.of(lista);
+            _jaCarregou = true;
+            _contador = lista.length;
+          });
+        },
+      ),
     );
-    // Ao fechar o sheet, o contador pode ter mudado (itens dispensados).
-    _carregarContador();
   }
 
   @override
@@ -133,7 +172,14 @@ class _NotificacoesSinoState extends State<NotificacoesSino> {
 }
 
 class _NotificacoesSheet extends StatefulWidget {
-  const _NotificacoesSheet();
+  final List<NotificacaoItem> itensIniciais;
+  final bool jaCarregou;
+  final void Function(List<NotificacaoItem>) onMudou;
+  const _NotificacoesSheet({
+    required this.itensIniciais,
+    required this.jaCarregou,
+    required this.onMudou,
+  });
 
   @override
   State<_NotificacoesSheet> createState() => _NotificacoesSheetState();
@@ -147,6 +193,12 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
   @override
   void initState() {
     super.initState();
+    // Já tem uma lista de antes: mostra na hora e atualiza por baixo, sem
+    // tela de "carregando".
+    if (widget.jaCarregou) {
+      _itens = List.of(widget.itensIniciais);
+      _loading = false;
+    }
     _carregar();
   }
 
@@ -157,6 +209,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
       _itens = itens;
       _loading = false;
     });
+    widget.onMudou(_itens);
   }
 
   ({IconData icone, Color cor}) _visualPorTipo(String tipo) {
@@ -181,6 +234,8 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
         return (icone: Icons.work_outline_rounded, cor: const Color(0xFF10B981));
       case 'cadastro':
         return (icone: Icons.badge_outlined, cor: const Color(0xFF0EA5E9));
+      case 'chamado_ti':
+        return (icone: Icons.build_outlined, cor: const Color(0xFFE64A19));
       case 'experiencia':
       case 'experiencia_equipe':
         return (icone: Icons.hourglass_bottom_rounded, cor: AppColors.amarelo);
@@ -194,6 +249,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
     unawaited(_api.dispensarNotificacao(item.chave));
     // 2) Remove localmente.
     setState(() => _itens.removeWhere((e) => e.chave == item.chave));
+    widget.onMudou(_itens);
     // 3) Fecha o sheet.
     if (!mounted) return;
     Navigator.pop(context);
@@ -235,6 +291,9 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
           ),
         );
         break;
+      case 'chamado_ti':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ChamadosTiScreen()));
+        break;
       case 'experiencia':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicosScreen()));
         break;
@@ -248,6 +307,17 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
     }
   }
 
+  /// Limpa as notificações da lista (marca como dispensadas). Pedidos de
+  /// feedback ficam, porque ainda esperam uma resposta.
+  Future<void> _limparTudo() async {
+    final limpaveis =
+        _itens.where((e) => e.tipo != 'feedback_solicitacao').toList();
+    if (limpaveis.isEmpty) return;
+    setState(() => _itens.removeWhere((e) => e.tipo != 'feedback_solicitacao'));
+    widget.onMudou(_itens);
+    await Future.wait(limpaveis.map((e) => _api.dispensarNotificacao(e.chave)));
+  }
+
   Future<void> _recusarSolicitacao(NotificacaoItem item) async {
     final id = item.refId;
     if (id == null) return;
@@ -255,6 +325,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
       await _api.recusarSolicitacaoFeedback(id);
       if (!mounted) return;
       setState(() => _itens.removeWhere((e) => e.chave == item.chave));
+    widget.onMudou(_itens);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -286,6 +357,13 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
                       style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark),
                     ),
                   ),
+                  if (!_loading && _itens.any((e) => e.tipo != 'feedback_solicitacao'))
+                    TextButton(
+                      onPressed: _limparTudo,
+                      child: Text('Limpar tudo',
+                          style: GoogleFonts.poppins(
+                              fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close_rounded, color: AppColors.cinzaTexto),

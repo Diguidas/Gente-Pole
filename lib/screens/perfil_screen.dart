@@ -527,6 +527,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                 MediaQuery.of(ctx).padding.bottom,
           ),
           child: Container(
+            clipBehavior: Clip.antiAlias,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),

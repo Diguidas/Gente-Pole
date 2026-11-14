@@ -8,7 +8,8 @@ import '../core/app_theme.dart';
 /// `gentepole_admin/lib/features/performance/presentation/widgets/seletor_nota_widget.dart`).
 /// Substitui o antigo seletor de 3 botões (Baixo/Médio/Alto).
 class SeletorNota1a5 extends StatelessWidget {
-  final int valor;
+  /// null = nenhuma nota escolhida ainda.
+  final int? valor;
   final ValueChanged<int> onChanged;
   final Color corSelecionada;
   final double alturaBotao;

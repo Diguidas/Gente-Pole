@@ -92,19 +92,6 @@ class _AvaliacaoTemplatePickerDialogState
                 ],
               ),
             ),
-            if (widget.tipo == 'desempenho')
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop('__padrao__'),
-                    icon: const Icon(Icons.undo_rounded, size: 16),
-                    label: Text('Usar perguntas padrão da função',
-                        style: GoogleFonts.poppins(fontSize: 12.5)),
-                  ),
-                ),
-              ),
             Expanded(
               child: _carregando
                   ? const Center(child: CircularProgressIndicator())

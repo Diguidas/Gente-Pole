@@ -967,10 +967,51 @@ class ApiService {
     }).toList();
   }
 
+  /// Comunicados em pop-up que devem aparecer agora para o colaborador: no
+  /// perÃ­odo (hoje entre popup_inicio e popup_fim), destinatÃ¡rio compatÃ­vel e
+  /// ainda sem "nÃ£o mostrar novamente". Do mais recente ao mais antigo.
+  Future<List<Map<String, dynamic>>> buscarPopupsComunicado() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return [];
+    final h = DateTime.now();
+    final hoje =
+        '${h.year}-${h.month.toString().padLeft(2, '0')}-${h.day.toString().padLeft(2, '0')}';
+    final data = await _client
+        .from('comunicados')
+        .select()
+        .eq('popup_ativo', true)
+        .lte('popup_inicio', hoje)
+        .gte('popup_fim', hoje)
+        .order('criado_em', ascending: false);
+    final lista =
+        (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    if (lista.isEmpty) return [];
+    final visiveis = await _filtrarDestinatarios(lista);
+    if (visiveis.isEmpty) return [];
+    final dispensados = await _client
+        .from('comunicado_popup_dispensados')
+        .select('comunicado_id')
+        .eq('colaborador_id', colab.id);
+    final ids = (dispensados as List)
+        .map((e) => (e['comunicado_id'] as num).toInt())
+        .toSet();
+    return visiveis.where((m) => !ids.contains((m['id'] as num).toInt())).toList();
+  }
+
+  /// "NÃ£o mostrar novamente": o pop-up nÃ£o aparece mais para este colaborador.
+  Future<void> dispensarPopupComunicado(int comunicadoId) async {
+    final colab = colaboradorAtual;
+    if (colab == null) return;
+    await _client.from('comunicado_popup_dispensados').upsert({
+      'comunicado_id': comunicadoId,
+      'colaborador_id': colab.id,
+    });
+  }
   Future<List<ComunicadoModel>> buscarUltimosComunicados() async {
     final data = await _client
         .from('comunicados')
         .select()
+        .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra na lista
         .order('criado_em', ascending: false);
 
     final filtrados = await _filtrarDestinatarios(
@@ -985,6 +1026,7 @@ class ApiService {
     final data = await _client
         .from('comunicados')
         .select()
+        .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra na lista
         .order('criado_em', ascending: false);
 
     final filtrados = await _filtrarDestinatarios(
@@ -1433,7 +1475,7 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listarHierarquiaDoSetor(String setor) async {
     final res = await _client
         .from('setor_hierarquia')
-        .select('id, setor, empresa, nivel, turno, colaborador_id, colaboradores_alvo, '
+        .select('id, setor, empresa, nivel, turnos, colaborador_id, colaboradores_alvo, '
             'colaboradores(id, nome, matricula, cargo)')
         .eq('setor', setor);
     return List<Map<String, dynamic>>.from(res as List);
@@ -3466,6 +3508,83 @@ class ApiService {
           ? DateTime(momento.year, momento.month, momento.day + 1)
           : momento);
 
+  String? _humorDetalhesPara;
+  bool _humorDetalhesPermitido = false;
+
+  /// Só admin e endomkt veem quem está em cada humor e o que escreveu (mesma
+  /// regra do web, que lê os perfis de `usuarios_admin`).
+  Future<bool> podeVerDetalhesHumor() async {
+    final c = colaboradorAtual;
+    if (c == null) return false;
+    if (_humorDetalhesPara == c.matricula) return _humorDetalhesPermitido;
+    var permitido = false;
+    try {
+      var q = _client
+          .from('usuarios_admin')
+          .select('roles, role, ativo')
+          .eq('matricula', c.matricula);
+      if (c.empresa != null) q = q.eq('empresa', c.empresa!);
+      final r = await q.maybeSingle();
+      final txt = '${r?['roles'] ?? r?['role'] ?? ''}'.toLowerCase();
+      permitido = r != null &&
+          r['ativo'] == true &&
+          (txt.contains('admin') || txt.contains('endomkt'));
+    } catch (_) {}
+    _humorDetalhesPara = c.matricula;
+    _humorDetalhesPermitido = permitido;
+    return permitido;
+  }
+
+  /// Quem registrou o humor [nivel] hoje, com nome/setor/foto e o texto que
+  /// escreveu. A moderação é aplicada no banco (`humor_registros_moderados`):
+  /// humor com texto aguardando o endomkt fica oculto; texto reprovado vem sem
+  /// o motivo; texto aprovado vem completo.
+  Future<List<Map<String, dynamic>>> buscarHumoresDoDiaDetalhado(
+      int nivel) async {
+    final res = await _client.rpc('humor_registros_moderados',
+        params: {'p_data': _dataHumorStr(DateTime.now())});
+    final registros = [
+      for (final r in (res as List))
+        if (((r as Map)['nivel'] as num?)?.toInt() == nivel)
+          Map<String, dynamic>.from(r),
+    ];
+
+    final ids = registros
+        .map((r) => (r['colaborador_id'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet()
+        .toList();
+    final pessoas = <String, Map<String, dynamic>>{};
+    for (var i = 0; i < ids.length; i += 200) {
+      final lote = ids.sublist(i, i + 200 > ids.length ? ids.length : i + 200);
+      final cs = await _client
+          .from('colaboradores')
+          .select('id, nome, setor, foto_url')
+          .inFilter('id', lote);
+      for (final c in cs as List) {
+        pessoas['${c['id']}'] = Map<String, dynamic>.from(c as Map);
+      }
+    }
+    for (final r in registros) {
+      r['colaborador'] = pessoas['${r['colaborador_id']}'];
+    }
+    return registros;
+  }
+
+  /// Nível (1 a 5) de cada humor registrado hoje — alimenta o card
+  /// "Termômetro da empresa". Traz só o nível, nunca o texto de ninguém.
+  Future<List<int>> buscarNiveisHumorDoDia() async {
+    // Contagem calculada no banco: humor com texto ainda sem decisão do
+    // endomkt não entra, e nenhum texto chega ao aparelho.
+    final res = await _client.rpc('humor_niveis_hoje',
+        params: {'p_data': _dataHumorStr(DateTime.now())});
+    return [
+      for (final r in (res as List))
+        for (var k = 0; k < ((r as Map)['qtd'] as num).toInt(); k++)
+          (r['nivel'] as num).toInt(),
+    ];
+  }
+
   Future<Map<String, dynamic>?> buscarHumorHoje() async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return null;
@@ -4802,9 +4921,10 @@ class ApiService {
     // Traz posts aprovados visíveis + os próprios posts (qualquer status).
     // Páginas sem sobreposição (passo = tamanho da página).
     final inicio = pagina * _tamanhoPaginaFeed;
+    if (pagina == 0) _cacheReacoes.clear(); // feed recarregado: reações novas
     final data = await _client
         .from('feed_posts')
-        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
+        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo, setor)')
         .or('status.eq.aprovado,autor_id.eq.${colab.id}')
         // O feed só mostra os últimos 30 dias (os posts continuam no banco).
         .gte('criado_em', _corteFeedIso())
@@ -4818,19 +4938,9 @@ class ApiService {
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
           if (p.tipo == 'comunicado') return false;
-          // Post de humor vale só no seu dia — feito a partir das 18h, conta
-          // como do dia seguinte (o autor vê o próprio post já no mesmo dia).
-          if (p.tipo == 'humor') {
-            final c = p.criadoEm.toLocal();
-            final hoje = DateTime.now();
-            final mesmoDiaCivil = c.year == hoje.year &&
-                c.month == hoje.month &&
-                c.day == hoje.day;
-            final valeHoje = diaDoHumor(c) == _dataHumorStr(hoje);
-            if (!valeHoje && !(mesmoDiaCivil && p.autorId == colab.id)) {
-              return false;
-            }
-          }
+          // Humor não aparece mais como post no feed: só no card "Termômetro
+          // da empresa" (os registros continuam em humor_registros).
+          if (p.tipo == 'humor') return false;
           // O próprio autor sempre vê seus posts (com qualquer status)
           if (p.autorId == colab.id) return true;
           // Posts de terceiros só aparecem se aprovados
@@ -4867,6 +4977,7 @@ class ApiService {
       final comData = await _client
           .from('comunicados')
           .select()
+          .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra no feed
           .gte('criado_em', _corteFeedIso())
           .order('criado_em', ascending: false)
           .limit(30);
@@ -4997,7 +5108,43 @@ class ApiService {
   ///
   /// [postId] negativo identifica um comunicado (id sintético = -id real na
   /// tabela `comunicados`), que guarda reações em `comunicado_reacoes`.
+  /// Cache das reações por post, preenchido em lote por [precarregarReacoes]
+  /// (uma consulta pra página inteira em vez de uma por post). Chave: id do
+  /// post (negativo = comunicado).
+  final Map<int, List<Map<String, dynamic>>> _cacheReacoes = {};
+
+  void limparCacheReacoes() => _cacheReacoes.clear();
+
+  /// Busca as reações de vários posts de uma vez (duas consultas no máximo:
+  /// posts e comunicados) e guarda no cache.
+  Future<void> precarregarReacoes(Iterable<int> postIds) async {
+    final ids = postIds.where((i) => !_cacheReacoes.containsKey(i)).toSet();
+    final posts = ids.where((i) => i > 0).toList();
+    final comunicados = ids.where((i) => i < 0).map((i) => -i).toList();
+    Future<void> carregar(String tabela, String coluna, List<int> lista,
+        int sinal) async {
+      if (lista.isEmpty) return;
+      final res = await _client
+          .from(tabela)
+          .select('$coluna, colaborador_id, tipo, colaboradores(nome, foto_url)')
+          .inFilter(coluna, lista);
+      final porId = {for (final id in lista) id: <Map<String, dynamic>>[]};
+      for (final r in res as List) {
+        final m = Map<String, dynamic>.from(r as Map);
+        porId[(m[coluna] as num).toInt()]?.add(m);
+      }
+      porId.forEach((id, l) => _cacheReacoes[id * sinal] = l);
+    }
+
+    await Future.wait([
+      carregar('feed_post_reacoes', 'post_id', posts, 1),
+      carregar('comunicado_reacoes', 'comunicado_id', comunicados, -1),
+    ]);
+  }
+
   Future<List<Map<String, dynamic>>> buscarReacoesPost(int postId) async {
+    final emCache = _cacheReacoes[postId];
+    if (emCache != null) return List<Map<String, dynamic>>.from(emCache);
     final ehComunicado = postId < 0;
     final res = await _client
         .from(ehComunicado ? 'comunicado_reacoes' : 'feed_post_reacoes')
@@ -5013,6 +5160,7 @@ class ApiService {
   Future<void> reagirPost({required int postId, required String tipo}) async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return;
+    _cacheReacoes.remove(postId); // a barra vai rebuscar o valor novo
     final ehComunicado = postId < 0;
     final tabela = ehComunicado ? 'comunicado_reacoes' : 'feed_post_reacoes';
     final colunaId = ehComunicado ? 'comunicado_id' : 'post_id';
@@ -6604,6 +6752,9 @@ class ApiService {
     if (admissao == null) return 'Sua data de admissão não está cadastrada.';
     final dias = DateTime.now().difference(admissao).inDays;
     final dentro = [45, 90].any((c) => dentroDaJanelaExperiencia(c, dias));
+    if (!dentro && dias > diasLimitePeriodoExperiencia) {
+      return 'Você já passou do período de experiência.';
+    }
     if (!dentro) {
       return 'Você está com $dias dias de admissão. A pesquisa abre 10 dias antes dos marcos de 45 e 90 dias e fica disponível até 30 dias depois do marco de 45 e até 91 dias de casa no de 90.';
     }
@@ -7200,7 +7351,7 @@ class ApiService {
     // então o filtro por id é feito aqui e não no SQL.
     final res = await _client
         .from('feed_posts')
-        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo)')
+        .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo, setor)')
         .like('destinatario', '@colaborador:%')
         .order('criado_em', ascending: false)
         .limit(200);
@@ -7492,6 +7643,29 @@ class ApiService {
       debugPrint('Erro ao carregar aviso de experiência no sino: $e');
     }
 
+    // Chamado de TI concluído e ainda sem avaliação.
+    try {
+      final paraAvaliar = await buscarChamadosTiParaAvaliar();
+      for (final c in paraAvaliar) {
+        final id = c['azure_work_item_id'] as int;
+        final chave = 'chamado_ti_avaliar:$id';
+        if (dispensadas.contains(chave)) continue;
+        itens.add(
+          NotificacaoItem(
+            chave: chave,
+            tipo: 'chamado_ti',
+            titulo: 'Chamado de TI pronto para avaliar',
+            subtitulo:
+                'Avalie o atendimento: ${c['titulo'] ?? 'Chamado #$id'}',
+            criadoEm: DateTime.tryParse(c['criado_em'] as String? ?? '') ??
+                DateTime.now(),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar chamados de TI no sino: $e');
+    }
+
     // Avisos extras (porte de `listarAvisosExtrasColab` do gentepole_admin):
     // elogios, solicitações, candidaturas e atualização cadastral — janela de
     // 30 dias; dispensa pela mesma `chave` do painel web.
@@ -7719,6 +7893,68 @@ class ApiService {
         if (tiMembroId != null) 'ti_membro_id': tiMembroId,
       });
     }
+  }
+
+  ChamadosTiSnapshot? _cacheChamadosTi;
+
+  /// Chamados de TI já carregados do colaborador logado, se houver.
+  ChamadosTiSnapshot? chamadosTiEmCache() {
+    final c = _cacheChamadosTi;
+    final id = colaboradorAtual?.id.toString();
+    if (c == null || id == null || c.colaboradorId != id) return null;
+    return c;
+  }
+
+  void guardarChamadosTiCache(ChamadosTiSnapshot s) => _cacheChamadosTi = s;
+
+  /// Chamado concluído = estado Closed ou etapa "Concluído" no quadro.
+  static bool chamadoTiConcluido(Map<String, dynamic>? info) {
+    final estado = info?['state'] as String?;
+    final coluna = (info?['boardColumn'] as String? ?? '')
+        .replaceFirst(RegExp(r'^\d+-\s*'), '')
+        .trim();
+    return estado == 'Closed' || coluna == 'Concluído';
+  }
+
+  /// Chamados concluídos que o colaborador ainda não avaliou.
+  List<Map<String, dynamic>> chamadosTiParaAvaliar(ChamadosTiSnapshot s) => [
+        for (final c in s.chamados)
+          if (chamadoTiConcluido(
+                  s.status[(c['azure_work_item_id'] as int).toString()]
+                      as Map<String, dynamic>?) &&
+              !s.avaliados.contains(c['azure_work_item_id'] as int))
+            c,
+      ];
+
+  /// Chamados aguardando avaliação do colaborador logado — usa o cache e só
+  /// vai ao Azure de novo se ele tiver mais de 5 minutos (alimenta o sino e o
+  /// card do feed).
+  Future<List<Map<String, dynamic>>> buscarChamadosTiParaAvaliar() async {
+    var s = chamadosTiEmCache();
+    if (s == null ||
+        DateTime.now().difference(s.carregadoEm) > const Duration(minutes: 5)) {
+      await precarregarChamadosTI();
+      s = chamadosTiEmCache();
+    }
+    return s == null ? [] : chamadosTiParaAvaliar(s);
+  }
+
+  /// Aquece os chamados de TI em segundo plano (chamado ao entrar no app).
+  Future<void> precarregarChamadosTI() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return;
+    final chamados = await listarMeusChamadosTI();
+    final ids = chamados.map((c) => c['azure_work_item_id'] as int).toList();
+    final r = await Future.wait([
+      buscarStatusChamadosAzure(ids),
+      listarChamadosTIAvaliados(ids),
+    ]);
+    _cacheChamadosTi = ChamadosTiSnapshot(
+      colaboradorId: colab.id.toString(),
+      chamados: chamados,
+      status: r[0] as Map<String, dynamic>,
+      avaliados: r[1] as Set<int>,
+    );
   }
 
   Future<List<Map<String, dynamic>>> listarMeusChamadosTI() async {
@@ -7991,4 +8227,22 @@ class NotificacaoItem {
     required this.criadoEm,
   });
 
+}
+
+/// Foto em memória de "Meus chamados de TI" (chamados + status no Azure +
+/// avaliados), carregada em segundo plano ao entrar no sistema pra tela de
+/// chamados abrir já pronta.
+class ChamadosTiSnapshot {
+  final String colaboradorId;
+  final List<Map<String, dynamic>> chamados;
+  final Map<String, dynamic> status;
+  final Set<int> avaliados;
+  final DateTime carregadoEm;
+  ChamadosTiSnapshot({
+    required this.colaboradorId,
+    required this.chamados,
+    required this.status,
+    required this.avaliados,
+    DateTime? carregadoEm,
+  }) : carregadoEm = carregadoEm ?? DateTime.now();
 }

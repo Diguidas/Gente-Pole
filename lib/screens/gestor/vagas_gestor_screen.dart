@@ -119,6 +119,7 @@ class _VagasGestorScreenState extends State<VagasGestorScreen> {
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 16),
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:

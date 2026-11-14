@@ -235,6 +235,7 @@ class _EuCrioOportunidadesScreenState
           Expanded(
             child: Container(
               width: double.infinity,
+              clipBehavior: Clip.antiAlias,
               decoration: const BoxDecoration(
                 color: Color(0xFFF8F9FC),
                 borderRadius:
@@ -992,6 +993,7 @@ class _CandidatarMeSheetState extends State<_CandidatarMeSheet> {
           bottom: MediaQuery.of(context).viewInsets.bottom +
               MediaQuery.of(context).padding.bottom),
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -1318,6 +1320,7 @@ class _IndicarSheetState extends State<_IndicarSheet> {
             MediaQuery.of(context).padding.bottom,
       ),
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),

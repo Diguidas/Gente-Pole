@@ -134,6 +134,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(
@@ -195,6 +196,10 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           porDia.putIfAbsent(a.diaNascimento, () => []).add(a);
         }
         final diasOrdenados = porDia.keys.toList()..sort();
+        final pessoasDoMes = [
+          for (final d in diasOrdenados)
+            for (final a in porDia[d]!) (dia: d, pessoa: a),
+        ];
 
         return RefreshIndicator(
           color: AppColors.magenta,
@@ -276,7 +281,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 ),
               ],
 
-              // Este mês — agrupado por dia
+              // Este mês — um card por aniversariante, em ordem de dia
               if (diasOrdenados.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: Padding(
@@ -286,9 +291,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 ),
                 SliverList(
                   delegate: SliverChildBuilderDelegate((ctx, i) {
-                    final dia = diasOrdenados[i];
-                    return _grupoDia(dia, porDia[dia]!);
-                  }, childCount: diasOrdenados.length),
+                    final par = pessoasDoMes[i];
+                    return _cardAniversarioMes(par.dia, par.pessoa);
+                  }, childCount: pessoasDoMes.length),
                 ),
               ],
 
@@ -653,61 +658,66 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _avatar(a.colaborador, raio: 30, fonteGrande: true),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    a.colaborador.nome,
-                    style: AppTextStyles.tituloPequeno.copyWith(
-                      color: AppColors.dark,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (a.colaborador.setor != null)
-                    Text(
-                      a.colaborador.setor!,
-                      style: AppTextStyles.corpoMenor.copyWith(
-                        color: AppColors.cinzaTexto,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Hoje é dia de celebrar!',
-                    style: AppTextStyles.corpoMenor.copyWith(
-                      color: AppColors.laranja,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  if (a.totalParabens > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '${a.totalParabens} parabéns recebidos',
-                        style: AppTextStyles.corpoMinimo.copyWith(
-                          color: AppColors.cinzaTexto,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _avatar(a.colaborador, raio: 30, fonteGrande: true),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nome e setor completos: sem corte, quebram em quantas
+                      // linhas precisar.
+                      Text(
+                        a.colaborador.nome,
+                        style: AppTextStyles.tituloPequeno.copyWith(
+                          color: AppColors.dark,
                         ),
                       ),
-                    ),
-                ],
-              ),
+                      if (a.colaborador.setor != null &&
+                          a.colaborador.setor!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          a.colaborador.setor!,
+                          style: AppTextStyles.corpoMenor.copyWith(
+                            color: AppColors.cinzaTexto,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Text(
+                        'Hoje é dia de celebrar!',
+                        style: AppTextStyles.corpoMenor.copyWith(
+                          color: AppColors.laranja,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      if (a.totalParabens > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '${a.totalParabens} parabéns recebidos',
+                            style: AppTextStyles.corpoMinimo.copyWith(
+                              color: AppColors.cinzaTexto,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
+            const SizedBox(height: 14),
             GestureDetector(
               onTap: jaParabenisei ? null : () => _abrirModalParabens(a),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   color: jaParabenisei
                       ? AppColors.laranja.withOpacity(0.08)
@@ -729,11 +739,13 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
     );
   }
 
-  // ─── Grupo por dia (colapsável) ──────────────────────────────────────────────
+  // ─── Aniversariante do mês (um card por pessoa) ─────────────────────────────
 
-  Widget _grupoDia(int dia, List<AniversarianteModel> pessoas) {
+  Widget _cardAniversarioMes(int dia, AniversarianteModel a) {
+    final setor = a.colaborador.setor;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -745,59 +757,39 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: EdgeInsets.zero,
-          shape: const Border(),
-          collapsedShape: const Border(),
-          leading: Container(
-            width: 44,
-            height: 44,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Data do aniversário: deixa claro que o número é o dia.
+          Container(
+            width: 48,
+            padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: AppColors.magentaOp15,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Center(
-              child: Text(
-                dia.toString().padLeft(2, '0'),
-                style: AppTextStyles.tituloMedio.copyWith(
-                  color: AppColors.magenta,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  dia.toString().padLeft(2, '0'),
+                  style: AppTextStyles.tituloMedio.copyWith(
+                    color: AppColors.magenta,
+                    height: 1.1,
+                  ),
                 ),
-              ),
+                Text(
+                  'dia',
+                  style: AppTextStyles.corpoMinimo.copyWith(
+                    color: AppColors.magenta,
+                    height: 1.1,
+                  ),
+                ),
+              ],
             ),
           ),
-          title: Text(
-            pessoas.length == 1
-                ? pessoas.first.colaborador.primeiroNome
-                : '${pessoas.length} aniversariantes',
-            style: AppTextStyles.corpoNormal.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          subtitle: pessoas.length == 1
-              ? Text(
-                  pessoas.first.colaborador.setor ?? '',
-                  style: AppTextStyles.corpoMenor,
-                )
-              : null,
-          // Sem botão parabenizar nos itens do mês — só em hoje
-          children: pessoas.map((a) => _itemDentroGrupo(a)).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _itemDentroGrupo(AniversarianteModel a) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.grey.shade100)),
-      ),
-      child: Row(
-        children: [
-          _avatar(a.colaborador, raio: 18),
+          const SizedBox(width: 12),
+          _avatar(a.colaborador, raio: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -808,16 +800,11 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                   style: AppTextStyles.corpoNormal.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                if (a.colaborador.setor != null)
-                  Text(
-                    a.colaborador.setor!,
-                    style: AppTextStyles.corpoMenor,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                if (setor != null && setor.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(setor, style: AppTextStyles.corpoMenor),
+                ],
               ],
             ),
           ),
@@ -1056,6 +1043,7 @@ class _ModalParabensState extends State<_ModalParabens> {
             MediaQuery.of(context).padding.bottom,
       ),
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -1240,6 +1228,7 @@ class _ModalRespostaState extends State<_ModalResposta> {
             MediaQuery.of(context).padding.bottom,
       ),
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),

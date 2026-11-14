@@ -618,6 +618,7 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.only(top: 16),
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -957,22 +958,25 @@ class _SolicitarVagaScreenState extends State<SolicitarVagaScreen> {
                 onTap: () => _onTipoAlterado(true),
               ),
             ),
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          value: _sigilosa,
-          onChanged: (v) => setState(() => _sigilosa = v ?? false),
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          activeColor: AppColors.magenta,
-          title: Text('Vaga sigilosa (não divulgar publicamente)',
-              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
-          subtitle: Text(
-              'Não aparece no portal de vagas nem no Eu Crio Oportunidades. '
-              'Aprovadores e responsáveis pela seleção são notificados.',
-              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
-        ),
           ],
+        ),
+        const SizedBox(height: 8),
+        Material(
+          color: Colors.transparent,
+          child: CheckboxListTile(
+            value: _sigilosa,
+            onChanged: (v) => setState(() => _sigilosa = v ?? false),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            activeColor: AppColors.magenta,
+            title: Text('Vaga sigilosa (não divulgar publicamente)',
+                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+                'Não aparece no portal de vagas nem no Eu Crio Oportunidades. '
+                'Aprovadores e responsáveis pela seleção são notificados.',
+                style: GoogleFonts.poppins(fontSize: 11, color: AppColors.cinzaTexto)),
+          ),
         ),
         const SizedBox(height: 20),
 

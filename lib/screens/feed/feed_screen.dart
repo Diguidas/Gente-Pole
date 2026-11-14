@@ -16,8 +16,10 @@ import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
+import 'package:gentepole/screens/ti/chamados_ti_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:gentepole/widgets/enquete_card.dart';
+import 'package:gentepole/widgets/humor_painel_card.dart';
 import 'package:gentepole/widgets/mencao.dart';
 import 'package:gentepole/widgets/texto_recolhivel.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -100,6 +102,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarPesquisasPendentes();
     _carregarPesquisaExperiencia();
     _carregarFeedbacksPresenciaisPendentes();
+    _carregarChamadosParaAvaliar();
     _scrollCtrl.addListener(_onScroll);
     _assinarStatusPosts();
     PontosBus.versao.addListener(_carregarPontos);
@@ -172,11 +175,16 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // ── Humor ─────────────────────────────────────────────────────────────────────
 
+  int _cargaPainelHumor = 0;
+
   Future<void> _carregarHumor() async {
     try {
       final h = await _api.buscarHumorHoje();
       if (!mounted) return;
-      setState(() => _humorHoje = h);
+      setState(() {
+        _humorHoje = h;
+        _cargaPainelHumor++; // recarrega o termômetro junto
+      });
     } catch (_) {
       // falha silenciosa — card ainda é exibido
     }
@@ -281,6 +289,17 @@ class _FeedScreenState extends State<FeedScreen> {
             .where((e) => e['ja_respondeu'] != true)
             .toList();
       });
+    } catch (_) {}
+  }
+
+  // Chamados de TI concluídos que o colaborador ainda não avaliou.
+  List<Map<String, dynamic>> _chamadosParaAvaliar = [];
+
+  Future<void> _carregarChamadosParaAvaliar() async {
+    try {
+      final c = await _api.buscarChamadosTiParaAvaliar();
+      if (!mounted) return;
+      setState(() => _chamadosParaAvaliar = c);
     } catch (_) {}
   }
 
@@ -476,6 +495,10 @@ class _FeedScreenState extends State<FeedScreen> {
     }
 
     final novos = await _api.buscarFeed(pagina: _pagina);
+    // Reações da página inteira numa consulta só (em vez de uma por post).
+    try {
+      await _api.precarregarReacoes(novos.map((p) => p.id));
+    } catch (_) {}
     final enquetes = _pagina == 0 ? await EnqueteCard.carregarAtivas() : null;
     // Enquetes anexadas aos comunicados desta página (aparecem dentro do card
     // do comunicado, em qualquer estado).
@@ -707,6 +730,9 @@ class _FeedScreenState extends State<FeedScreen> {
                 Expanded(
                   child: Container(
                     width: double.infinity,
+                    // Corta o que rola nas pontas arredondadas — sem isso os
+                    // cards "vazam" por cima dos cantos de cima.
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(
@@ -1033,6 +1059,7 @@ class _FeedScreenState extends State<FeedScreen> {
       _buildHumorCard(),
       if (_celebracoesRecebidas.isNotEmpty) _buildCelebracoesRecebidasCard(),
       if (_feedbacksPresenciaisPendentes.isNotEmpty) _buildFeedbackPresencialPendenteCard(),
+      if (_chamadosParaAvaliar.isNotEmpty) _buildChamadoTiAvaliarCard(),
       if (_pesquisaExperienciaPendente != null)
         _buildPesquisaExperienciaCard(),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
@@ -1041,6 +1068,7 @@ class _FeedScreenState extends State<FeedScreen> {
         api: _api,
         onPublicado: () => _carregarFeed(reiniciar: true),
       ),
+      HumorPainelCard(key: ValueKey('humor_painel_$_cargaPainelHumor')),
       if (temPendentes) _buildPendentesSection(meusPendentes),
     ];
   }
@@ -1292,6 +1320,68 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   // ── Feedback presencial pendente de confirmação ───────────────────────────────
+
+  Widget _buildChamadoTiAvaliarCard() {
+    final qtd = _chamadosParaAvaliar.length;
+    const cor = Color(0xFFE64A19);
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ChamadosTiScreen()),
+        );
+        _carregarChamadosParaAvaliar();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cor.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: cor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.build_outlined, color: cor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    qtd == 1
+                        ? 'Você tem 1 chamado de TI para avaliar'
+                        : 'Você tem $qtd chamados de TI para avaliar',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'O atendimento foi concluído — conte como foi. Só assim dá pra abrir um novo chamado.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.cinzaTexto,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: cor),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildFeedbackPresencialPendenteCard() {
     final qtd = _feedbacksPresenciaisPendentes.length;
@@ -2935,7 +3025,6 @@ class _PostCard extends StatelessWidget {
                               isDoSistema
                                   ? 'Gente Pole'
                                   : (post.autorNome ?? 'Colaborador'),
-                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
@@ -2953,6 +3042,19 @@ class _PostCard extends StatelessWidget {
                           ],
                         ],
                       ),
+                      // Setor completo de quem postou (sem corte).
+                      if (!isDoSistema &&
+                          (post.autorSetor ?? '').trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            post.autorSetor!.trim(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 11.5,
+                              color: AppColors.cinzaTexto,
+                            ),
+                          ),
+                        ),
                       Row(
                         children: [
                           Text(

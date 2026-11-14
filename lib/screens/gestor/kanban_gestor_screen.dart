@@ -200,6 +200,7 @@ class _KanbanGestorScreenState extends State<KanbanGestorScreen> {
                 // Lista
                 Expanded(
                   child: Container(
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius:

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../services/api_service.dart';
 
 SupabaseClient get _db => Supabase.instance.client;
@@ -129,13 +130,7 @@ class _LayoutSalaListaScreenState extends State<LayoutSalaListaScreen> {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: widget.facilites
           ? null
-          : AppBar(
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.dark,
-              elevation: 0.5,
-              title: Text('Layout de sala',
-                  style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
-            ),
+          : const AppBarGradiente(titulo: 'Layout de sala'),
       floatingActionButton: widget.facilites
           ? null
           : FloatingActionButton.extended(
@@ -351,16 +346,14 @@ class _LayoutSalaChatScreenState extends State<LayoutSalaChatScreen> {
     final d = widget.demanda;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.dark,
-        elevation: 0.5,
-        title: Text('${d['sala_nome'] ?? ''} — ${d['titulo']}',
-            style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600)),
+      appBar: AppBarGradiente(
+        titulo: '${d['sala_nome'] ?? 'Layout de sala'}',
+        subtitulo: '${d['titulo'] ?? ''}',
         actions: [
           if (widget.facilites)
             TextButton(
               onPressed: _alternarConclusao,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
               child: Text(_concluida ? 'Reabrir' : 'Concluir demanda'),
             ),
         ],

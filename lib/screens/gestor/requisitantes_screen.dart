@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../services/api_service.dart';
 import '../../widgets/multi_select_chip_field.dart';
 
@@ -26,6 +27,7 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
   List<String> _setores = [];
   List<({String setor, String funcao})> _pares = [];
   Map<String, List<Map<String, dynamic>>> _requisitantesPorPar = {};
+  bool _porPessoa = false;
 
   @override
   void initState() {
@@ -94,7 +96,10 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
     _carregar();
   }
 
-  Future<void> _adicionar({String? setorFixo, String? funcaoFixa}) async {
+  Future<void> _adicionar(
+      {String? setorFixo,
+      String? funcaoFixa,
+      Map<String, dynamic>? colabInicial}) async {
     final colab = _api.colaboradorAtual;
     if (colab == null) return;
     final adicionou = await showDialog<bool>(
@@ -103,6 +108,7 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
         setoresPermitidos: _setores,
         setorFixo: setorFixo,
         funcaoFixa: funcaoFixa,
+        colabInicial: colabInicial,
         atribuidoPorId: int.tryParse(colab.id.toString()),
       ),
     );
@@ -112,17 +118,12 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _corRequisitantes,
-        foregroundColor: Colors.white,
-        title: Text('Requisitantes de Vagas',
-            style: GoogleFonts.poppins(
-                fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-        centerTitle: false,
+      appBar: AppBarGradiente(
+        titulo: 'Requisitantes de Vagas',
         actions: [
           IconButton(
             onPressed: () => _adicionar(),
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, color: Colors.white),
             tooltip: 'Associar requisitante',
           ),
         ],
@@ -137,7 +138,13 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
                   ? Center(
                       child: Text('Nenhuma função encontrada na sua equipe ainda.',
                           style: GoogleFonts.poppins(color: AppColors.cinzaTexto)))
-                  : RefreshIndicator(
+                  : Column(
+                      children: [
+                        _seletorVisao(),
+                        Expanded(
+                          child: _porPessoa
+                              ? _listaPorPessoa()
+                              : RefreshIndicator(
                       onRefresh: _carregar,
                       child: ListView.separated(
                         padding: const EdgeInsets.all(20),
@@ -234,6 +241,143 @@ class _RequisitantesScreenState extends State<RequisitantesScreen> {
                         },
                       ),
                     ),
+                        ),
+                      ],
+                    ),
+    );
+  }
+
+  Widget _seletorVisao() {
+    Widget chip(String label, bool sel, VoidCallback onTap) => ChoiceChip(
+          label: Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: sel ? Colors.white : AppColors.dark)),
+          selected: sel,
+          showCheckmark: false,
+          selectedColor: _corRequisitantes,
+          onSelected: (_) => onTap(),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      child: Row(children: [
+        chip('Por função', !_porPessoa, () => setState(() => _porPessoa = false)),
+        const SizedBox(width: 8),
+        chip('Por pessoa', _porPessoa, () => setState(() => _porPessoa = true)),
+      ]),
+    );
+  }
+
+  /// Mesmos vínculos da lista por função, agrupados pela pessoa: escolhe-se
+  /// o requisitante e vê (e adiciona) as funções dele.
+  Widget _listaPorPessoa() {
+    final porPessoa = <int, List<Map<String, dynamic>>>{};
+    for (final lista in _requisitantesPorPar.values) {
+      for (final r in lista) {
+        final id = (r['colaborador_id'] as num?)?.toInt();
+        if (id == null) continue;
+        porPessoa.putIfAbsent(id, () => []).add(r);
+      }
+    }
+    final grupos = porPessoa.values.toList()
+      ..sort((a, b) => ((a.first['colaborador_nome'] as String?) ?? '')
+          .compareTo((b.first['colaborador_nome'] as String?) ?? ''));
+    return RefreshIndicator(
+      onRefresh: _carregar,
+      child: grupos.isEmpty
+          ? ListView(children: [
+              Padding(
+                padding: const EdgeInsets.all(40),
+                child: Center(
+                  child: Text(
+                      'Nenhum requisitante atribuído ainda.\nToque no + para associar uma pessoa.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(color: AppColors.cinzaTexto)),
+                ),
+              ),
+            ])
+          : ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: grupos.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final vinculos = grupos[i];
+                final primeiro = vinculos.first;
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2)),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(
+                          child: Text(primeiro['colaborador_nome'] as String? ?? '—',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.dark)),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _adicionar(colabInicial: {
+                            'id': (primeiro['colaborador_id'] as num).toInt(),
+                            'nome': primeiro['colaborador_nome'],
+                            'setor': primeiro['colaborador_cargo'],
+                          }),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: Text('Adicionar',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: vinculos
+                            .map((r) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _corRequisitantes.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text('${r['setor']} · ${r['funcao']}',
+                                            style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: _corRequisitantes)),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () => _remover(r),
+                                        child: Icon(Icons.close,
+                                            size: 14,
+                                            color: _corRequisitantes.withOpacity(0.7)),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -242,11 +386,13 @@ class _DialogAssociarRequisitante extends StatefulWidget {
   final List<String> setoresPermitidos;
   final String? setorFixo;
   final String? funcaoFixa;
+  final Map<String, dynamic>? colabInicial;
   final int? atribuidoPorId;
   const _DialogAssociarRequisitante({
     required this.setoresPermitidos,
     this.setorFixo,
     this.funcaoFixa,
+    this.colabInicial,
     required this.atribuidoPorId,
   });
 
@@ -282,6 +428,7 @@ class _DialogAssociarRequisitanteState extends State<_DialogAssociarRequisitante
   @override
   void initState() {
     super.initState();
+    _colabSelecionado = widget.colabInicial;
     if (_paresFixos) {
       _setoresSelecionados.add(widget.setorFixo!);
       _funcoesSelecionadas.add(widget.funcaoFixa!);

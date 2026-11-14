@@ -15,6 +15,7 @@ class FeedPostModel {
   final String? autorNome;
   final String? autorFotoUrl;
   final String? autorCargo;
+  final String? autorSetor;
   final String tipo; // 'post' | 'comunicado' | 'aniversario' | 'aniversario_empresa'
   final String? titulo;
   final String? conteudo;
@@ -36,6 +37,7 @@ class FeedPostModel {
     this.autorNome,
     this.autorFotoUrl,
     this.autorCargo,
+    this.autorSetor,
     required this.tipo,
     this.titulo,
     this.conteudo,
@@ -57,6 +59,7 @@ class FeedPostModel {
       autorNome: autor?['nome'] as String?,
       autorFotoUrl: autor?['foto_url'] as String?,
       autorCargo: autor?['cargo'] as String?,
+      autorSetor: autor?['setor'] as String?,
       tipo: json['tipo'] as String? ?? 'post',
       titulo: json['titulo'] as String?,
       conteudo: json['conteudo'] as String?,
@@ -109,6 +112,7 @@ class FeedPostModel {
         autorNome: autorNome,
         autorFotoUrl: autorFotoUrl,
         autorCargo: autorCargo,
+        autorSetor: autorSetor,
         tipo: tipo,
         titulo: titulo,
         conteudo: conteudo,

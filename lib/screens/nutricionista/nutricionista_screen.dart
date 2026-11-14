@@ -334,6 +334,7 @@ class _NutricionistaScreenState extends State<NutricionistaScreen> {
           ),
           Expanded(
                   child: Container(
+                    clipBehavior: Clip.antiAlias,
                     decoration: const BoxDecoration(
                       color: Color(0xFFF8F9FC),
                       borderRadius: BorderRadius.vertical(

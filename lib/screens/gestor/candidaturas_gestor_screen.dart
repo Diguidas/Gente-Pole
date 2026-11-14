@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_bar_gradiente.dart';
 import '../../services/api_service.dart';
 
 /// Candidaturas de colaboradores da equipe (via "Eu Crio Oportunidades")
@@ -131,14 +132,7 @@ class _CandidaturasGestorScreenState extends State<CandidaturasGestorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FC),
-      appBar: AppBar(
-        title: Text('Candidaturas',
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700, color: AppColors.dark)),
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.dark,
-        elevation: 0,
-      ),
+      appBar: const AppBarGradiente(titulo: 'Candidaturas'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _erro != null
