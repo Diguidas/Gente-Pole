@@ -47,6 +47,9 @@ class _ServicosScreenState extends State<ServicosScreen> {
   void initState() {
     super.initState();
     _verificarPerfis();
+    // Lojinha: aquece a consulta lenta do SAP ao abrir Serviços (e não no
+    // login), para a Lojinha abrir mais rápido só para quem está perto dela.
+    ApiService().precarregarLojinha().catchError((_) {});
   }
 
   Future<void> _verificarPerfis() async {

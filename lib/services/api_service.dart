@@ -2964,7 +2964,55 @@ class ApiService {
   /// (mesclado com compras de produtos exclusivos, que não passam pelo SAP)
   /// O limite disponível já desconta as compras exclusivas do ciclo (dia 21
   /// a dia 20), que o SAP não enxerga.
+  // ── Pré-carga da Lojinha ────────────────────────────────────────────────
+  // Ao entrar no app, os dados do funcionário (SAP + compras exclusivas) são
+  // buscados em segundo plano. A PRIMEIRA abertura da Lojinha dentro de ~45 s
+  // usa o resultado pronto (uma única vez); depois tudo volta a ser buscado ao
+  // vivo, então limite/saldo nunca ficam desatualizados após uma compra.
+  LojinhaFuncionarioModel? _funcionarioAquecido;
+  String? _funcionarioAquecidoCpf;
+  DateTime? _funcionarioAquecidoEm;
+  DateTime? _ultimoAquecimentoLojinha;
+
+  /// Aquece os dados da Lojinha em segundo plano (chamado ao entrar no app).
+  /// Só busca se a Lojinha estiver liberada para a filial do colaborador.
+  Future<void> precarregarLojinha() async {
+    final col = colaboradorAtual;
+    final cpf = col?.cpf?.replaceAll(RegExp(r'\D'), '');
+    if (col == null || cpf == null || cpf.isEmpty) return;
+    final agora = DateTime.now();
+    final ult = _ultimoAquecimentoLojinha;
+    if (ult != null && agora.difference(ult) < const Duration(minutes: 2)) return;
+    _ultimoAquecimentoLojinha = agora;
+    final liberada = await lojinhaLiberadaParaFilial(
+      chaveFilialCardapio(empresa: col.empresa, branch: col.branch),
+    );
+    if (!liberada) return;
+    final dados = await _consultarDadosFuncionarioLojinha();
+    if (dados == null) return;
+    _funcionarioAquecido = dados;
+    _funcionarioAquecidoCpf = cpf;
+    _funcionarioAquecidoEm = DateTime.now();
+  }
+
   Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
+    final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
+    if (cpf == null || cpf.isEmpty) return null;
+    final pronto = _funcionarioAquecido;
+    final em = _funcionarioAquecidoEm;
+    final usavel = pronto != null &&
+        _funcionarioAquecidoCpf == cpf &&
+        em != null &&
+        DateTime.now().difference(em) < const Duration(seconds: 45);
+    // Uso único: qualquer chamada seguinte consulta o SAP de novo.
+    _funcionarioAquecido = null;
+    _funcionarioAquecidoCpf = null;
+    _funcionarioAquecidoEm = null;
+    if (usavel) return pronto;
+    return _consultarDadosFuncionarioLojinha();
+  }
+
+  Future<LojinhaFuncionarioModel?> _consultarDadosFuncionarioLojinha() async {
     final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (cpf == null || cpf.isEmpty) return null;
 
