@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
+import '../core/nome_foto.dart';
 import '../services/api_service.dart';
 import 'avatar_colaborador.dart';
 
@@ -140,10 +141,16 @@ class _HumorPainelCardState extends State<HumorPainelCard> {
           Icon(_icones[i], size: 22, color: _cores[i]),
           const SizedBox(width: 10),
           SizedBox(
-            width: 62,
-            child: Text(_labels[i],
-                style: GoogleFonts.poppins(
-                    fontSize: 12.5, fontWeight: FontWeight.w600)),
+            width: 70,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(_labels[i],
+                  maxLines: 1,
+                  softWrap: false,
+                  style: GoogleFonts.poppins(
+                      fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
           ),
           Expanded(
             child: ClipRRect(
@@ -200,12 +207,11 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
   @override
   Widget build(BuildContext context) {
     final i = widget.nivel - 1;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.75,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (_, scroll) => FutureBuilder<List<Map<String, dynamic>>>(
+    // Altura fixa (sem DraggableScrollableSheet): o sheet sobe uma vez só,
+    // sem a sensação de "dois modais" abrindo em sequência.
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.75,
+      child: FutureBuilder<List<Map<String, dynamic>>>(
         future: _futuro,
         builder: (context, snap) {
           final carregando = snap.connectionState != ConnectionState.done;
@@ -214,7 +220,6 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
           final lista =
               todos.where((r) => !_soComMensagem || _temMensagem(r)).toList();
           return ListView(
-            controller: scroll,
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
             children: [
               Center(
@@ -301,8 +306,12 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          AvatarColaborador(
-              fotoUrl: c?['foto_url'] as String?, nome: nome, raio: 18),
+          FotoClicavel(
+            url: c?['foto_url'] as String?,
+            nome: nome,
+            child: AvatarColaborador(
+                fotoUrl: c?['foto_url'] as String?, nome: nome, raio: 18),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child:

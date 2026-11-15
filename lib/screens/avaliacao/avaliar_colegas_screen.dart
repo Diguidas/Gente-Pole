@@ -1,6 +1,7 @@
 import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
+import '../../core/rascunho_notas.dart';
 import '../../services/api_service.dart';
 import '../../widgets/seletor_nota_widget.dart';
 
@@ -66,7 +67,38 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
     }
   }
 
+  /// Prazo do ciclo da avaliação (`_ciclo_data_fim`); null se não definido.
+  ({String texto, bool urgente, bool encerrado})? _prazoItem(
+      Map<String, dynamic> item) {
+    final fim = DateTime.tryParse('${item['_ciclo_data_fim'] ?? ''}');
+    if (fim == null) return null;
+    final hoje = DateTime.now();
+    final dias = DateTime(fim.year, fim.month, fim.day)
+        .difference(DateTime(hoje.year, hoje.month, hoje.day))
+        .inDays;
+    final data =
+        '${fim.day.toString().padLeft(2, '0')}/${fim.month.toString().padLeft(2, '0')}/${fim.year}';
+    if (dias < 0) {
+      return (texto: 'Prazo encerrado em $data', urgente: true, encerrado: true);
+    }
+    if (dias == 0) {
+      return (texto: 'Último dia! Termina hoje ($data)', urgente: true, encerrado: false);
+    }
+    return (
+      texto: 'Responda até $data (faltam $dias ${dias == 1 ? 'dia' : 'dias'})',
+      urgente: dias <= 3,
+      encerrado: false
+    );
+  }
+
   Future<void> _abrirAvaliacao(Map<String, dynamic> item) async {
+    final prazoItem = _prazoItem(item);
+    if (prazoItem?.encerrado == true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('O prazo desta avaliação já encerrou.'),
+      ));
+      return;
+    }
     final avaliacao = item['avaliacoes'] as Map;
     final colab = avaliacao['colaboradores'] as Map?;
     final funcao = colab?['cargo'] as String? ?? '';
@@ -90,6 +122,19 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
       comentarioCtrls[pid] = TextEditingController();
     }
 
+    // Rascunho no servidor (vale em outro aparelho e no web).
+    final rascunho = RascunhoNotas(
+        api: _api,
+        tipo: 'avaliacao_colega',
+        chave: '${avaliacao['id']}',
+        notas: notas,
+        comentarios: comentarioCtrls);
+    final retomou = await rascunho.restaurar();
+    if (!mounted) return;
+    for (final c in comentarioCtrls.values) {
+      c.addListener(rascunho.agendar);
+    }
+
     String? erroDialog;
     final salvou = await showDialog<bool>(
       context: context,
@@ -103,7 +148,16 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [...perguntas.map((p) {
+                children: [
+                  if (retomou)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                          'Retomamos de onde você parou. Suas respostas são salvas automaticamente até você enviar.',
+                          style: AppTextStyles.corpoMinimo
+                              .copyWith(color: AppColors.cinzaTexto)),
+                    ),
+                  ...perguntas.map((p) {
                   final pid = p['id'] as int;
                   final dimensao = p['dimensao'] as String? ?? 'desempenho';
                   return Padding(
@@ -134,7 +188,10 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                         const SizedBox(height: 8),
                         SeletorNota1a5(
                             valor: notas[pid],
-                            onChanged: (v) => setStateDialog(() => notas[pid] = v),
+                            onChanged: (v) {
+                              setStateDialog(() => notas[pid] = v);
+                              rascunho.agendar();
+                            },
                             legendaBaixa: p['legenda_nota_1'] as String?,
                             legendaAlta: p['legenda_nota_5'] as String?,
                       legendaMeio: [p['legenda_nota_2'] as String?, p['legenda_nota_3'] as String?, p['legenda_nota_4'] as String?]),
@@ -174,6 +231,9 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
       }),
     );
 
+    if (salvou != true) {
+      await rascunho.salvarEEncerrar();
+    }
     if (salvou == true) {
       final col = _api.colaboradorAtual;
       if (col == null) return;
@@ -194,6 +254,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
           respostas: respostasParaSalvar,
           avaliadorId: col.id,
         );
+        await rascunho.descartar();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Avaliação enviada!'),
@@ -202,6 +263,7 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
         ));
         _carregar();
       } catch (e) {
+        await rascunho.salvarEEncerrar();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erro ao salvar: $e'),
@@ -328,7 +390,19 @@ class _AvaliarColegasScreenState extends State<AvaliarColegasScreen> {
                 )),
                 title: Text(colab?['nome'] as String? ?? '',
                     style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
-                subtitle: Text(colab?['cargo'] as String? ?? '', style: AppTextStyles.corpoMinimo),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(colab?['cargo'] as String? ?? '', style: AppTextStyles.corpoMinimo),
+                    if (_prazoItem(item) != null)
+                      Text(_prazoItem(item)!.texto,
+                          style: AppTextStyles.corpoMinimo.copyWith(
+                              fontWeight: _prazoItem(item)!.urgente
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: _prazoItem(item)!.urgente ? AppColors.erro : null)),
+                  ],
+                ),
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(

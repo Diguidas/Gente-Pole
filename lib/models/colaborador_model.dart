@@ -73,9 +73,23 @@ class ColaboradorModel {
   String? get codFilial =>
       (codCentro != null && codCentro!.length == 10) ? codCentro!.substring(0, 4) : null;
 
-  /// Filial efetiva do colaborador: prioriza `branch` (vem direto do TOTVS
-  /// RM), cai pra derivar de codCentro se `branch` não vier preenchido.
-  String? get filialEfetiva => branch ?? codFilial;
+  /// Branch cru: `branch` (TOTVS RM) ou, se vazio, derivado do codCentro.
+  /// Use para o que é código puro (ex.: centro SAP). Para identificar a filial
+  /// use [filialEfetiva], que considera a empresa.
+  String? get branchEfetivo {
+    final b = (branch ?? '').trim();
+    return b.isNotEmpty ? b : codFilial;
+  }
+
+  /// Chave da filial: o `branch` só é único dentro de cada empresa (a filial
+  /// 1 existe nas empresas 5, 9 e 10). Empresa 5 (ou vazia) -> 'branch';
+  /// demais -> 'empresa:branch' (ex.: '10:1'). Mesma chave de hierarquia_nomes.
+  String? get filialEfetiva {
+    final base = branchEfetivo;
+    if (base == null) return null;
+    final e = (empresa ?? '').trim();
+    return (e.isEmpty || e == '5') ? base : '$e:$base';
+  }
 
   /// Código do segmento: primeiros 6 dígitos do cod_centro.
   String? get codSegmento =>

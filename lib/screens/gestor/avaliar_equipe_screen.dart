@@ -1,6 +1,7 @@
 import 'package:gentepole/core/nome_foto.dart';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
+import '../../core/rascunho_notas.dart';
 import '../../services/api_service.dart';
 import '../../widgets/matriz_9box_equipe_card.dart';
 import '../../widgets/seletor_nota_widget.dart';
@@ -368,6 +369,20 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
           TextEditingController(text: respostasGestor[pid]?['comentario'] as String? ?? '');
     }
 
+    // Rascunho no servidor: retoma o que já foi preenchido (vale em outro
+    // aparelho e no web).
+    final rascunho = RascunhoNotas(
+        api: _api,
+        tipo: 'avaliacao_equipe',
+        chave: '$avaliacaoId',
+        notas: notas,
+        comentarios: comentarioCtrls);
+    final retomou = await rascunho.restaurar();
+    if (!mounted) return;
+    for (final c in comentarioCtrls.values) {
+      c.addListener(rascunho.agendar);
+    }
+
     final autoDesempenho = avaliacao['autoavaliacao_desempenho'];
     final autoPotencial = avaliacao['autoavaliacao_potencial'];
     String? erroDialog;
@@ -384,6 +399,14 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (retomou)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                          'Retomamos de onde você parou. Suas respostas são salvas automaticamente até você salvar a avaliação.',
+                          style: AppTextStyles.corpoMinimo
+                              .copyWith(color: AppColors.cinzaTexto)),
+                    ),
                   if (autoDesempenho != null || autoPotencial != null) ...[
                     Container(
                       padding: const EdgeInsets.all(10),
@@ -453,7 +476,10 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                           const SizedBox(height: 8),
                           SeletorNota1a5(
                               valor: notas[pid],
-                              onChanged: (v) => setStateDialog(() => notas[pid] = v),
+                              onChanged: (v) {
+                                setStateDialog(() => notas[pid] = v);
+                                rascunho.agendar();
+                              },
                               legendaBaixa: p['legenda_nota_1'] as String?,
                               legendaAlta: p['legenda_nota_5'] as String?,
                       legendaMeio: [p['legenda_nota_2'] as String?, p['legenda_nota_3'] as String?, p['legenda_nota_4'] as String?]),
@@ -503,6 +529,10 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       }),
     );
 
+    if (salvou != true) {
+      // Cancelou/fechou: guarda o que já foi preenchido para retomar depois.
+      await rascunho.salvarEEncerrar();
+    }
     if (salvou == true) {
       final col = _api.colaboradorAtual;
       if (col == null) return;
@@ -524,6 +554,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
           avaliadorId: col.id,
           gestorId: col.id,
         );
+        await rascunho.descartar();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Avaliação salva!'),
@@ -532,6 +563,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
         ));
         _carregar();
       } catch (e) {
+        await rascunho.salvarEEncerrar(); // falhou: não perde o que digitou
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erro ao salvar: $e'),

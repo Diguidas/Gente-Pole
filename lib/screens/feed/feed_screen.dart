@@ -14,6 +14,9 @@ import 'package:gentepole/screens/aniversariante_screen.dart';
 import 'package:gentepole/screens/feedback/feedback_gestor_colab_screen.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
+import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
+import 'package:gentepole/screens/gestor/avaliar_equipe_screen.dart';
+import 'package:gentepole/screens/avaliacao/avaliar_colegas_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
 import 'package:gentepole/screens/ti/chamados_ti_screen.dart';
@@ -79,6 +82,10 @@ class _FeedScreenState extends State<FeedScreen> {
   // Pesquisas ainda não respondidas pelo colaborador
   List<Map<String, dynamic>> _pesquisasPendentes = [];
   Map<String, dynamic>? _pesquisaExperienciaPendente;
+  // Massoterapia / fisioterapia agendadas (lembrete até a hora da sessão)
+  List<Map<String, dynamic>> _agendamentosSaude = [];
+  // Avaliações de desempenho liberadas e ainda não respondidas (lembrete fixo)
+  List<Map<String, dynamic>> _avaliacoesPendentes = [];
   List<Map<String, dynamic>> _feedbacksPresenciaisPendentes = [];
 
   // Saldo de Polens (gamificação) — null enquanto carrega, pra não piscar "0"
@@ -101,6 +108,8 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarCelebracoesRecebidas();
     _carregarPesquisasPendentes();
     _carregarPesquisaExperiencia();
+    _carregarAvaliacoesPendentes();
+    _carregarAgendamentosSaude();
     _carregarFeedbacksPresenciaisPendentes();
     _carregarChamadosParaAvaliar();
     _scrollCtrl.addListener(_onScroll);
@@ -277,6 +286,22 @@ class _FeedScreenState extends State<FeedScreen> {
       final p = await _api.buscarPesquisaPeriodoExperienciaPendente(colab);
       if (!mounted) return;
       setState(() => _pesquisaExperienciaPendente = p);
+    } catch (_) {}
+  }
+
+  Future<void> _carregarAgendamentosSaude() async {
+    try {
+      final a = await _api.listarProximosAgendamentosSaude();
+      if (!mounted) return;
+      setState(() => _agendamentosSaude = a);
+    } catch (_) {}
+  }
+
+  Future<void> _carregarAvaliacoesPendentes() async {
+    try {
+      final a = await _api.listarPendenciasAvaliacao();
+      if (!mounted) return;
+      setState(() => _avaliacoesPendentes = a);
     } catch (_) {}
   }
 
@@ -754,6 +779,8 @@ class _FeedScreenState extends State<FeedScreen> {
                               await _carregarBanners();
                               await _carregarAniversarios();
                               await _carregarPesquisasPendentes();
+                              await _carregarAvaliacoesPendentes();
+                              await _carregarAgendamentosSaude();
                             },
                             child: Builder(
                               builder: (ctx) {
@@ -937,6 +964,80 @@ class _FeedScreenState extends State<FeedScreen> {
 
   // ── Exame Card ────────────────────────────────────────────────────────────────
 
+  Widget _buildAgendamentoSaudeCard(Map<String, dynamic> a) {
+    final tipoAg = a['tipo'] as String? ?? 'massoterapia';
+    final d = DateTime.tryParse('${a['data']}') ?? DateTime.now();
+    final h = DateTime.now();
+    final dias = DateTime(d.year, d.month, d.day)
+        .difference(DateTime(h.year, h.month, h.day))
+        .inDays;
+    const semana = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+    final data =
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    final quando = dias == 0
+        ? 'Hoje às ${a['horario']}'
+        : dias == 1
+            ? 'Amanhã às ${a['horario']}'
+            : '${semana[d.weekday - 1]}, $data às ${a['horario']}';
+    final cor = dias == 0 ? AppColors.magenta : AppColors.laranja;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cor.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: cor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+                switch (tipoAg) {
+                  'massoterapia' => Icons.spa_outlined,
+                  'nutricionista' => Icons.restaurant_menu_outlined,
+                  _ => Icons.accessibility_new_rounded,
+                },
+                color: cor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  switch (tipoAg) {
+                    'massoterapia' => 'Massoterapia agendada',
+                    'nutricionista' => 'Consulta com a nutricionista agendada',
+                    _ => 'Fisioterapia agendada',
+                  },
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.dark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  quando,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: dias == 0 ? FontWeight.w600 : FontWeight.w400,
+                    color: dias == 0 ? cor : AppColors.cinzaTexto,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildExameCard(Map<String, dynamic> exame) {
     final dataRaw = exame['data_agendamento'] as String?;
     String dataFormatada = '—';
@@ -1062,7 +1163,9 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_chamadosParaAvaliar.isNotEmpty) _buildChamadoTiAvaliarCard(),
       if (_pesquisaExperienciaPendente != null)
         _buildPesquisaExperienciaCard(),
+      for (final a in _avaliacoesPendentes) _buildAvaliacaoPendenteCard(a),
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
+      for (final a in _agendamentosSaude) _buildAgendamentoSaudeCard(a),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
       _InlineComposer(
         api: _api,
@@ -1508,6 +1611,87 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
             const Icon(Icons.chevron_right, color: AppColors.magenta),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvaliacaoPendenteCard(Map<String, dynamic> a) {
+    final fim = DateTime.tryParse('${a['data_fim'] ?? ''}');
+    String? prazo;
+    var urgente = false;
+    if (fim != null) {
+      final h = DateTime.now();
+      final dias = DateTime(fim.year, fim.month, fim.day)
+          .difference(DateTime(h.year, h.month, h.day))
+          .inDays;
+      urgente = dias <= 3;
+      final data =
+          '${fim.day.toString().padLeft(2, '0')}/${fim.month.toString().padLeft(2, '0')}';
+      prazo = dias == 0
+          ? 'Último dia para responder!'
+          : 'Responda até $data (faltam $dias ${dias == 1 ? 'dia' : 'dias'})';
+    }
+    final cor = urgente ? AppColors.erro : AppColors.laranja;
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => switch (a['tipo']) {
+              'avaliacao_auto' => const AvaliacaoScreen(),
+              'avaliacao_gestor' => const AvaliarEquipeScreen(),
+              _ => const AvaliarColegasScreen(),
+            },
+          ),
+        );
+        _carregarAvaliacoesPendentes();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cor.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: cor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.assessment_outlined, color: cor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    a['titulo'] as String? ?? 'Avaliação pendente',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    prazo ?? (a['subtitulo'] as String? ?? ''),
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: urgente ? FontWeight.w600 : FontWeight.w400,
+                      color: urgente ? cor : AppColors.cinzaTexto,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: cor),
           ],
         ),
       ),

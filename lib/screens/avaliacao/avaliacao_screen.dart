@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
@@ -25,6 +26,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
   String _tipoAvaliacao = 'gestor';
   List<Map<String, dynamic>> _perguntas = [];
 
+  bool _rascunhoRestaurado = false;
   final Map<int, int?> _notas = {};
   final Map<int, TextEditingController> _comentarioCtrls = {};
 
@@ -36,6 +38,13 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
   @override
   void dispose() {
+    if (_debounce?.isActive ?? false) {
+      _debounce!.cancel();
+      final av = _avaliacao;
+      if (av != null && av['autoavaliacao_em'] == null) {
+        _api.salvarRascunho(_tipoRascunho, '${av['id']}', _dadosRascunho());
+      }
+    }
     for (final c in _comentarioCtrls.values) {
       c.dispose();
     }
@@ -99,6 +108,10 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
             text: respostasColab[pid]?['comentario'] as String? ?? '');
       }
 
+      if (avaliacao != null && avaliacao['autoavaliacao_em'] == null) {
+        await _restaurarRascunho(avaliacao['id'] as int);
+      }
+
       if (!mounted) return;
       setState(() {
         _cicloAberto = ciclo;
@@ -116,8 +129,112 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
     }
   }
 
+  // ── Rascunho no servidor: vale também em outro aparelho e no web ──────
+  static const _tipoRascunho = 'autoavaliacao';
+  Timer? _debounce;
+
+  Future<void> _restaurarRascunho(int avaliacaoId) async {
+    final m = await _api.buscarRascunho(_tipoRascunho, '$avaliacaoId');
+    if (m == null) return;
+    final notas = (m['notas'] as Map?) ?? {};
+    final coment = (m['coment'] as Map?) ?? {};
+    var restaurou = false;
+    for (final pid in _notas.keys) {
+      final n = notas['$pid'];
+      if (n is int && _notas[pid] == null) {
+        _notas[pid] = n.clamp(1, 5);
+        restaurou = true;
+      }
+      final c = coment['$pid'];
+      final ctrl = _comentarioCtrls[pid];
+      if (c is String && c.isNotEmpty && ctrl != null && ctrl.text.isEmpty) {
+        ctrl.text = c;
+        restaurou = true;
+      }
+    }
+    _rascunhoRestaurado = restaurou;
+  }
+
+  Map<String, dynamic> _dadosRascunho() => {
+        'notas': {
+          for (final e in _notas.entries)
+            if (e.value != null) '${e.key}': e.value
+        },
+        'coment': {
+          for (final e in _comentarioCtrls.entries)
+            if (e.value.text.trim().isNotEmpty) '${e.key}': e.value.text
+        },
+      };
+
+  /// Salva com debounce para não bater no servidor a cada tecla.
+  void _guardarRascunho() {
+    final av = _avaliacao;
+    if (av == null || av['autoavaliacao_em'] != null) return;
+    _debounce?.cancel();
+    final id = '${av['id']}';
+    _debounce = Timer(const Duration(milliseconds: 1500),
+        () => _api.salvarRascunho(_tipoRascunho, id, _dadosRascunho()));
+  }
+
+  Future<void> _limparRascunho(int avaliacaoId) async {
+    _debounce?.cancel();
+    await _api.apagarRascunho(_tipoRascunho, '$avaliacaoId');
+  }
+
+  /// Prazo do ciclo (`data_fim`): dias restantes; null se não definido.
+  int? get _diasRestantes {
+    final fim = DateTime.tryParse(_cicloAberto?['data_fim'] as String? ?? '');
+    if (fim == null) return null;
+    final hoje = DateTime.now();
+    return DateTime(fim.year, fim.month, fim.day)
+        .difference(DateTime(hoje.year, hoje.month, hoje.day))
+        .inDays;
+  }
+
+  Widget _bannerPrazo() {
+    final fim = DateTime.tryParse(_cicloAberto?['data_fim'] as String? ?? '');
+    final dias = _diasRestantes;
+    if (fim == null || dias == null) return const SizedBox.shrink();
+    final data =
+        '${fim.day.toString().padLeft(2, '0')}/${fim.month.toString().padLeft(2, '0')}/${fim.year}';
+    final String texto;
+    if (dias < 0) {
+      texto = 'Prazo encerrado em $data. Não é mais possível responder.';
+    } else if (dias == 0) {
+      texto = 'Último dia! O prazo termina hoje ($data).';
+    } else {
+      texto =
+          'Prazo para responder: até $data (faltam $dias ${dias == 1 ? 'dia' : 'dias'}). Depois disso não será possível responder.';
+    }
+    final urgente = dias <= 3;
+    final cor = urgente ? AppColors.erro : AppColors.laranja;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cor.withOpacity(0.4)),
+      ),
+      child: Row(children: [
+        Icon(Icons.schedule_rounded, color: cor, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(texto,
+              style: AppTextStyles.corpoMinimo
+                  .copyWith(color: cor, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+
   Future<void> _salvar() async {
     if (_avaliacao == null) return;
+    if ((_diasRestantes ?? 0) < 0) {
+      setState(() => _erroValidacao = 'O prazo desta avaliação já encerrou.');
+      return;
+    }
     if (_perguntas.any((p) => _notas[p['id'] as int] == null)) {
       setState(() =>
           _erroValidacao = 'Escolha uma nota de 1 a 5 em todas as perguntas.');
@@ -151,6 +268,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
         respostas: respostasParaSalvar,
         avaliadorId: _avaliacao!['colaborador_id'] as int,
       );
+      await _limparRascunho(_avaliacao!['id'] as int);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Autoavaliação enviada!'),
@@ -271,22 +389,56 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
 
     final jaEnviada = _avaliacao?['autoavaliacao_em'] != null;
 
+    if (jaEnviada) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  size: 64, color: AppColors.sucesso),
+              const SizedBox(height: 16),
+              Text('Você já respondeu a esta avaliação',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.tituloPequeno),
+              const SizedBox(height: 8),
+              Text(
+                  'Ciclo: ${_cicloAberto!['nome']}. Sua autoavaliação foi enviada e não pode ser alterada — uma nova só abre quando o ciclo liberar outra.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.corpoCinza),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final prazoEncerrado = (_diasRestantes ?? 0) < 0;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: AbsorbPointer(
-        absorbing: jaEnviada,
+        absorbing: prazoEncerrado,
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Autoavaliação · ${_cicloAberto!['nome']}', style: AppTextStyles.tituloPequeno),
           const SizedBox(height: 4),
           Text(
-            jaEnviada
-                ? 'Autoavaliação enviada ✓ Ela não pode ser alterada — uma nova avaliação só abre quando o ciclo liberar outra.'
-                : 'Responda as perguntas abaixo sobre seu desempenho e potencial neste ciclo.',
+            'Responda as perguntas abaixo sobre seu desempenho e potencial neste ciclo.',
             style: AppTextStyles.corpoCinza,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          _bannerPrazo(),
+          if (_rascunhoRestaurado && !prazoEncerrado)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                  'Retomamos de onde você parou. Suas respostas são salvas automaticamente (também no web e em outro aparelho) até você enviar.',
+                  style: AppTextStyles.corpoMinimo
+                      .copyWith(color: AppColors.cinzaTexto)),
+            ),
+          const SizedBox(height: 8),
           ..._perguntas.map((p) {
             final pid = p['id'] as int;
             final dimensao = p['dimensao'] as String? ?? 'desempenho';
@@ -329,7 +481,10 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   const SizedBox(height: 10),
                   SeletorNota1a5(
                       valor: _notas[pid],
-                      onChanged: (v) => setState(() => _notas[pid] = v),
+                      onChanged: (v) {
+                        setState(() => _notas[pid] = v);
+                        _guardarRascunho();
+                      },
                       legendaBaixa: p['legenda_nota_1'] as String?,
                       legendaAlta: p['legenda_nota_5'] as String?,
                       legendaMeio: [p['legenda_nota_2'] as String?, p['legenda_nota_3'] as String?, p['legenda_nota_4'] as String?]),
@@ -337,6 +492,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
                   TextField(
                     controller: _comentarioCtrls[pid],
                     maxLines: 2,
+                    onChanged: (_) => _guardarRascunho(),
                     decoration: const InputDecoration(hintText: 'Comentário (obrigatório)'),
                   ),
                 ],
@@ -351,7 +507,7 @@ class _AvaliacaoScreenState extends State<AvaliacaoScreen> {
             ),
           ],
           const SizedBox(height: 8),
-          if (!jaEnviada)
+          if (!prazoEncerrado)
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(

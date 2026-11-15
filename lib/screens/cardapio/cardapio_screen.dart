@@ -94,7 +94,11 @@ class _CardapioScreenState extends State<CardapioScreen> {
     setState(() => _loading = true);
     try {
       _segunda = _segundaDaSemana(DateTime.now());
-      final r = await _api.buscarCardapioDias(_dia(0), _dia(5));
+      final r = await _api.buscarCardapioDias(_dia(0), _dia(5),
+          filial: ApiService.chaveFilialCardapio(
+              empresa: _api.colaboradorAtual?.empresa,
+              branch: _api.colaboradorAtual?.branch,
+              codCentro: _api.colaboradorAtual?.codCentro));
       if (!mounted) return;
       setState(() {
         _textos = r;

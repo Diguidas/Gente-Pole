@@ -98,7 +98,10 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     setState(() => _carregando = true);
     _dados = await _api.buscarDadosFuncionarioLojinha();
     final liberadaGeral = await _api.lojinhaLiberadaParaFilial(
-      _api.colaboradorAtual?.branch,
+      ApiService.chaveFilialCardapio(
+        empresa: _api.colaboradorAtual?.empresa,
+        branch: _api.colaboradorAtual?.branch,
+      ),
     );
     var liberada = liberadaGeral;
     var exclusivosAgora = 0;

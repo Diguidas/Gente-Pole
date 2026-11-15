@@ -103,7 +103,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
         .where((c) => c.trim().isNotEmpty)
         .toList();
     if (centros.isNotEmpty) return centros;
-    final filial = _api.colaboradorAtual?.filialEfetiva;
+    // Código puro (centro SAP), sem o prefixo da empresa.
+    final filial = _api.colaboradorAtual?.branchEfetivo;
     return (filial != null && filial.isNotEmpty) ? [filial] : [];
   }
 

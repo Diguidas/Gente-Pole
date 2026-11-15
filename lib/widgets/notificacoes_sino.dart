@@ -14,6 +14,9 @@ import '../screens/gestor/candidaturas_gestor_screen.dart';
 import '../screens/oportunidades/eu_crio_oportunidades_screen.dart';
 import '../screens/solicitacoes/solicitacoes_screen.dart';
 import '../screens/gestor/feedback_gestor_screen.dart';
+import '../screens/avaliacao/avaliacao_screen.dart';
+import '../screens/gestor/avaliar_equipe_screen.dart';
+import '../screens/avaliacao/avaliar_colegas_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/servicos_screen.dart';
 import '../screens/ti/chamados_ti_screen.dart';
@@ -216,6 +219,10 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
     switch (tipo) {
       case 'pesquisa':
         return (icone: Icons.poll_outlined, cor: AppColors.magenta);
+      case 'avaliacao_auto':
+      case 'avaliacao_colega':
+      case 'avaliacao_gestor':
+        return (icone: Icons.assessment_outlined, cor: AppColors.laranja);
       case 'mensagem':
         return (icone: Icons.mail_outline_rounded, cor: const Color(0xFF6366F1));
       case 'mencao':
@@ -244,12 +251,25 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
     }
   }
 
+  /// Avisos que ficam até a pessoa fazer a tarefa (não somem ao abrir/limpar).
+  static const _persistentes = {
+    'avaliacao_auto',
+    'avaliacao_colega',
+    'avaliacao_gestor',
+  };
+
+  /// Não entra em "Limpar tudo": pedidos de feedback e avaliações pendentes.
+  bool _naoLimpavel(NotificacaoItem e) =>
+      e.tipo == 'feedback_solicitacao' || _persistentes.contains(e.tipo);
+
   Future<void> _abrirItem(NotificacaoItem item) async {
-    // 1) Dispensa (marca visto) — otimista, não trava a navegação se falhar.
-    unawaited(_api.dispensarNotificacao(item.chave));
-    // 2) Remove localmente.
-    setState(() => _itens.removeWhere((e) => e.chave == item.chave));
-    widget.onMudou(_itens);
+    if (!_persistentes.contains(item.tipo)) {
+      // 1) Dispensa (marca visto) — otimista, não trava a navegação se falhar.
+      unawaited(_api.dispensarNotificacao(item.chave));
+      // 2) Remove localmente.
+      setState(() => _itens.removeWhere((e) => e.chave == item.chave));
+      widget.onMudou(_itens);
+    }
     // 3) Fecha o sheet.
     if (!mounted) return;
     Navigator.pop(context);
@@ -257,6 +277,15 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
     switch (item.tipo) {
       case 'pesquisa':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const PesquisaListScreen()));
+        break;
+      case 'avaliacao_auto':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AvaliacaoScreen()));
+        break;
+      case 'avaliacao_gestor':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AvaliarEquipeScreen()));
+        break;
+      case 'avaliacao_colega':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AvaliarColegasScreen()));
         break;
       case 'mensagem':
       case 'mencao':
@@ -311,9 +340,9 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
   /// feedback ficam, porque ainda esperam uma resposta.
   Future<void> _limparTudo() async {
     final limpaveis =
-        _itens.where((e) => e.tipo != 'feedback_solicitacao').toList();
+        _itens.where((e) => !_naoLimpavel(e)).toList();
     if (limpaveis.isEmpty) return;
-    setState(() => _itens.removeWhere((e) => e.tipo != 'feedback_solicitacao'));
+    setState(() => _itens.removeWhere((e) => !_naoLimpavel(e)));
     widget.onMudou(_itens);
     await Future.wait(limpaveis.map((e) => _api.dispensarNotificacao(e.chave)));
   }
@@ -357,7 +386,7 @@ class _NotificacoesSheetState extends State<_NotificacoesSheet> {
                       style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.dark),
                     ),
                   ),
-                  if (!_loading && _itens.any((e) => e.tipo != 'feedback_solicitacao'))
+                  if (!_loading && _itens.any((e) => !_naoLimpavel(e)))
                     TextButton(
                       onPressed: _limparTudo,
                       child: Text('Limpar tudo',

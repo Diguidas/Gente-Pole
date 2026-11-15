@@ -705,22 +705,38 @@ class ApiService {
     return row?['total_pontos'] as int? ?? 0;
   }
 
+  /// Filtra a view do ranking pela filial-chave: 'empresa:branch' -> empresa e
+  /// branch; chave simples -> branch da empresa 5 (ou sem empresa).
+  PostgrestFilterBuilder<T> _filtrarRankingPorFilial<T>(
+      PostgrestFilterBuilder<T> q, String chave) {
+    final i = chave.indexOf(':');
+    if (i > 0) {
+      return q
+          .eq('empresa', chave.substring(0, i))
+          .eq('branch', chave.substring(i + 1));
+    }
+    return q.eq('branch', chave).or('empresa.eq.5,empresa.is.null');
+  }
+
   /// Posicao do colaborador no ranking da filial (quantos tem mais pontos + 1)
   /// e total de pessoas no ranking da filial — igual ao web.
   Future<({int posicao, int totalFilial})> buscarMinhaPosicaoRanking({
     required String branch,
     required int meusPontos,
   }) async {
-    final maiores = await _client
-        .from('vw_ranking_pontos')
-        .select('colaborador_id')
-        .eq('branch', branch)
+    // `branch` aqui é a CHAVE da filial (ver Colaborador.filialEfetiva).
+    final maiores = await _filtrarRankingPorFilial(
+            _client
+                .from('vw_ranking_pontos')
+                .select('colaborador_id'),
+            branch)
         .gt('total_pontos', meusPontos)
         .count();
-    final total = await _client
-        .from('vw_ranking_pontos')
-        .select('colaborador_id')
-        .eq('branch', branch)
+    final total = await _filtrarRankingPorFilial(
+            _client
+                .from('vw_ranking_pontos')
+                .select('colaborador_id'),
+            branch)
         .count();
     return (posicao: maiores.count + 1, totalFilial: total.count);
   }
@@ -730,10 +746,8 @@ class ApiService {
   Future<List<Map<String, dynamic>>> buscarRankingPontosDaMinhaFilial() async {
     final filial = colaboradorAtual?.filialEfetiva;
     if (filial == null || filial.isEmpty) return [];
-    final data = await _client
-        .from('vw_ranking_pontos')
-        .select()
-        .eq('branch', filial)
+    final data = await _filtrarRankingPorFilial(
+            _client.from('vw_ranking_pontos').select(), filial)
         .gt('total_pontos', 0)
         .order('total_pontos', ascending: false);
     return List<Map<String, dynamic>>.from(data as List);
@@ -3205,7 +3219,8 @@ class ApiService {
     ]);
     final regrasPorMaterial =
         results[1] as Map<String, Map<String, dynamic>>;
-    final branch = colaboradorAtual?.branch;
+    final branch = chaveFilialCardapio(
+        empresa: colaboradorAtual?.empresa, branch: colaboradorAtual?.branch);
     return (results[0] as List)
         .map((e) {
           final j = e as Map<String, dynamic>;
@@ -3622,6 +3637,98 @@ class ApiService {
   }
 
   /// Retorna o próximo exame periódico agendado para o colaborador (sem realização).
+  /// Próxima sessão agendada de massoterapia, nutricionista e fisioterapia do colaborador
+  /// logado (a mais próxima de cada tipo), para lembrar no feed desde o
+  /// agendamento até a hora da sessão. Cada item: {tipo: 'massoterapia' |
+  /// 'nutricionista' | 'fisioterapia', data: 'yyyy-MM-dd', horario: 'HH:mm'}.
+  Future<List<Map<String, dynamic>>> listarProximosAgendamentosSaude() async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return [];
+    final agora = DateTime.now();
+    String d2(int n) => n.toString().padLeft(2, '0');
+    final hojeStr = '${agora.year}-${d2(agora.month)}-${d2(agora.day)}';
+
+    // Mantém a sessão até 15 min depois do horário marcado.
+    bool futura(String? data, String? horario) {
+      final d = DateTime.tryParse(data ?? '');
+      if (d == null) return false;
+      final h = (horario ?? '00:00').split(':');
+      final quando = DateTime(d.year, d.month, d.day, int.tryParse(h[0]) ?? 0,
+          int.tryParse(h.length > 1 ? h[1] : '0') ?? 0);
+      return quando.isAfter(agora.subtract(const Duration(minutes: 15)));
+    }
+
+    final out = <Map<String, dynamic>>[];
+    try {
+      final r = await _client
+          .from('massoterapia_agendamentos')
+          .select('data, horario')
+          .eq('colaborador_id', meuId)
+          .eq('status', 'AGENDADO')
+          .gte('data', hojeStr)
+          .order('data', ascending: true)
+          .order('horario', ascending: true);
+      for (final m in (r as List)) {
+        if (futura(m['data'] as String?, m['horario'] as String?)) {
+          out.add({
+            'tipo': 'massoterapia',
+            'data': m['data'],
+            'horario': (m['horario'] as String).substring(0, 5),
+          });
+          break;
+        }
+      }
+    } catch (_) {}
+    try {
+      final r = await _client
+          .from('nutricionista_agendamentos')
+          .select('data, horario')
+          .eq('colaborador_id', meuId)
+          .eq('status', 'AGENDADO')
+          .gte('data', hojeStr)
+          .order('data', ascending: true)
+          .order('horario', ascending: true);
+      for (final m in (r as List)) {
+        if (futura(m['data'] as String?, m['horario'] as String?)) {
+          out.add({
+            'tipo': 'nutricionista',
+            'data': m['data'],
+            'horario': (m['horario'] as String).substring(0, 5),
+          });
+          break;
+        }
+      }
+    } catch (_) {}
+    try {
+      final casos = await _client
+          .from('fisioterapia_casos')
+          .select('id')
+          .eq('colaborador_id', meuId);
+      final ids = [for (final c in (casos as List)) c['id'] as int];
+      if (ids.isNotEmpty) {
+        final r = await _client
+            .from('fisioterapia_sessoes')
+            .select('data, horario')
+            .inFilter('caso_id', ids)
+            .eq('status', 'AGENDADO')
+            .gte('data', hojeStr)
+            .order('data', ascending: true)
+            .order('horario', ascending: true);
+        for (final m in (r as List)) {
+          if (futura(m['data'] as String?, m['horario'] as String?)) {
+            out.add({
+              'tipo': 'fisioterapia',
+              'data': m['data'],
+              'horario': (m['horario'] as String).substring(0, 5),
+            });
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
   Future<Map<String, dynamic>?> buscarProximoExamePeriodico() async {
     final meuId = colaboradorAtual?.id;
     if (meuId == null) return null;
@@ -4379,13 +4486,42 @@ class ApiService {
   /// null se ainda não houver imagem cadastrada.
   /// Textos do cardápio entre [inicio] e [fim] (inclusive), chaveados por
   /// 'yyyy-MM-dd'. Dias sem cadastro não aparecem no mapa.
+  /// Chave da filial no cardápio. `branch` só é único DENTRO de cada empresa
+  /// (a filial 1 existe nas empresas 5, 9 e 10), então fora da empresa 5 a
+  /// chave leva o prefixo da empresa ("10:1"), igual ao `hierarquia_nomes`.
+  /// Sem `branch`, usa os 4 primeiros dígitos do cod_centro.
+  static String? chaveFilialCardapio(
+      {String? empresa, String? branch, String? codCentro}) {
+    final b = (branch ?? '').trim();
+    final base = b.isNotEmpty
+        ? b
+        : ((codCentro != null && codCentro.length == 10)
+            ? codCentro.substring(0, 4)
+            : null);
+    if (base == null) return null;
+    final e = (empresa ?? '').trim();
+    return (e.isEmpty || e == '5') ? base : '$e:$base';
+  }
+
   Future<Map<String, String>> buscarCardapioDias(
-      DateTime inicio, DateTime fim) async {
+      DateTime inicio, DateTime fim,
+      {required String? filial}) async {
+    if (filial == null || filial.trim().isEmpty) return {};
     String iso(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    // Cardápio da semana em que a filial está incluída (no máximo um por semana).
+    final vinculos = await _client
+        .from('cardapio_semana_filiais')
+        .select('semana_id')
+        .eq('filial', filial.trim())
+        .gte('semana_inicio', iso(inicio.subtract(const Duration(days: 6))))
+        .lte('semana_inicio', iso(fim));
+    final ids = [for (final v in (vinculos as List)) v['semana_id']];
+    if (ids.isEmpty) return {};
     final res = await _client
-        .from('cardapio_dias')
+        .from('cardapio_semana_dias')
         .select('data, texto')
+        .inFilter('semana_id', ids)
         .gte('data', iso(inicio))
         .lte('data', iso(fim));
     return {
@@ -5399,28 +5535,38 @@ class ApiService {
         n['chave'] as String: n['nome'] as String
     };
 
-    // Paginado — o Supabase limita a 1000 linhas por padrão.
-    final codigos = <String>{};
+    // Paginado — o Supabase limita a 1000 linhas por padrão. A chave leva a
+    // empresa (o branch se repete entre empresas): ver chaveFilialCardapio.
+    final branchPorChave = <String, String>{};
     int from = 0;
     const pageSize = 1000;
     while (true) {
       final page = await _client
           .from('colaboradores')
-          .select('branch')
+          .select('branch, empresa')
           .eq('demitido', false)
+          .order('id')
           .range(from, from + pageSize - 1);
       final linhas = page as List;
       for (final c in linhas) {
-        final branch = c['branch'] as String?;
-        if (branch != null && branch.isNotEmpty) codigos.add(branch);
+        final branch = (c['branch'] as String?)?.trim() ?? '';
+        if (branch.isEmpty) continue;
+        final chave = chaveFilialCardapio(
+            empresa: c['empresa']?.toString(), branch: branch)!;
+        branchPorChave[chave] = branch;
       }
       if (linhas.length < pageSize) break;
       from += pageSize;
     }
 
-    final lista = codigos
-        .map<Map<String, dynamic>>((cod) =>
-            {'chave': cod, 'nome': nomesPorChave[cod] ?? 'Filial $cod'})
+    final lista = branchPorChave.entries
+        .map<Map<String, dynamic>>((e) => {
+              'chave': e.key,
+              // nome específico da empresa ('10:1'); senão o do branch puro
+              'nome': nomesPorChave[e.key] ??
+                  nomesPorChave[e.value] ??
+                  'Filial ${e.key}',
+            })
         .toList();
     lista.sort((a, b) => (a['nome'] as String).compareTo(b['nome'] as String));
     return lista;
@@ -5846,6 +5992,56 @@ class ApiService {
       if (a.participantes.isEmpty && a.setores.isEmpty) return a.ciclo;
     }
     return null;
+  }
+
+  // ── Rascunhos no servidor (tabela rascunhos_respostas) ───────────────
+  // Compartilhados entre app e web: tipo = 'pesquisa' | 'autoavaliacao' |
+  // 'avaliacao_equipe' | 'avaliacao_colega'; chave = id do que está sendo
+  // respondido. Falhas de rede nunca devem travar a tela: retornam null/ignoram.
+  Future<Map<String, dynamic>?> buscarRascunho(String tipo, String chave) async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return null;
+    try {
+      final r = await _client
+          .from('rascunhos_respostas')
+          .select('dados')
+          .eq('colaborador_id', id)
+          .eq('tipo', tipo)
+          .eq('chave', chave)
+          .maybeSingle();
+      final d = r?['dados'];
+      return d is Map ? Map<String, dynamic>.from(d) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> salvarRascunho(
+      String tipo, String chave, Map<String, dynamic> dados) async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return;
+    try {
+      await _client.from('rascunhos_respostas').upsert({
+        'colaborador_id': id,
+        'tipo': tipo,
+        'chave': chave,
+        'dados': dados,
+        'atualizado_em': DateTime.now().toUtc().toIso8601String(),
+      });
+    } catch (_) {}
+  }
+
+  Future<void> apagarRascunho(String tipo, String chave) async {
+    final id = colaboradorAtual?.id;
+    if (id == null) return;
+    try {
+      await _client
+          .from('rascunhos_respostas')
+          .delete()
+          .eq('colaborador_id', id)
+          .eq('tipo', tipo)
+          .eq('chave', chave);
+    } catch (_) {}
   }
 
   /// Ciclo aberto que vale para um colaborador (ver [_escolherCicloAberto]).
@@ -6584,7 +6780,30 @@ class ApiService {
         )
         .eq('avaliador_id', avaliadorId)
         .eq('respondido', false);
-    return List<Map<String, dynamic>>.from(data as List);
+    final lista = List<Map<String, dynamic>>.from(data as List);
+    // Prazo do ciclo (data_fim) de cada avaliação, para o colaborador ver
+    // até quando pode responder.
+    final cicloIds = <dynamic>{
+      for (final i in lista)
+        if ((i['avaliacoes'] as Map?)?['ciclo_id'] != null)
+          (i['avaliacoes'] as Map)['ciclo_id']
+    };
+    if (cicloIds.isNotEmpty) {
+      try {
+        final ciclos = await _client
+            .from('avaliacao_ciclos')
+            .select('id, data_fim')
+            .inFilter('id', cicloIds.toList());
+        final fim = {
+          for (final c in (ciclos as List)) c['id']: c['data_fim']
+        };
+        for (final i in lista) {
+          i['_ciclo_data_fim'] =
+              fim[(i['avaliacoes'] as Map?)?['ciclo_id']];
+        }
+      } catch (_) {}
+    }
+    return lista;
   }
 
   /// Avaliações da equipe (mesmo setor) de um gestor, num ciclo — cria as
@@ -7436,6 +7655,113 @@ class ApiService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  /// Avaliações de desempenho que o colaborador logado ainda precisa
+  /// responder (perguntas já liberadas e prazo não vencido): a própria
+  /// autoavaliação e as de colegas (ciclo 360). Persistentes: ficam no sino e
+  /// no feed até a pessoa responder. Cada item: tipo ('avaliacao_auto' |
+  /// 'avaliacao_colega'), chave, titulo, subtitulo, data_fim (pode ser null).
+  Future<List<Map<String, dynamic>>> listarPendenciasAvaliacao() async {
+    final col = colaboradorAtual;
+    if (col == null) return [];
+    final out = <Map<String, dynamic>>[];
+
+    bool vencido(dynamic fim) {
+      final d = DateTime.tryParse('${fim ?? ''}');
+      if (d == null) return false;
+      final h = DateTime.now();
+      return DateTime(d.year, d.month, d.day)
+          .isBefore(DateTime(h.year, h.month, h.day));
+    }
+
+    try {
+      final ciclo = await buscarCicloAbertoParaColaborador(
+          colaboradorId: col.id, setor: col.setor);
+      if (ciclo != null &&
+          (ciclo['tipo_avaliacao'] as String? ?? 'gestor') != 'gestor' &&
+          !vencido(ciclo['data_fim'])) {
+        final av = await _client
+            .from('avaliacoes')
+            .select('id, perguntas_liberadas, autoavaliacao_em')
+            .eq('ciclo_id', ciclo['id'])
+            .eq('colaborador_id', col.id)
+            .maybeSingle();
+        if (av != null &&
+            av['perguntas_liberadas'] == true &&
+            av['autoavaliacao_em'] == null) {
+          out.add({
+            'tipo': 'avaliacao_auto',
+            'chave': 'aval_auto:${av['id']}',
+            'titulo': 'Autoavaliação liberada',
+            'subtitulo':
+                'Responda a sua autoavaliação do ciclo "${ciclo['nome']}"',
+            'data_fim': ciclo['data_fim'],
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar autoavaliação pendente: $e');
+    }
+
+    try {
+      final colegas = await listarAvaliacoesEquipeParaAvaliar(col.id);
+      for (final item in colegas) {
+        final av = item['avaliacoes'] as Map?;
+        if (av == null || av['perguntas_liberadas'] != true) continue;
+        if (vencido(item['_ciclo_data_fim'])) continue;
+        final nome = (av['colaboradores'] as Map?)?['nome'] as String? ?? 'um colega';
+        out.add({
+          'tipo': 'avaliacao_colega',
+          'chave': 'aval_colega:${av['id']}',
+          'titulo': 'Avaliação de colega liberada',
+          'subtitulo': 'Você foi convidado a avaliar $nome',
+          'data_fim': item['_ciclo_data_fim'],
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar avaliações de colegas pendentes: $e');
+    }
+    // Gestor: avaliações da equipe ainda não concluídas (inclui "escolher as
+    // perguntas"). Um aviso por ciclo, com a contagem.
+    try {
+      if (await verificarSeEhGestor()) {
+        final setores = await buscarSetoresEfetivosDoGestor();
+        final porParticipante = await listarCiclosAbertosPorParticipantes();
+        final pendentesPorCiclo = <int, Set<Object?>>{};
+        final cicloPorId = <int, Map<String, dynamic>>{};
+        for (final setor in setores) {
+          final cicloSetor = await buscarCicloAbertoParaSetor(setor);
+          for (final c in [...porParticipante, if (cicloSetor != null) cicloSetor]) {
+            if (vencido(c['data_fim'])) continue;
+            final cid = c['id'] as int;
+            // Sem tipoAvaliacao: não dispara convites 360 a cada atualização.
+            final lista = await listarAvaliacoesEquipeGestor(
+                cicloId: cid, setor: setor);
+            for (final a in lista) {
+              if (a['status'] != 'concluida' && a['gestor_em'] == null) {
+                pendentesPorCiclo.putIfAbsent(cid, () => {}).add(a['id']);
+                cicloPorId[cid] = c;
+              }
+            }
+          }
+        }
+        pendentesPorCiclo.forEach((cid, ids) {
+          final c = cicloPorId[cid]!;
+          out.add({
+            'tipo': 'avaliacao_gestor',
+            'chave': 'aval_gestor:$cid',
+            'titulo': 'Avalie a sua equipe',
+            'subtitulo':
+                '${ids.length} ${ids.length == 1 ? 'avaliação pendente' : 'avaliações pendentes'} no ciclo "${c['nome']}"',
+            'data_fim': c['data_fim'],
+          });
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar avaliações da equipe pendentes: $e');
+    }
+    return out;
+  }
+
   /// Monta a lista unificada do sino de notificações: combina pesquisas
   /// pendentes, mensagens diretas não vistas, parabéns sem resposta,
   /// feedback recebido não lido, solicitação de feedback pendente e aviso de
@@ -7472,6 +7798,22 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('Erro ao carregar pesquisas pendentes no sino: $e');
+    }
+
+    // Avaliações de desempenho: persistentes (não passam pelo filtro de
+    // dispensadas) — voltam ao sino até a pessoa responder.
+    try {
+      for (final a in await listarPendenciasAvaliacao()) {
+        itens.add(NotificacaoItem(
+          chave: a['chave'] as String,
+          tipo: a['tipo'] as String,
+          titulo: a['titulo'] as String,
+          subtitulo: a['subtitulo'] as String,
+          criadoEm: DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar avaliações pendentes no sino: $e');
     }
 
     try {

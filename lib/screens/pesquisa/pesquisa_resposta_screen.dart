@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
@@ -23,7 +24,8 @@ class PesquisaRespostaScreen extends StatefulWidget {
       _PesquisaRespostaScreenState();
 }
 
-class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
+class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen>
+    with WidgetsBindingObserver {
   final _api = ApiService();
   List<Map<String, dynamic>> _perguntas = [];
   bool _loading = true;
@@ -42,26 +44,118 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
   bool _enviandoRecusa = false;
   final _motivoRecusaCtrl = TextEditingController();
 
+  final Map<int, TextEditingController> _textoControllers = {};
+  bool _enviouComSucesso = false;
+  bool _rascunhoRestaurado = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _carregarPerguntas();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _debounce?.cancel();
+    _guardarRascunho();
     for (final c in _motivoControllers.values) {
+      c.dispose();
+    }
+    for (final c in _textoControllers.values) {
       c.dispose();
     }
     _motivoRecusaCtrl.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _guardarRascunho();
+  }
+
+  // ── Rascunho local: guarda o que já foi respondido até enviar ────────
+  static const _tipoRascunho = 'pesquisa';
+  Timer? _debounce;
+  String get _chaveRascunho => '${widget.pesquisaId}';
+
+  dynamic _codificar(dynamic v) {
+    if (v is Set) return {'t': 'set', 'v': v.toList()};
+    if (v is Map) return {'t': 'map', 'v': v};
+    return v;
+  }
+
+  dynamic _decodificar(dynamic v) {
+    if (v is Map && v['t'] == 'set') {
+      return <String>{for (final e in (v['v'] as List)) '$e'};
+    }
+    if (v is Map && v['t'] == 'map') {
+      return <String, String>{
+        for (final e in (v['v'] as Map).entries) '${e.key}': '${e.value}'
+      };
+    }
+    return v;
+  }
+
+  Map<String, dynamic> _dadosRascunho() => {
+        'r': {
+          for (final e in _respostas.entries) '${e.key}': _codificar(e.value)
+        },
+        'm': {for (final e in _motivosNao.entries) '${e.key}': e.value},
+      };
+
+  /// Salva no servidor (vale em outro aparelho e no web).
+  Future<void> _guardarRascunho() async {
+    if (_enviouComSucesso || _perguntas.isEmpty) return;
+    if (_respostas.isEmpty && _motivosNao.isEmpty) return;
+    await _api.salvarRascunho(_tipoRascunho, _chaveRascunho, _dadosRascunho());
+  }
+
+  /// Salva logo depois da última alteração (debounce).
+  void _agendarRascunho() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 1500), _guardarRascunho);
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    if (!_loading) _agendarRascunho();
+  }
+
+  Future<void> _restaurarRascunho() async {
+    final m = await _api.buscarRascunho(_tipoRascunho, _chaveRascunho);
+    if (m == null) return;
+    final ids = {for (final p in _perguntas) p['id'] as int};
+    (m['r'] as Map?)?.forEach((k, v) {
+      final id = int.tryParse('$k');
+      if (id != null && ids.contains(id)) {
+        _respostas[id] = _decodificar(v);
+      }
+    });
+    (m['m'] as Map?)?.forEach((k, v) {
+      final id = int.tryParse('$k');
+      if (id != null && ids.contains(id)) _motivosNao[id] = '$v';
+    });
+    if (_respostas.isNotEmpty) {
+      _rascunhoRestaurado = true;
+      // Já tinha aceitado responder antes: não pergunta de novo.
+      _optInRespondeu = true;
+    }
+  }
+
+  Future<void> _limparRascunho() async {
+    _debounce?.cancel();
+    await _api.apagarRascunho(_tipoRascunho, _chaveRascunho);
+  }
+
   Future<void> _carregarPerguntas() async {
     final lista = await _api.buscarPerguntasPesquisa(widget.pesquisaId);
+    _perguntas = lista;
+    await _restaurarRascunho();
     if (mounted) {
       setState(() {
-        _perguntas = lista;
         _loading = false;
       });
     }
@@ -165,6 +259,9 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
     setState(() => _enviando = false);
 
     if (ok) {
+      _enviouComSucesso = true;
+      await _limparRascunho();
+      if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -278,6 +375,16 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
                         ? _buildOptInGate()
                         : Column(
                             children: [
+                              if (_rascunhoRestaurado)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                  child: Text(
+                                    'Retomamos de onde você parou. Suas respostas ficam salvas (também no web e em outro aparelho) até você enviar.',
+                                    style: AppTextStyles.corpoMinimo.copyWith(
+                                        color: AppColors.cinzaTexto),
+                                  ),
+                                ),
                               Expanded(
                                 child: ListView.separated(
                                   padding: const EdgeInsets.fromLTRB(
@@ -533,11 +640,17 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
 
   // ── Texto livre ────────────────────────────────────────────────────
   Widget _respostaTexto(int id) {
+    final ctrl = _textoControllers.putIfAbsent(
+        id, () => TextEditingController(text: _respostas[id] as String? ?? ''));
     return TextField(
+      controller: ctrl,
       maxLines: 3,
       maxLength: 500,
       style: AppTextStyles.corpoNormal,
-      onChanged: (v) => _respostas[id] = v,
+      onChanged: (v) {
+        _respostas[id] = v;
+        _agendarRascunho();
+      },
       decoration: InputDecoration(
         hintText: 'Digite sua resposta...',
         hintStyle: AppTextStyles.corpoCinza,
@@ -803,7 +916,10 @@ class _PesquisaRespostaScreenState extends State<PesquisaRespostaScreen> {
             return TextField(
               controller: _motivoControllers[id],
               maxLines: 2,
-              onChanged: (v) => _motivosNao[id] = v,
+              onChanged: (v) {
+                _motivosNao[id] = v;
+                _agendarRascunho();
+              },
               decoration: InputDecoration(
                 hintText: 'Por quê? *',
                 filled: true,
