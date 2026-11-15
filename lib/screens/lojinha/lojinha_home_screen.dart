@@ -322,8 +322,10 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             _alertaBloqueio(),
 
                           // ── Limite de itens por tipo (SAP x exclusivos) ──
-                          if (_limiteQtdSap != null ||
-                              _limiteQtdExclusivo != null) ...[
+                          // Só aparece quando o limite foi atingido (aviso útil).
+                          if (_limiteItensAtingido &&
+                              (_limiteQtdSap != null ||
+                                  _limiteQtdExclusivo != null)) ...[
                             _cardLimiteItens(),
                             const SizedBox(height: 16),
                           ],
@@ -700,11 +702,6 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                     fontWeight: FontWeight.w600,
                     color: atingido ? Colors.red.shade700 : AppColors.dark,
                   ),
-                ),
-                Text(
-                  _resumoLimiteItens,
-                  style: GoogleFonts.poppins(
-                      fontSize: 11, color: AppColors.cinzaTexto),
                 ),
               ],
             ),
