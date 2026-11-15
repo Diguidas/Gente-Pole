@@ -19,6 +19,10 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
   Map<String, String> _visual = {};
   List<Map<String, dynamic>> _materiais = [];
   int _feedbackNaoLidos = 0;
+  // Avaliações liberadas e ainda não respondidas (bolinha nos cards)
+  int _pendAutoavaliacao = 0;
+  int _pendColegas = 0;
+  int _pendExperiencia = 0; // pesquisa do período de experiência pendente
 
   @override
   void initState() {
@@ -35,6 +39,21 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
     try {
       materiais = await _api.listarMateriaisPerformance(gestor: false);
     } catch (_) {}
+    var pendAuto = 0;
+    var pendColegas = 0;
+    try {
+      final pend = await _api.listarPendenciasAvaliacao();
+      pendAuto = pend.where((p) => p['tipo'] == 'avaliacao_auto').length;
+      pendColegas = pend.where((p) => p['tipo'] == 'avaliacao_colega').length;
+    } catch (_) {}
+    var pendExp = 0;
+    try {
+      final colab = _api.colaboradorAtual;
+      if (colab != null &&
+          await _api.buscarPesquisaPeriodoExperienciaPendente(colab) != null) {
+        pendExp = 1;
+      }
+    } catch (_) {}
     int naoLidos = 0;
     try {
       naoLidos = await _api.contarFeedbacksNaoLidos() +
@@ -43,6 +62,9 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
     if (!mounted) return;
     setState(() {
       _feedbackNaoLidos = naoLidos;
+      _pendAutoavaliacao = pendAuto;
+      _pendColegas = pendColegas;
+      _pendExperiencia = pendExp;
       _visual = visual;
       _materiais = materiais;
     });
@@ -65,6 +87,7 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
           imagemUrl: _visual['periodo_experiencia'],
           titulo: 'Período de Experiência',
           descricao: 'Responda a pesquisa do seu período de experiência',
+          badge: _pendExperiencia,
           onTap: () => _abrir(const PeriodoExperienciaScreen()),
         ),
         PerformanceCard(
@@ -72,6 +95,7 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
           imagemUrl: _visual['avaliacao'],
           titulo: 'Minha Avaliação',
           descricao: 'Responda sua autoavaliação de desempenho',
+          badge: _pendAutoavaliacao,
           onTap: () => _abrir(const AvaliacaoScreen()),
         ),
         PerformanceCard(
@@ -79,6 +103,7 @@ class _PerformanceColabScreenState extends State<PerformanceColabScreen> {
           imagemUrl: _visual['avaliar_colegas'],
           titulo: 'Avaliar Colegas',
           descricao: 'Avaliações de ciclo 360 pendentes',
+          badge: _pendColegas,
           onTap: () => _abrir(const AvaliarColegasScreen()),
         ),
         PerformanceCard(

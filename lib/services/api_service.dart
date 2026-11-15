@@ -7753,8 +7753,34 @@ class ApiService {
             'subtitulo':
                 '${ids.length} ${ids.length == 1 ? 'avaliação pendente' : 'avaliações pendentes'} no ciclo "${c['nome']}"',
             'data_fim': c['data_fim'],
+            'qtd': ids.length,
           });
         });
+
+        // Período de experiência da equipe: colaboradores na janela do
+        // checkpoint (45/90 dias) ainda sem avaliação do gestor.
+        if (setores.isNotEmpty) {
+          final pendentesExp = <String>{};
+          for (final cp in [45, 90]) {
+            final lista = await listarColaboradoresFimExperiencia(
+                setores: setores, checkpointDias: cp, paraGestor: true);
+            for (final c in lista) {
+              pendentesExp.add('$cp:${c['id']}');
+            }
+          }
+          if (pendentesExp.isNotEmpty) {
+            final n = pendentesExp.length;
+            out.add({
+              'tipo': 'avaliacao_experiencia_gestor',
+              'chave': 'aval_exp_gestor',
+              'titulo': 'Avalie o período de experiência',
+              'subtitulo':
+                  '$n ${n == 1 ? 'colaborador da sua equipe aguarda' : 'colaboradores da sua equipe aguardam'} a avaliação de experiência',
+              'data_fim': null,
+              'qtd': n,
+            });
+          }
+        }
       }
     } catch (e) {
       debugPrint('Erro ao buscar avaliações da equipe pendentes: $e');
@@ -7804,6 +7830,8 @@ class ApiService {
     // dispensadas) — voltam ao sino até a pessoa responder.
     try {
       for (final a in await listarPendenciasAvaliacao()) {
+        // o sino já tem os avisos individuais de experiência
+        if (a['tipo'] == 'avaliacao_experiencia_gestor') continue;
         itens.add(NotificacaoItem(
           chave: a['chave'] as String,
           tipo: a['tipo'] as String,

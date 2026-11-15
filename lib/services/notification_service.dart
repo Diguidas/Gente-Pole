@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_navigator.dart';
 import '../core/error_reporter.dart';
 import '../screens/ti/chamados_ti_screen.dart';
+import '../screens/feedback/elogiar_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/gestor/vagas_gestor_screen.dart';
 import '../screens/massoterapia/massoterapia_screen.dart';
@@ -278,6 +279,10 @@ class NotificationService {
         AppNavigator.goToTab(2);
         AppNavigator.navigatorKey.currentState?.push(
           MaterialPageRoute(builder: (_) => const PerformanceGestorScreen()),
+        );
+      case 'elogiar': // elogio recebido / resposta ao elogio
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const ElogiarScreen()),
         );
       case 'servicos': // notificação antiga, de antes da rota específica
         AppNavigator.goToTab(2);

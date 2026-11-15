@@ -22,6 +22,9 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
   Map<String, String> _visual = {};
   List<Map<String, dynamic>> _materiais = [];
   Set<String> _bloqueadas = {};
+  // Avaliações da equipe ainda pendentes (bolinha no card)
+  int _pendEquipe = 0;
+  int _pendExperiencia = 0; // colaboradores aguardando avaliação de experiência
 
   @override
   void initState() {
@@ -33,6 +36,18 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
     Map<String, String> visual = {};
     List<Map<String, dynamic>> materiais = [];
     Set<String> bloqueadas = {};
+    var pendEquipe = 0;
+    var pendExperiencia = 0;
+    try {
+      final pend = await _api.listarPendenciasAvaliacao();
+      for (final p in pend.where((p) => p['tipo'] == 'avaliacao_gestor')) {
+        pendEquipe += (p['qtd'] as int?) ?? 1;
+      }
+      for (final p in pend
+          .where((p) => p['tipo'] == 'avaliacao_experiencia_gestor')) {
+        pendExperiencia += (p['qtd'] as int?) ?? 1;
+      }
+    } catch (_) {}
     try {
       visual = await _api.listarPerformanceVisual();
     } catch (_) {}
@@ -47,11 +62,15 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
       _visual = visual;
       _materiais = materiais;
       _bloqueadas = bloqueadas;
+      _pendEquipe = pendEquipe;
+      _pendExperiencia = pendExperiencia;
     });
   }
 
-  void _abrir(Widget tela) =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
+  Future<void> _abrir(Widget tela) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
+    if (mounted) _carregar();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +95,7 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
             titulo: 'Período de Experiência',
             descricao:
                 'Avalie o período de experiência dos colaboradores da sua equipe.',
+            badge: _pendExperiencia,
             onTap: () => _abrir(const AvaliarPeriodoExperienciaGestorScreen()),
           ),
         if (!_bloqueadas.contains('avaliar_equipe_gestor'))
@@ -84,6 +104,7 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
             imagemUrl: _visual['avaliacao'],
             titulo: 'Avaliação de Desempenho',
             descricao: 'Avalie o desempenho da sua equipe no ciclo aberto.',
+            badge: _pendEquipe,
             onTap: () => _abrir(const AvaliarEquipeScreen()),
           ),
         if (!_bloqueadas.contains('feedback_gestor'))

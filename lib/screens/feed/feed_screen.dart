@@ -16,6 +16,7 @@ import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
 import 'package:gentepole/screens/gestor/avaliar_equipe_screen.dart';
+import 'package:gentepole/screens/gestor/avaliar_periodo_experiencia_gestor_screen.dart';
 import 'package:gentepole/screens/avaliacao/avaliar_colegas_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_list_screen.dart';
 import 'package:gentepole/screens/pesquisa/pesquisa_resposta_screen.dart';
@@ -1642,6 +1643,8 @@ class _FeedScreenState extends State<FeedScreen> {
             builder: (_) => switch (a['tipo']) {
               'avaliacao_auto' => const AvaliacaoScreen(),
               'avaliacao_gestor' => const AvaliarEquipeScreen(),
+              'avaliacao_experiencia_gestor' =>
+                const AvaliarPeriodoExperienciaGestorScreen(),
               _ => const AvaliarColegasScreen(),
             },
           ),
