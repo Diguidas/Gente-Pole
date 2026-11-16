@@ -5117,8 +5117,25 @@ class ApiService {
     final linhas = data as List;
     feedTemMaisPaginas = linhas.length >= _tamanhoPaginaFeed;
 
-    final posts = linhas
+    final brutos = linhas
         .map((e) => FeedPostModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    // Fronteira desta página (post mais antigo lido do banco): os comunicados
+    // só entram na faixa de data da própria página, senão tomavam o lugar dos
+    // posts e a ordem se perdia ao carregar mais.
+    if (pagina == 0) _feedFronteiras.clear();
+    final fim = feedTemMaisPaginas && brutos.isNotEmpty
+        ? brutos.last.criadoEm
+        : null; // página incompleta = última: vai até o corte de 30 dias
+    final teto = pagina > 0 && pagina <= _feedFronteiras.length
+        ? _feedFronteiras[pagina - 1]
+        : null;
+    if (_feedFronteiras.length > pagina) {
+      _feedFronteiras.removeRange(pagina, _feedFronteiras.length);
+    }
+    _feedFronteiras.add(fim);
+
+    final posts = brutos
         .where((p) {
           // Comunicados vêm da tabela dedicada — exclui os que podem estar em feed_posts
           if (p.tipo == 'comunicado') return false;
@@ -5156,15 +5173,15 @@ class ApiService {
         })
         .toList();
 
-    // Mescla comunicados da tabela comunicados (só na primeira página)
-    if (pagina == 0) {
+    // Mescla os comunicados da tabela comunicados na faixa de data desta página
+    {
       final comData = await _client
           .from('comunicados')
           .select()
           .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra no feed
           .gte('criado_em', _corteFeedIso())
           .order('criado_em', ascending: false)
-          .limit(30);
+          .limit(100);
 
       final filtrados = await _filtrarDestinatarios(
         (comData as List)
@@ -5190,21 +5207,32 @@ class ApiService {
         );
       }).toList();
 
-      final tudo = [...posts, ...comunicados];
-      tudo.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
-      // Comunicados das últimas 24h ficam fixados no topo
+      // Comunicados das últimas 24h ficam fixados no topo (só na 1ª página)
       final agoraUtc = DateTime.now().toUtc();
       bool fixado(FeedPostModel p) =>
           p.tipo == 'comunicado' &&
           agoraUtc.difference(p.criadoEm.subtract(const Duration(hours: 3))) <
               const Duration(hours: 24);
-      final fixados = tudo.where(fixado).toList();
-      final demais = tudo.where((p) => !fixado(p)).toList();
-      return [...fixados, ...demais].take(40).toList();
-    }
+      // Faixa desta página: [fim, teto). Nenhum comunicado se repete nem se perde.
+      final daPagina = comunicados.where((c) {
+        if (fixado(c)) return pagina == 0;
+        if (fim != null && c.criadoEm.isBefore(fim)) return false;
+        if (teto != null && !c.criadoEm.isBefore(teto)) return false;
+        return true;
+      }).toList();
 
-    return posts;
+      final tudo = [...posts, ...daPagina];
+      tudo.sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
+      return [
+        ...tudo.where(fixado),
+        ...tudo.where((p) => !fixado(p)),
+      ];
+    }
   }
+
+  /// Post mais antigo lido do banco em cada página já carregada do feed
+  /// (null = página incompleta, ou seja, a última).
+  final List<DateTime?> _feedFronteiras = [];
 
   /// Cria um novo post no feed.
   ///

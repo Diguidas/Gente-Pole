@@ -34,6 +34,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _douradoResposta = Color(0xFFB8860B);
 
+/// Sinal "volte ao topo": disparado ao tocar no ícone Home com o feed já aberto.
+final ValueNotifier<int> feedTopoSinal = ValueNotifier<int>(0);
+
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
@@ -114,6 +117,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarFeedbacksPresenciaisPendentes();
     _carregarChamadosParaAvaliar();
     _scrollCtrl.addListener(_onScroll);
+    feedTopoSinal.addListener(_voltarAoTopo);
     _assinarStatusPosts();
     PontosBus.versao.addListener(_carregarPontos);
   }
@@ -121,6 +125,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void dispose() {
     PontosBus.versao.removeListener(_carregarPontos);
+    feedTopoSinal.removeListener(_voltarAoTopo);
     _statusChannel?.unsubscribe();
     _scrollCtrl.dispose();
     super.dispose();
@@ -520,25 +525,43 @@ class _FeedScreenState extends State<FeedScreen> {
       });
     }
 
-    final novos = await _api.buscarFeed(pagina: _pagina);
-    // Reações da página inteira numa consulta só (em vez de uma por post).
+    final paginaPedida = _pagina;
+    List<FeedPostModel> novos;
+    List<Map<String, dynamic>>? enquetes;
+    Map<int, Map<String, dynamic>> enquetesDeComunicado;
     try {
-      await _api.precarregarReacoes(novos.map((p) => p.id));
-    } catch (_) {}
-    final enquetes = _pagina == 0 ? await EnqueteCard.carregarAtivas() : null;
-    // Enquetes anexadas aos comunicados desta página (aparecem dentro do card
-    // do comunicado, em qualquer estado).
-    final enquetesDeComunicado = await EnqueteCard.carregarPorIds([
-      for (final p in novos)
-        if (p.enqueteId != null) p.enqueteId!,
-    ]);
+      novos = await _api.buscarFeed(pagina: paginaPedida);
+      // Reações da página inteira numa consulta só (em vez de uma por post).
+      try {
+        await _api.precarregarReacoes(novos.map((p) => p.id));
+      } catch (_) {}
+      enquetes = paginaPedida == 0 ? await EnqueteCard.carregarAtivas() : null;
+      // Enquetes anexadas aos comunicados desta página (aparecem dentro do card
+      // do comunicado, em qualquer estado).
+      enquetesDeComunicado = await EnqueteCard.carregarPorIds([
+        for (final p in novos)
+          if (p.enqueteId != null) p.enqueteId!,
+      ]);
+    } catch (_) {
+      // Falhou (rede): destrava o rodapé e volta a página para tentar de novo
+      // no próximo scroll, em vez de ficar carregando para sempre.
+      if (!mounted) return;
+      setState(() {
+        if (paginaPedida > 0 && _pagina == paginaPedida) _pagina--;
+        _carregando = false;
+        _carregandoMais = false;
+      });
+      return;
+    }
     if (!mounted) return;
 
     setState(() {
       if (enquetes != null) _enquetes = enquetes;
       if (reiniciar) _enquetesComunicado = {};
       _enquetesComunicado.addAll(enquetesDeComunicado);
-      _posts.addAll(novos);
+      // Sem repetir o que já está na lista (comunicado fixado, por exemplo).
+      final jaTem = {for (final p in _posts) p.id};
+      _posts.addAll(novos.where((p) => !jaTem.contains(p.id)));
       // "Tem mais" vem da página bruta do banco (o filtro por destinatário
       // pode reduzir a lista devolvida mesmo havendo mais posts).
       _temMais = _api.feedTemMaisPaginas;
@@ -549,6 +572,16 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Posts + enquetes ativas intercalados por data de criação (mais novo primeiro).
   List<Widget> _postsComEnquetes(List<FeedPostModel> posts, int? meuId) {
+    DateTime? limiteEnquetes;
+    if (_temMais) {
+      final datas = [
+        for (final p in _posts)
+          if (p.tipo != 'comunicado') p.criadoEm,
+      ];
+      if (datas.isNotEmpty) {
+        limiteEnquetes = datas.reduce((a, b) => a.isBefore(b) ? a : b);
+      }
+    }
     final itens = <({DateTime data, bool fixado, Widget widget})>[
       for (final p in posts)
         (
@@ -563,7 +596,13 @@ class _FeedScreenState extends State<FeedScreen> {
             enquete: p.enqueteId == null ? null : _enquetesComunicado[p.enqueteId],
           ),
         ),
+      // Enquete mais antiga que o último post carregado espera a sua vez
+      // (senão ocuparia o lugar de posts que ainda vão chegar).
       for (final e in _enquetes)
+        if (limiteEnquetes == null ||
+            !(DateTime.tryParse(e['criado_em']?.toString() ?? '') ??
+                    DateTime.fromMillisecondsSinceEpoch(0))
+                .isBefore(limiteEnquetes))
         (
           data: DateTime.tryParse(e['criado_em']?.toString() ?? '') ??
               DateTime.fromMillisecondsSinceEpoch(0),
@@ -583,15 +622,30 @@ class _FeedScreenState extends State<FeedScreen> {
     return itens.map((e) => e.widget).toList();
   }
 
+  /// Volta ao topo do feed (toque no ícone Home já estando nele).
+  void _voltarAoTopo() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(0,
+        duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+  }
+
+  void _carregarProximaPagina() {
+    if (_carregandoMais || !_temMais || _carregando) return;
+    setState(() {
+      _pagina++;
+      _carregandoMais = true;
+    });
+    _carregarFeed();
+  }
+
   void _onScroll() {
-    if (_carregandoMais || !_temMais) return;
+    if (!_scrollCtrl.hasClients) return;
+    // Enquanto a prévia ainda esconde posts já carregados ("Mostrar mais"),
+    // não adianta buscar mais: eles só apareceriam quando o botão fosse tocado.
+    if (_posts.length > _quantidadePostsVisiveis) return;
     if (_scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - 200) {
-      setState(() {
-        _pagina++;
-        _carregandoMais = true;
-      });
-      _carregarFeed();
+      _carregarProximaPagina();
     }
   }
 
@@ -1193,8 +1247,14 @@ class _FeedScreenState extends State<FeedScreen> {
       child: SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () =>
-              setState(() => _quantidadePostsVisiveis += _previaPostsCount),
+          onPressed: () {
+            setState(() => _quantidadePostsVisiveis += _previaPostsCount);
+            // Está acabando o que já foi carregado: busca a próxima página
+            // antes de a pessoa chegar ao fim, sem esperar o scroll.
+            if (_posts.length - _quantidadePostsVisiveis < _previaPostsCount) {
+              _carregarProximaPagina();
+            }
+          },
           icon: const Icon(Icons.expand_more_rounded, size: 18),
           label: Text(
             'Mostrar mais posts ($restantes)',

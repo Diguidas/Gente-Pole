@@ -116,6 +116,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
       abrirMenuAtalhos(context);
       return;
     }
+    // Tocar na Home estando nela: volta ao topo do feed.
+    if (index == 0 && _selectedIndex == 0) feedTopoSinal.value++;
     setState(() {
       _selectedIndex = index;
       _visitadas.add(index);
