@@ -171,7 +171,36 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     });
     // Pedidos do SAP em segundo plano; depois confere se algum veio zerado.
     _carregarPedidosSap().then((_) => _retentarSeValorZerado());
+    _avisarPedidoPendente();
   }
+
+  bool _pendenteVerificado = false;
+
+  /// Se um pedido ficou "no ar" (queda, página fechada), mostra o que aconteceu.
+  Future<void> _avisarPedidoPendente() async {
+    if (_pendenteVerificado) return;
+    _pendenteVerificado = true;
+    final r = await _api.verificarPedidoLojinhaPendente();
+    if (r == null || !mounted) return;
+    final estado = r['estado'];
+    final msg = estado == 'enviado'
+        ? 'Seu último pedido chegou a ser enviado ao SAP antes da instabilidade. Confira em "Meus Pedidos" e não precisa pedir de novo.'
+        : estado == 'enviando'
+            ? 'Seu último pedido ainda está sendo enviado ao SAP. Aguarde alguns instantes e confira em "Meus Pedidos" antes de pedir de novo.'
+            : 'Não conseguimos confirmar o seu último pedido por causa da instabilidade. Confira em "Meus Pedidos" antes de pedir de novo.';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Seu último pedido'),
+        content: Text(msg),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Entendi')),
+        ],
+      ),
+    );
+  }
+
 
   /// Se o colaborador já usou o pedido regular e/ou exclusivo do período
   /// (limite configurado no gentepole_admin), marca aqui pra: (1) bloquear
@@ -425,6 +454,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                                   ),
                                 ),
                               );
+                              if (mounted && ApiService.lojinhaBloqueadaPeloServidor) {
+                                setState(() => _sapEsgotado = true);
+                              }
                             },
                           ),
 

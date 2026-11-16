@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
@@ -3320,6 +3321,139 @@ class ApiService {
         .toList();
   }
 
+  // ── Pedido da Lojinha à prova de queda ─────────────────────────────────────
+  // Cada tentativa de pedido tem uma chave. Reenvios (retry automático ou volta
+  // depois de uma queda) com a MESMA chave não criam outro pedido: o servidor
+  // devolve o resultado do primeiro. A chave fica no aparelho até o fluxo
+  // terminar, para a pessoa ver o que aconteceu ao voltar.
+
+  /// Vira true quando o servidor/SAP recusa por limite ou duplicata, para a
+  /// tela bloquear o "Novo Pedido".
+  static bool lojinhaBloqueadaPeloServidor = false;
+  static const _kPedidoPendente = 'lojinha_pedido_pendente';
+
+  String _novaChavePedido() =>
+      '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${Random().nextInt(1 << 30).toRadixString(36)}';
+
+  Future<String> _chavePedidoLojinha(String assinatura) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPedidoPendente);
+      if (raw != null) {
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        final idade = DateTime.now().millisecondsSinceEpoch - (m['ts'] as int);
+        if (m['assinatura'] == assinatura && idade < 15 * 60 * 1000) {
+          return m['chave'] as String;
+        }
+      }
+      final chave = _novaChavePedido();
+      await prefs.setString(
+          _kPedidoPendente,
+          jsonEncode({
+            'chave': chave,
+            'assinatura': assinatura,
+            'ts': DateTime.now().millisecondsSinceEpoch,
+          }));
+      return chave;
+    } catch (_) {
+      return _novaChavePedido();
+    }
+  }
+
+  Future<void> _limparPedidoPendente() async {
+    try {
+      (await SharedPreferences.getInstance()).remove(_kPedidoPendente);
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?> _statusPedidoLojinha(String chave) async {
+    try {
+      final res = await _client.functions.invoke('lojinha-pedido',
+          body: {'acao': 'status', 'chave_idempotencia': chave});
+      final d = res.data;
+      return d is Map ? Map<String, dynamic>.from(d) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Espera o servidor terminar um pedido que ainda estava processando.
+  Future<Map<String, dynamic>?> _aguardarPedidoLojinha(String chave,
+      {int tentativas = 15}) async {
+    for (var i = 0; i < tentativas; i++) {
+      final st = await _statusPedidoLojinha(chave);
+      if (st != null) {
+        if (st['encontrado'] != true) return null;
+        if (st['status'] == 'concluido' && st['resposta'] is Map) {
+          return Map<String, dynamic>.from(st['resposta'] as Map);
+        }
+      }
+      await Future.delayed(const Duration(seconds: 4));
+    }
+    return null;
+  }
+
+  /// Envia o pedido com até 3 tentativas (mesma chave). Se nenhuma resposta
+  /// chegar, ainda pergunta ao servidor se o pedido foi concluído.
+  Future<Map<String, dynamic>> _enviarPedidoIdempotente(
+      Map<String, dynamic> body, String chave) async {
+    body['chave_idempotencia'] = chave;
+    Object? ultimoErro;
+    for (var t = 0; t < 3; t++) {
+      try {
+        final res = await _client.functions.invoke('lojinha-pedido', body: body);
+        final data = res.data;
+        if (data is! Map) throw Exception('resposta vazia');
+        final m = Map<String, dynamic>.from(data);
+        if (m['em_andamento'] == true) {
+          final r = await _aguardarPedidoLojinha(chave);
+          if (r != null) return {...r, 'repetido': false};
+        } else {
+          // Resposta de uma tentativa anterior DESTA chamada: os passos
+          // pós-pedido ainda não rodaram, então não é "repetido".
+          if (t > 0 && m['repetido'] == true) m['repetido'] = false;
+          return m;
+        }
+      } catch (e) {
+        ultimoErro = e;
+      }
+      await Future.delayed(Duration(seconds: 2 * (t + 1)));
+    }
+    final r = await _aguardarPedidoLojinha(chave, tentativas: 3);
+    if (r != null) return {...r, 'repetido': false};
+    throw ultimoErro ?? Exception('O pedido não obteve resposta.');
+  }
+
+  /// Ao abrir a Lojinha: se ficou um pedido "no ar" (queda, app fechado),
+  /// descobre o que aconteceu. Retorna null (nada pendente) ou
+  /// {'estado': 'enviado' | 'enviando' | 'incerto'}.
+  Future<Map<String, dynamic>?> verificarPedidoLojinhaPendente() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPedidoPendente);
+      if (raw == null) return null;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final idade = DateTime.now().millisecondsSinceEpoch - (m['ts'] as int);
+      if (idade > 6 * 3600 * 1000) {
+        await prefs.remove(_kPedidoPendente);
+        return null;
+      }
+      final st = await _statusPedidoLojinha(m['chave'] as String);
+      if (st == null) return {'estado': 'incerto'};
+      if (st['encontrado'] != true) {
+        await prefs.remove(_kPedidoPendente);
+        return null;
+      }
+      if (st['status'] == 'concluido') {
+        await prefs.remove(_kPedidoPendente);
+        return {'estado': 'enviado'};
+      }
+      return {'estado': 'enviando'};
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Envia pedido via Edge Function — pode gerar múltiplos pedidos (um por centro).
   /// Itens exclusivos NÃO vão ao SAP: são registrados diretamente no Supabase.
   Future<({bool ok, String retorno, List<LojinhaPedidoCentroResult> pedidos})>
@@ -3335,24 +3469,26 @@ class ApiService {
     final itensExclusivos = itens.where((i) => i.produto.isExclusivo).toList();
 
     bool ok = true;
+    bool repetido = false; // pedido já concluído em outra sessão
     String retorno = '';
     List<LojinhaPedidoCentroResult> pedidos = [];
 
     try {
       // Itens regulares → SAP
       if (itensRegulares.isNotEmpty) {
-        final res = await _client.functions.invoke(
-          'lojinha-pedido',
-          body: {
-            'colaborador_id': colaborador.id,
-            'cliente_sap': colaborador.clienteSap,
-            'datacriacao': datacriacao,
-            'itens': itensRegulares.map((i) => i.toSapItem()).toList(),
-          },
-        );
-        final data = res.data as Map<String, dynamic>;
-        ok = data['ok'] as bool;
-        retorno = data['retorno'] as String;
+        final itensSap = itensRegulares.map((i) => i.toSapItem()).toList();
+        final chave = await _chavePedidoLojinha(
+            '${colaborador.id}|${jsonEncode(itensSap)}');
+        final data = await _enviarPedidoIdempotente({
+          'colaborador_id': colaborador.id,
+          'cliente_sap': colaborador.clienteSap,
+          'datacriacao': datacriacao,
+          'itens': itensSap,
+        }, chave);
+        repetido = data['repetido'] == true;
+        if (data['bloqueio'] == true) lojinhaBloqueadaPeloServidor = true;
+        ok = data['ok'] == true;
+        retorno = (data['retorno'] ?? '').toString();
         final pedidosRaw = data['pedidos'] as List? ?? [];
         pedidos = pedidosRaw
             .map(
@@ -3367,7 +3503,7 @@ class ApiService {
       // `comprar_exclusivo` debita o estoque e registra a compra numa única
       // transação atômica no banco — só registra se realmente havia
       // estoque suficiente (ver migrations/2026-07-04g_comprar_exclusivo_atomico.sql).
-      if (itensExclusivos.isNotEmpty && ok) {
+      if (itensExclusivos.isNotEmpty && ok && !repetido) {
         final matricula = colaborador.matricula;
         final colabNome = colaborador.nome;
         final semEstoque = <String>[];
@@ -3402,7 +3538,7 @@ class ApiService {
       }
 
       // Registra total em lojinha_compras (para controle de limite global)
-      if (ok) {
+      if (ok && !repetido) {
         final qtdTotal = itens.fold<int>(0, (s, i) => s + i.quantidade);
         final qtdExclusivo =
             itensExclusivos.fold<int>(0, (s, i) => s + i.quantidade);
@@ -3416,6 +3552,7 @@ class ApiService {
         });
       }
 
+      await _limparPedidoPendente();
       return (ok: ok, retorno: retorno, pedidos: pedidos);
     } catch (e, st) {
       ErrorReporter.report(e, st, contexto: 'Finalizar pedido na lojinha');
