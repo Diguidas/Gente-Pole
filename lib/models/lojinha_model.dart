@@ -203,6 +203,8 @@ class CarrinhoItem {
 
   Map<String, dynamic> toSapItem() => {
         'produto':    produto.material.replaceAll(RegExp(r'^0+'), ''),
+        // nome só para a mensagem de estoque insuficiente (o SAP não recebe)
+        'descricao':  produto.descricao,
         'unidvenda':  produto.unidadeVenda,
         'quantidade': quantidade.toString(),
         'preco':      produto.preco.toStringAsFixed(2),
