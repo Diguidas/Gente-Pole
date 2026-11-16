@@ -2965,14 +2965,20 @@ class ApiService {
   /// O limite disponível já desconta as compras exclusivas do ciclo (dia 21
   /// a dia 20), que o SAP não enxerga.
   // ── Pré-carga da Lojinha ────────────────────────────────────────────────
-  // Ao entrar no app, os dados do funcionário (SAP + compras exclusivas) são
-  // buscados em segundo plano. A PRIMEIRA abertura da Lojinha dentro de ~45 s
-  // usa o resultado pronto (uma única vez); depois tudo volta a ser buscado ao
-  // vivo, então limite/saldo nunca ficam desatualizados após uma compra.
+  // Assim que o colaborador entra no app, os dados do funcionário (SAP +
+  // compras exclusivas) são buscados em segundo plano. A PRIMEIRA abertura da
+  // Lojinha dentro de 3 min usa o resultado pronto (uma única vez) — ou espera
+  // a busca que já está em andamento, em vez de começar outra. Depois disso
+  // tudo volta a ser buscado ao vivo, então limite/saldo nunca ficam
+  // desatualizados após uma compra.
+  static const _validadeAquecimentoLojinha = Duration(minutes: 3);
   LojinhaFuncionarioModel? _funcionarioAquecido;
   String? _funcionarioAquecidoCpf;
   DateTime? _funcionarioAquecidoEm;
   DateTime? _ultimoAquecimentoLojinha;
+  Future<LojinhaFuncionarioModel?>? _funcionarioEmAndamento;
+  String? _funcionarioEmAndamentoCpf;
+  bool _descartarAquecimento = false;
 
   /// Aquece os dados da Lojinha em segundo plano (chamado ao entrar no app).
   /// Só busca se a Lojinha estiver liberada para a filial do colaborador.
@@ -2980,6 +2986,7 @@ class ApiService {
     final col = colaboradorAtual;
     final cpf = col?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (col == null || cpf == null || cpf.isEmpty) return;
+    if (_funcionarioEmAndamento != null) return;
     final agora = DateTime.now();
     final ult = _ultimoAquecimentoLojinha;
     if (ult != null && agora.difference(ult) < const Duration(minutes: 2)) return;
@@ -2987,32 +2994,64 @@ class ApiService {
     final liberada = await lojinhaLiberadaParaFilial(
       chaveFilialCardapio(empresa: col.empresa, branch: col.branch),
     );
-    if (!liberada) return;
-    final dados = await _consultarDadosFuncionarioLojinha();
-    if (dados == null) return;
+    if (!liberada || _funcionarioEmAndamento != null) return;
+    _descartarAquecimento = false;
+    final busca = _consultarDadosFuncionarioLojinha(comPedidos: false);
+    _funcionarioEmAndamento = busca;
+    _funcionarioEmAndamentoCpf = cpf;
+    LojinhaFuncionarioModel? dados;
+    try {
+      dados = await busca;
+    } finally {
+      _funcionarioEmAndamento = null;
+      _funcionarioEmAndamentoCpf = null;
+    }
+    // Se a Lojinha já aproveitou esta busca enquanto ela rodava, não guarda.
+    if (dados == null || _descartarAquecimento) return;
     _funcionarioAquecido = dados;
     _funcionarioAquecidoCpf = cpf;
     _funcionarioAquecidoEm = DateTime.now();
   }
 
-  Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha() async {
+  /// Com [comPedidos] = false vem só limites e bloqueio (rápido — abre a
+  /// Lojinha) mais as compras exclusivas; com true (padrão) vem também a
+  /// lista de pedidos do SAP dos últimos 90 dias (lenta). [forcarAtualizar]
+  /// ignora o resultado pré-carregado (use depois de uma compra).
+  Future<LojinhaFuncionarioModel?> buscarDadosFuncionarioLojinha(
+      {bool comPedidos = true, bool forcarAtualizar = false}) async {
     final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (cpf == null || cpf.isEmpty) return null;
+    if (comPedidos || forcarAtualizar) {
+      // A pré-carga só guarda a versão leve e vale uma única vez.
+      _funcionarioAquecido = null;
+      _funcionarioAquecidoCpf = null;
+      _funcionarioAquecidoEm = null;
+      return _consultarDadosFuncionarioLojinha(comPedidos: comPedidos);
+    }
+    // Busca de aquecimento ainda em andamento: espera por ela (já começou).
+    final andando = _funcionarioEmAndamento;
+    if (andando != null && _funcionarioEmAndamentoCpf == cpf) {
+      _descartarAquecimento = true;
+      final r = await andando;
+      if (r != null) return r;
+      return _consultarDadosFuncionarioLojinha();
+    }
     final pronto = _funcionarioAquecido;
     final em = _funcionarioAquecidoEm;
     final usavel = pronto != null &&
         _funcionarioAquecidoCpf == cpf &&
         em != null &&
-        DateTime.now().difference(em) < const Duration(seconds: 45);
+        DateTime.now().difference(em) < _validadeAquecimentoLojinha;
     // Uso único: qualquer chamada seguinte consulta o SAP de novo.
     _funcionarioAquecido = null;
     _funcionarioAquecidoCpf = null;
     _funcionarioAquecidoEm = null;
     if (usavel) return pronto;
-    return _consultarDadosFuncionarioLojinha();
+    return _consultarDadosFuncionarioLojinha(comPedidos: false);
   }
 
-  Future<LojinhaFuncionarioModel?> _consultarDadosFuncionarioLojinha() async {
+  Future<LojinhaFuncionarioModel?> _consultarDadosFuncionarioLojinha(
+      {bool comPedidos = true}) async {
     final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (cpf == null || cpf.isEmpty) return null;
 
@@ -3020,7 +3059,7 @@ class ApiService {
       final res = await _client.functions.invoke(
         'lojinha-funcionario',
         method: HttpMethod.get,
-        queryParameters: {'cpf': cpf},
+        queryParameters: {'cpf': cpf, if (!comPedidos) 'pedidos': 'N'},
       );
       final map = res.data as Map<String, dynamic>;
       if (map['ok'] != true) return null;
@@ -3571,31 +3610,11 @@ class ApiService {
           ? DateTime(momento.year, momento.month, momento.day + 1)
           : momento);
 
-  String? _humorDetalhesPara;
-  bool _humorDetalhesPermitido = false;
-
-  /// Só admin e endomkt veem quem está em cada humor e o que escreveu (mesma
-  /// regra do web, que lê os perfis de `usuarios_admin`).
+  /// Quem pode ver o detalhe de cada humor (todos os colaboradores).
   Future<bool> podeVerDetalhesHumor() async {
-    final c = colaboradorAtual;
-    if (c == null) return false;
-    if (_humorDetalhesPara == c.matricula) return _humorDetalhesPermitido;
-    var permitido = false;
-    try {
-      var q = _client
-          .from('usuarios_admin')
-          .select('roles, role, ativo')
-          .eq('matricula', c.matricula);
-      if (c.empresa != null) q = q.eq('empresa', c.empresa!);
-      final r = await q.maybeSingle();
-      final txt = '${r?['roles'] ?? r?['role'] ?? ''}'.toLowerCase();
-      permitido = r != null &&
-          r['ativo'] == true &&
-          (txt.contains('admin') || txt.contains('endomkt'));
-    } catch (_) {}
-    _humorDetalhesPara = c.matricula;
-    _humorDetalhesPermitido = permitido;
-    return permitido;
+    // Termômetro da empresa: todos veem quem está em cada humor e o que
+    // escreveu (liberado para todos, como no painel web).
+    return colaboradorAtual != null;
   }
 
   /// Quem registrou o humor [nivel] hoje, com nome/setor/foto e o texto que
@@ -5110,6 +5129,9 @@ class ApiService {
         .from('feed_posts')
         .select('*, autor:colaboradores!autor_id(nome, foto_url, cargo, setor)')
         .or('status.eq.aprovado,autor_id.eq.${colab.id}')
+        // Humor tem painel próprio (termômetro): fora do feed já na consulta, pra
+        // a página de posts não vir cheia de humor e ficar vazia.
+        .or('tipo.is.null,tipo.neq.humor')
         // O feed só mostra os últimos 30 dias (os posts continuam no banco).
         .gte('criado_em', _corteFeedIso())
         .order('criado_em', ascending: false)

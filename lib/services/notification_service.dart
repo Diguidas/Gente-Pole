@@ -9,6 +9,7 @@ import '../core/app_navigator.dart';
 import '../core/error_reporter.dart';
 import '../screens/ti/chamados_ti_screen.dart';
 import '../screens/feedback/elogiar_screen.dart';
+import '../screens/feedback/feedback_gestor_colab_screen.dart';
 import '../screens/lojinha/lojinha_home_screen.dart';
 import '../screens/pesquisa/pesquisa_list_screen.dart';
 import '../screens/gestor/vagas_gestor_screen.dart';
@@ -280,6 +281,10 @@ class NotificationService {
         AppNavigator.goToTab(2);
         AppNavigator.navigatorKey.currentState?.push(
           MaterialPageRoute(builder: (_) => const PerformanceGestorScreen()),
+        );
+      case 'colab_feedback': // feedback recebido do gestor
+        AppNavigator.navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const FeedbackGestorColabScreen()),
         );
       case 'elogiar': // elogio recebido / resposta ao elogio
         AppNavigator.navigatorKey.currentState?.push(

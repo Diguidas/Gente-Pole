@@ -42,6 +42,8 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     _registrarAcesso();
     // Aquece os chamados de TI em segundo plano: a tela abre já pronta.
     ApiService().precarregarChamadosTI().catchError((_) {});
+    // Lojinha: deixa a consulta lenta do SAP pronta em segundo plano.
+    ApiService().precarregarLojinha().catchError((_) {});
     // Pop-up de aniversário (natalício / tempo de empresa), 1x por dia.
     // Depois, os pop-ups de comunicado do endomkt (um por vez, sem sobrepor).
     WidgetsBinding.instance.addPostFrameCallback((_) async {

@@ -11,13 +11,45 @@ enum _Filtro { cobradoAgora, aCobrar, historico }
 class LojinhaPedidosScreen extends StatefulWidget {
   final List<LojinhaPedidoResumoModel> pedidos;
 
-  const LojinhaPedidosScreen({super.key, required this.pedidos});
+  /// Lista atual (a tela se atualiza quando [atualizacao] avisa) e se os
+  /// pedidos do SAP ainda estão chegando.
+  final List<LojinhaPedidoResumoModel> Function()? pedidosAtuais;
+  final bool Function()? carregando;
+  final Listenable? atualizacao;
+
+  const LojinhaPedidosScreen({
+    super.key,
+    required this.pedidos,
+    this.pedidosAtuais,
+    this.carregando,
+    this.atualizacao,
+  });
 
   @override
   State<LojinhaPedidosScreen> createState() => _LojinhaPedidosScreenState();
 }
 
 class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
+  List<LojinhaPedidoResumoModel> get _lista =>
+      widget.pedidosAtuais?.call() ?? widget.pedidos;
+  bool get _carregando => widget.carregando?.call() ?? false;
+
+  void _aoAtualizar() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.atualizacao?.addListener(_aoAtualizar);
+  }
+
+  @override
+  void dispose() {
+    widget.atualizacao?.removeListener(_aoAtualizar);
+    super.dispose();
+  }
+
   final _ativos = <_Filtro>{_Filtro.cobradoAgora, _Filtro.aCobrar, _Filtro.historico};
 
   int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
@@ -28,7 +60,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
   // passa, ele deixa de contar como "atual" e desce pro grupo certo
   // (vigente/futuro/histórico), sem precisar de nenhum estado guardado.
   List<LojinhaPedidoResumoModel> get _atuais =>
-      widget.pedidos.where((p) => p.labelEntrega != null).toList()..sort(_desc);
+      _lista.where((p) => p.labelEntrega != null).toList()..sort(_desc);
 
   List<LojinhaPedidoResumoModel> _semAtuais(Iterable<LojinhaPedidoResumoModel> lista) {
     final atuaisSet = _atuais.toSet();
@@ -36,11 +68,11 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
   }
 
   List<LojinhaPedidoResumoModel> get _vigentes =>
-      _semAtuais(widget.pedidos.where((p) => p.isVigente))..sort(_desc);
+      _semAtuais(_lista.where((p) => p.isVigente))..sort(_desc);
   List<LojinhaPedidoResumoModel> get _futuros =>
-      _semAtuais(widget.pedidos.where((p) => p.isFuturo))..sort(_desc);
+      _semAtuais(_lista.where((p) => p.isFuturo))..sort(_desc);
   List<LojinhaPedidoResumoModel> get _historico =>
-      widget.pedidos.where((p) => !p.isVigente && !p.isFuturo).toList()..sort(_desc);
+      _lista.where((p) => !p.isVigente && !p.isFuturo).toList()..sort(_desc);
 
   void _toggle(_Filtro f) => setState(() {
         if (_ativos.contains(f)) {
@@ -93,7 +125,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700)),
                           Text(
-                              '${widget.pedidos.length} pedido${widget.pedidos.length != 1 ? 's' : ''} no total',
+                              '${_lista.length} pedido${_lista.length != 1 ? 's' : ''} no total',
                               style: GoogleFonts.poppins(
                                   color: Colors.white.withOpacity(0.8),
                                   fontSize: 12)),
@@ -143,6 +175,8 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                 ),
 
                 const SizedBox(height: 12),
+                if (_carregando)
+                  const LinearProgressIndicator(minHeight: 3),
 
                 // ── Lista ──────────────────────────────────────────────
                 Expanded(
@@ -151,7 +185,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                         color: Color(0xFFF8F9FC),
                         borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
                     child: visiveis.isEmpty
-                        ? _vazio()
+                        ? (_carregando ? _carregandoView() : _vazio())
                         : ListView(
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                             children: [
@@ -210,6 +244,16 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
       ),
     );
   }
+
+  Widget _carregandoView() => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const CircularProgressIndicator(color: AppColors.magenta),
+          const SizedBox(height: 14),
+          Text('Carregando seus pedidos…',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, color: Colors.grey.shade600)),
+        ]),
+      );
 
   Widget _vazio() => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [

@@ -12,6 +12,7 @@ import 'package:gentepole/models/aniversariante_model.dart';
 import 'package:gentepole/models/feed_post_model.dart';
 import 'package:gentepole/screens/aniversariante_screen.dart';
 import 'package:gentepole/screens/feedback/feedback_gestor_colab_screen.dart';
+import 'package:gentepole/screens/gestor/feedback_gestor_screen.dart';
 import 'package:gentepole/screens/gamificacao/gamificacao_screen.dart';
 import 'package:gentepole/screens/login_screen.dart';
 import 'package:gentepole/screens/avaliacao/avaliacao_screen.dart';
@@ -91,6 +92,9 @@ class _FeedScreenState extends State<FeedScreen> {
   // Avaliações de desempenho liberadas e ainda não respondidas (lembrete fixo)
   List<Map<String, dynamic>> _avaliacoesPendentes = [];
   List<Map<String, dynamic>> _feedbacksPresenciaisPendentes = [];
+  // Feedback recebido ainda não visto / pedidos de feedback (gestor).
+  int _feedbacksNaoVistos = 0;
+  int _pedidosFeedback = 0;
 
   // Saldo de Polens (gamificação) — null enquanto carrega, pra não piscar "0"
   int? _meusPontos;
@@ -115,6 +119,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _carregarAvaliacoesPendentes();
     _carregarAgendamentosSaude();
     _carregarFeedbacksPresenciaisPendentes();
+    _carregarAvisosFeedback();
     _carregarChamadosParaAvaliar();
     _scrollCtrl.addListener(_onScroll);
     feedTopoSinal.addListener(_voltarAoTopo);
@@ -331,6 +336,26 @@ class _FeedScreenState extends State<FeedScreen> {
       final c = await _api.buscarChamadosTiParaAvaliar();
       if (!mounted) return;
       setState(() => _chamadosParaAvaliar = c);
+    } catch (_) {}
+  }
+
+  Future<void> _carregarAvisosFeedback() async {
+    final colab = _api.colaboradorAtual;
+    if (colab == null) return;
+    try {
+      final recebidos = await _api.contarFeedbacksGestorNaoLidos();
+      var pedidos = 0;
+      if (colab.ehGestor) {
+        pedidos = (await _api.listarSolicitacoesFeedbackRecebidas(
+                int.parse(colab.id.toString()),
+                apenasPendentes: true))
+            .length;
+      }
+      if (!mounted) return;
+      setState(() {
+        _feedbacksNaoVistos = recebidos;
+        _pedidosFeedback = pedidos;
+      });
     } catch (_) {}
   }
 
@@ -568,6 +593,11 @@ class _FeedScreenState extends State<FeedScreen> {
       _carregando = false;
       _carregandoMais = false;
     });
+    // Página inteira filtrada (ex.: só posts de humor, que não aparecem no
+    // feed): busca a seguinte em vez de mostrar "Nenhuma publicação ainda".
+    if (_temMais && _posts.length < 5 && _pagina < 15) {
+      _carregarProximaPagina();
+    }
   }
 
   /// Posts + enquetes ativas intercalados por data de criação (mais novo primeiro).
@@ -1214,6 +1244,24 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_banners.isNotEmpty) _buildBannerHome(),
       _buildHumorCard(),
       if (_celebracoesRecebidas.isNotEmpty) _buildCelebracoesRecebidasCard(),
+      if (_feedbacksNaoVistos > 0)
+        _buildAvisoFeedbackCard(
+          icone: Icons.forum_outlined,
+          titulo: _feedbacksNaoVistos == 1
+              ? 'Você recebeu 1 feedback'
+              : 'Você recebeu $_feedbacksNaoVistos feedbacks',
+          subtitulo: 'Toque para ler o que seu gestor escreveu para você.',
+          tela: const FeedbackGestorColabScreen(),
+        ),
+      if (_pedidosFeedback > 0)
+        _buildAvisoFeedbackCard(
+          icone: Icons.mark_chat_unread_outlined,
+          titulo: _pedidosFeedback == 1
+              ? '1 colaborador pediu um feedback seu'
+              : '$_pedidosFeedback colaboradores pediram um feedback seu',
+          subtitulo: 'Toque para atender ou recusar as solicitações.',
+          tela: const FeedbackGestorScreen(),
+        ),
       if (_feedbacksPresenciaisPendentes.isNotEmpty) _buildFeedbackPresencialPendenteCard(),
       if (_chamadosParaAvaliar.isNotEmpty) _buildChamadoTiAvaliarCard(),
       if (_pesquisaExperienciaPendente != null)
@@ -1537,6 +1585,60 @@ class _FeedScreenState extends State<FeedScreen> {
                       color: AppColors.cinzaTexto,
                     ),
                   ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: cor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvisoFeedbackCard({
+    required IconData icone,
+    required String titulo,
+    required String subtitulo,
+    required Widget tela,
+  }) {
+    const cor = Color(0xFF6366F1);
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
+        _carregarAvisosFeedback();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cor.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: cor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icone, color: cor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo,
+                      style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.dark)),
+                  const SizedBox(height: 2),
+                  Text(subtitulo,
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: AppColors.cinzaTexto)),
                 ],
               ),
             ),

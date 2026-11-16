@@ -25,6 +25,7 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
   // Avaliações da equipe ainda pendentes (bolinha no card)
   int _pendEquipe = 0;
   int _pendExperiencia = 0; // colaboradores aguardando avaliação de experiência
+  int _pendFeedback = 0; // colaboradores que pediram feedback ao gestor
 
   @override
   void initState() {
@@ -38,6 +39,16 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
     Set<String> bloqueadas = {};
     var pendEquipe = 0;
     var pendExperiencia = 0;
+    var pedidosFeedback = 0;
+    try {
+      final id = _api.colaboradorAtual?.id;
+      if (id != null) {
+        pedidosFeedback = (await _api.listarSolicitacoesFeedbackRecebidas(
+                int.parse(id.toString()),
+                apenasPendentes: true))
+            .length;
+      }
+    } catch (_) {}
     try {
       final pend = await _api.listarPendenciasAvaliacao();
       for (final p in pend.where((p) => p['tipo'] == 'avaliacao_gestor')) {
@@ -64,6 +75,7 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
       _bloqueadas = bloqueadas;
       _pendEquipe = pendEquipe;
       _pendExperiencia = pendExperiencia;
+      _pendFeedback = pedidosFeedback;
     });
   }
 
@@ -114,6 +126,7 @@ class _PerformanceGestorScreenState extends State<PerformanceGestorScreen> {
             titulo: 'Feedback',
             descricao:
                 'Registre e acompanhe os feedbacks realizados com sua equipe.',
+            badge: _pendFeedback,
             onTap: () => _abrir(const FeedbackGestorScreen()),
           ),
         if (!_bloqueadas.contains('pdi_gestor'))

@@ -94,9 +94,57 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     await prefs.setBool(_kValorOcultoKey, _valorOculto);
   }
 
+  // Pedidos do SAP (parte lenta) chegam depois, em segundo plano: a Lojinha
+  // abre só com limites e bloqueio.
+  bool _carregandoPedidos = false;
+  // Avisa a tela de pedidos (aberta) que a lista mudou.
+  final _pedidosAtualizados = ValueNotifier<int>(0);
+  Future<void>? _pedidosFuturo;
+  int _pedidosSeq = 0;
+
+  Future<void> _carregarPedidosSap() {
+    final seq = ++_pedidosSeq;
+    if (mounted) setState(() => _carregandoPedidos = true);
+    return _pedidosFuturo = () async {
+      try {
+        final completo = await _api.buscarDadosFuncionarioLojinha();
+        if (!mounted || seq != _pedidosSeq) return;
+        setState(() {
+          if (completo != null) _dados = completo;
+          _carregandoPedidos = false;
+        });
+        _pedidosAtualizados.value++;
+      } catch (_) {
+        if (mounted && seq == _pedidosSeq) {
+          setState(() => _carregandoPedidos = false);
+          _pedidosAtualizados.value++;
+        }
+      }
+    }();
+  }
+
+  Future<void> _abrirPedidos() async {
+    // Entra na hora: a tela de pedidos mostra "carregando" e se atualiza
+    // sozinha quando os pedidos do SAP chegam (dá para voltar a qualquer momento).
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LojinhaPedidosScreen(
+          pedidos: _dados?.pedidos ?? const [],
+          pedidosAtuais: () => _dados?.pedidos ?? const [],
+          carregando: () => _carregandoPedidos,
+          atualizacao: _pedidosAtualizados,
+        ),
+      ),
+    );
+  }
+
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    _dados = await _api.buscarDadosFuncionarioLojinha();
+    // Primeira abertura usa a pré-carga leve; recargas (ex.: depois de uma
+    // compra) vão ao SAP de novo.
+    _dados = await _api.buscarDadosFuncionarioLojinha(
+        comPedidos: false, forcarAtualizar: _dados != null);
     final liberadaGeral = await _api.lojinhaLiberadaParaFilial(
       ApiService.chaveFilialCardapio(
         empresa: _api.colaboradorAtual?.empresa,
@@ -121,7 +169,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       _exclusivosLiberadosAgora = exclusivosAgora;
       _temExclusivos = temExclusivos;
     });
-    await _retentarSeValorZerado();
+    // Pedidos do SAP em segundo plano; depois confere se algum veio zerado.
+    _carregarPedidosSap().then((_) => _retentarSeValorZerado());
   }
 
   /// Se o colaborador já usou o pedido regular e/ou exclusivo do período
@@ -208,6 +257,24 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     if (mounted) setState(() => _recalculando = false);
   }
 
+  /// Corpo da tela enquanto carrega: blocos cinza no lugar dos botões, para
+  /// não mostrar (e depois esconder) o "Novo Pedido" antes de saber se a
+  /// Lojinha está liberada.
+  Widget _corpoEsqueleto() {
+    Widget bloco(double h) => Container(
+          height: h,
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(18),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(children: [bloco(76), bloco(76), bloco(76)]),
+    );
+  }
+
   String _moeda(double v) =>
       'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
@@ -289,7 +356,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                       borderRadius:
                           BorderRadius.vertical(top: Radius.circular(28)),
                     ),
-                    child: SingleChildScrollView(
+                    child: _carregando
+                        ? _corpoEsqueleto()
+                        : SingleChildScrollView(
                       padding: const EdgeInsets.all(20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -302,19 +371,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                               icone: Icons.receipt_long_rounded,
                               titulo: 'Meus Pedidos',
                               subtitulo:
-                                  '${dados?.pedidos.length ?? 0} pedido${(dados?.pedidos.length ?? 0) != 1 ? 's' : ''} realizados',
+                                  _carregandoPedidos
+                                  ? 'Carregando pedidos…'
+                                  : '${dados?.pedidos.length ?? 0} pedido${(dados?.pedidos.length ?? 0) != 1 ? 's' : ''} realizados',
                               cor: AppColors.magenta,
                               bloqueado: false,
-                              onTap: dados == null
-                                  ? null
-                                  : () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => LojinhaPedidosScreen(
-                                            pedidos: dados.pedidos,
-                                          ),
-                                        ),
-                                      ),
+                              onTap: _abrirPedidos,
                             ),
                           ] else ...[
                           // ── Alerta de bloqueio ───────────────────────
@@ -373,19 +435,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             icone: Icons.receipt_long_rounded,
                             titulo: 'Meus Pedidos',
                             subtitulo:
-                                '${dados?.pedidos.length ?? 0} pedido${(dados?.pedidos.length ?? 0) != 1 ? 's' : ''} realizados',
+                                _carregandoPedidos
+                                  ? 'Carregando pedidos…'
+                                  : '${dados?.pedidos.length ?? 0} pedido${(dados?.pedidos.length ?? 0) != 1 ? 's' : ''} realizados',
                             cor: AppColors.magenta,
                             bloqueado: false,
-                            onTap: dados == null
-                                ? null
-                                : () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => LojinhaPedidosScreen(
-                                          pedidos: dados.pedidos,
-                                        ),
-                                      ),
-                                    ),
+                            onTap: dados == null ? null : _abrirPedidos,
                           ),
 
                           const SizedBox(height: 28),
