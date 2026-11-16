@@ -97,7 +97,7 @@ class _HumorPainelCardState extends State<HumorPainelCard> {
         children: [
           Row(children: [
             Expanded(
-              child: Text('Termômetro da empresa',
+              child: Text('Termômetro de humor diário',
                   style: GoogleFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -108,6 +108,9 @@ class _HumorPainelCardState extends State<HumorPainelCard> {
                   style: GoogleFonts.poppins(
                       fontSize: 11, color: AppColors.cinzaTexto)),
           ]),
+          Text('Acompanhe como nossos colaboradores estão se sentindo hoje.',
+              style: GoogleFonts.poppins(
+                  fontSize: 11.5, color: AppColors.cinzaTexto)),
           const SizedBox(height: 8),
           if (_carregando)
             const Padding(
@@ -131,7 +134,8 @@ class _HumorPainelCardState extends State<HumorPainelCard> {
 
   Widget _linha(int nivel, int qtd, int maior) {
     final i = nivel - 1;
-    final abre = qtd > 0 && _podeVerDetalhes;
+    // De "Ok" para baixo só admin/RH/endomkt abrem quem registrou.
+    final abre = qtd > 0 && (nivel >= 4 || _podeVerDetalhes);
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: abre ? () => _abrirDetalhes(nivel) : null,

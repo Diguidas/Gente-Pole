@@ -3612,9 +3612,25 @@ class ApiService {
 
   /// Quem pode ver o detalhe de cada humor (todos os colaboradores).
   Future<bool> podeVerDetalhesHumor() async {
-    // Termômetro da empresa: todos veem quem está em cada humor e o que
-    // escreveu (liberado para todos, como no painel web).
-    return colaboradorAtual != null;
+    // Humores "Bem"/"Ótimo" abrem para todos; de "Ok" para baixo só admin,
+    // RH ou endomkt (usuarios_admin.roles).
+    final colab = colaboradorAtual;
+    if (colab == null) return false;
+    try {
+      final adm = await _client
+          .from('usuarios_admin')
+          .select('roles')
+          .eq('matricula', colab.matricula)
+          .eq('empresa', colab.empresa ?? '')
+          .eq('ativo', true)
+          .maybeSingle();
+      final roles = (adm?['roles']?.toString() ?? '').toLowerCase();
+      return roles.contains('admin') ||
+          roles.contains('rh') ||
+          roles.contains('endomkt');
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Quem registrou o humor [nivel] hoje, com nome/setor/foto e o texto que
