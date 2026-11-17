@@ -430,6 +430,10 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       } else if (mounted) {
         Navigator.pop(context);
       }
+    } else if (mounted && ApiService.lojinhaBloqueadaPeloServidor) {
+      // Servidor/SAP recusou por limite ou duplicata: volta para a Lojinha, que
+      // mostra o aviso e bloqueia o "Novo Pedido".
+      Navigator.pop(context);
     }
   }
 

@@ -3329,7 +3329,8 @@ class ApiService {
 
   /// Vira true quando o servidor/SAP recusa por limite ou duplicata, para a
   /// tela bloquear o "Novo Pedido".
-  static bool lojinhaBloqueadaPeloServidor = false;
+  static final ValueNotifier<bool> lojinhaBloqueio = ValueNotifier(false);
+  static bool get lojinhaBloqueadaPeloServidor => lojinhaBloqueio.value;
   static const _kPedidoPendente = 'lojinha_pedido_pendente';
 
   String _novaChavePedido() =>
@@ -3486,7 +3487,7 @@ class ApiService {
           'itens': itensSap,
         }, chave);
         repetido = data['repetido'] == true;
-        if (data['bloqueio'] == true) lojinhaBloqueadaPeloServidor = true;
+        if (data['bloqueio'] == true) lojinhaBloqueio.value = true;
         ok = data['ok'] == true;
         retorno = (data['retorno'] ?? '').toString();
         final pedidosRaw = data['pedidos'] as List? ?? [];
