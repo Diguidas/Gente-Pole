@@ -2973,6 +2973,21 @@ class ApiService {
   // tudo volta a ser buscado ao vivo, então limite/saldo nunca ficam
   // desatualizados após uma compra.
   static const _validadeAquecimentoLojinha = Duration(minutes: 3);
+  // Cache completo (limites + pedidos do SAP): vale 1 h, ou até uma compra.
+  static const _validadeCacheLojinha = Duration(hours: 1);
+  LojinhaFuncionarioModel? _funcCompleto;
+  String? _funcCompletoCpf;
+  DateTime? _funcCompletoEm;
+
+  /// Soma 1 a cada compra concluída.
+  static int lojinhaVersaoCompras = 0;
+
+  void invalidarCacheLojinha() {
+    _funcCompleto = null;
+    _funcCompletoCpf = null;
+    _funcCompletoEm = null;
+  }
+
   LojinhaFuncionarioModel? _funcionarioAquecido;
   String? _funcionarioAquecidoCpf;
   DateTime? _funcionarioAquecidoEm;
@@ -3022,12 +3037,30 @@ class ApiService {
       {bool comPedidos = true, bool forcarAtualizar = false}) async {
     final cpf = colaboradorAtual?.cpf?.replaceAll(RegExp(r'\D'), '');
     if (cpf == null || cpf.isEmpty) return null;
+    if (!forcarAtualizar) {
+      final c = _funcCompleto;
+      final em = _funcCompletoEm;
+      if (c != null &&
+          _funcCompletoCpf == cpf &&
+          em != null &&
+          DateTime.now().difference(em) < _validadeCacheLojinha) {
+        return c;
+      }
+    }
     if (comPedidos || forcarAtualizar) {
       // A pré-carga só guarda a versão leve e vale uma única vez.
       _funcionarioAquecido = null;
       _funcionarioAquecidoCpf = null;
       _funcionarioAquecidoEm = null;
-      return _consultarDadosFuncionarioLojinha(comPedidos: comPedidos);
+      final r = await _consultarDadosFuncionarioLojinha(comPedidos: comPedidos);
+      if (comPedidos && r != null) {
+        _funcCompleto = r;
+        _funcCompletoCpf = cpf;
+        _funcCompletoEm = DateTime.now();
+      } else if (forcarAtualizar) {
+        invalidarCacheLojinha();
+      }
+      return r;
     }
     // Busca de aquecimento ainda em andamento: espera por ela (já começou).
     final andando = _funcionarioEmAndamento;
@@ -3553,6 +3586,11 @@ class ApiService {
         });
       }
 
+      if (ok || pedidos.any((p) => p.ok)) {
+        // Compra feita: o cache de 1 h não vale mais.
+        invalidarCacheLojinha();
+        lojinhaVersaoCompras++;
+      }
       await _limparPedidoPendente();
       return (ok: ok, retorno: retorno, pedidos: pedidos);
     } catch (e, st) {

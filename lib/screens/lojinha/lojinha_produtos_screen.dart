@@ -447,7 +447,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
         '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
     for (var tentativa = 0; tentativa < 3; tentativa++) {
       await Future.delayed(const Duration(seconds: 2));
-      final dados = await _api.buscarDadosFuncionarioLojinha();
+      final dados =
+          await _api.buscarDadosFuncionarioLojinha(forcarAtualizar: true);
       final pendente = dados?.pedidos
               .any((p) => p.criacao == criacaoHoje && p.valorTotal == 0) ??
           false;

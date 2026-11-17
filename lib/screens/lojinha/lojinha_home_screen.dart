@@ -279,7 +279,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       if (!pendente()) break;
       await Future.delayed(const Duration(seconds: 2));
       if (!mounted) return;
-      final novosDados = await _api.buscarDadosFuncionarioLojinha();
+      final novosDados =
+          await _api.buscarDadosFuncionarioLojinha(forcarAtualizar: true);
       if (!mounted) return;
       setState(() => _dados = novosDados);
     }
