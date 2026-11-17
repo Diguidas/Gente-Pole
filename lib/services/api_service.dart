@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'lojinha_fila_service.dart';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
@@ -3503,6 +3504,46 @@ class ApiService {
     throw ultimoErro ?? Exception('O pedido não obteve resposta.');
   }
 
+  // ── Fila de integração com o SAP ────────────────────────────────────────────
+  /// true quando o último pedido foi para a fila (não há número de pedido ainda).
+  static bool ultimoPedidoEmFila = false;
+
+  /// Tenta colocar o pedido na fila. Retorna null se a fila estiver desligada
+  /// (o chamador segue pelo caminho antigo, síncrono).
+  Future<Map<String, dynamic>?> _tentarEnfileirar(
+      Map<String, dynamic> body, String chave) async {
+    body['acao'] = 'enfileirar';
+    body['chave_idempotencia'] = chave;
+    Object? ultimoErro;
+    for (var t = 0; t < 3; t++) {
+      try {
+        final res = await _client.functions.invoke('lojinha-pedido', body: body);
+        final d = res.data;
+        if (d is! Map) throw Exception('resposta vazia');
+        final m = Map<String, dynamic>.from(d);
+        if (m['fila_desativada'] == true) return null;
+        return m;
+      } catch (e) {
+        ultimoErro = e;
+      }
+      await Future.delayed(Duration(seconds: 2 * (t + 1)));
+    }
+    throw ultimoErro ?? Exception('O pedido não obteve resposta.');
+  }
+
+  /// Pedidos da pessoa na fila (ativos, com erro, ou confirmados há pouco).
+  Future<List<Map<String, dynamic>>> minhaFilaLojinha(String? colaboradorId) async {
+    final id = '${colaboradorId ?? colaboradorAtual?.id ?? ''}';
+    if (id.isEmpty) return [];
+    final res = await _client.functions.invoke('lojinha-pedido',
+        body: {'acao': 'minha_fila', 'colaborador_id': id});
+    final d = res.data;
+    if (d is Map && d['itens'] is List) {
+      return [for (final e in d['itens'] as List) Map<String, dynamic>.from(e as Map)];
+    }
+    return [];
+  }
+
   /// Ao abrir a Lojinha: se ficou um pedido "no ar" (queda, app fechado),
   /// descobre o que aconteceu. Retorna null (nada pendente) ou
   /// {'estado': 'enviado' | 'enviando' | 'incerto'}.
@@ -3558,13 +3599,40 @@ class ApiService {
         final itensSap = itensRegulares.map((i) => i.toSapItem()).toList();
         final chave = await _chavePedidoLojinha(
             '${colaborador.id}|${jsonEncode(itensSap)}');
-        final data = await _enviarPedidoIdempotente({
+        ultimoPedidoEmFila = false;
+        // Fila de integração (quando ligada): reserva o estoque agora e envia ao
+        // SAP em segundo plano. Desligada: segue pelo caminho síncrono.
+        final viaFila = await _tentarEnfileirar({
           'colaborador_id': colaborador.id,
+          'matricula': colaborador.matricula,
+          'nome': colaborador.nome,
           'cliente_sap': colaborador.clienteSap,
           'datacriacao': datacriacao,
           'itens': itensSap,
+          'exclusivos': [
+            for (final i in itensExclusivos)
+              {'material': i.produto.material, 'quantidade': i.quantidade},
+          ],
         }, chave);
-        repetido = data['repetido'] == true;
+        final Map<String, dynamic> data;
+        if (viaFila != null) {
+          data = viaFila;
+          if (data['ok'] == true) {
+            ultimoPedidoEmFila = true;
+            // Exclusivos e controle de limite ficam com o servidor.
+            repetido = true;
+            LojinhaFilaService.instance.iniciar('${colaborador.id}');
+            consultarBloqueioLojinhaServidor();
+          }
+        } else {
+          data = await _enviarPedidoIdempotente({
+            'colaborador_id': colaborador.id,
+            'cliente_sap': colaborador.clienteSap,
+            'datacriacao': datacriacao,
+            'itens': itensSap,
+          }, chave);
+          repetido = data['repetido'] == true;
+        }
         if (data['bloqueio'] == true) {
           await _marcarBloqueioLojinha(colaborador.matricula);
         }

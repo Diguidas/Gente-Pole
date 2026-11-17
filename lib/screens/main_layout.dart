@@ -11,6 +11,8 @@ import 'servicos_screen.dart';
 import 'atalhos/atalhos_sheet.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/notificacoes_sino.dart';
+import '../widgets/lojinha_fila_card.dart';
+import '../services/lojinha_fila_service.dart';
 import '../widgets/popup_aniversario.dart';
 import '../widgets/popup_comunicado.dart';
 
@@ -44,6 +46,9 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     ApiService().precarregarChamadosTI().catchError((_) {});
     // Lojinha: deixa a consulta lenta do SAP pronta em segundo plano.
     ApiService().precarregarLojinha().catchError((_) {});
+    // Pedido da Lojinha na fila de integração (se ficou algum em andamento).
+    LojinhaFilaService.instance
+        .iniciar('${ApiService().colaboradorAtual?.id ?? ''}');
     // Pop-up de aniversário (natalício / tempo de empresa), 1x por dia.
     // Depois, os pop-ups de comunicado do endomkt (um por vez, sem sobrepor).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -179,6 +184,13 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             right: 16,
             bottom: 16,
             child: NotificacoesSino(),
+          ),
+          // Pedido da Lojinha sendo integrado ao SAP (à esquerda do sino).
+          const Positioned(
+            left: 16,
+            right: 80,
+            bottom: 16,
+            child: LojinhaFilaCard(),
           ),
         ],
       ),

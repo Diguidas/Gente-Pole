@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
+import '../../services/lojinha_fila_service.dart';
 import 'lojinha_produtos_screen.dart';
 import 'lojinha_pedidos_screen.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
@@ -80,6 +81,18 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     super.initState();
     _carregarPreferenciaOcultar();
     _carregar();
+    LojinhaFilaService.instance.confirmacoes.addListener(_aoConfirmarFila);
+  }
+
+  /// Um pedido da fila foi confirmado no SAP: recarrega limite e pedidos.
+  void _aoConfirmarFila() {
+    if (mounted) _carregar();
+  }
+
+  @override
+  void dispose() {
+    LojinhaFilaService.instance.confirmacoes.removeListener(_aoConfirmarFila);
+    super.dispose();
   }
 
   Future<void> _carregarPreferenciaOcultar() async {

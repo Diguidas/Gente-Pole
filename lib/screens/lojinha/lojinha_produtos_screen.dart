@@ -416,7 +416,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
 
     if (result.ok) {
       _carrinho.clear();
-      widget.onPedidoCriado();
+      // Pedido na fila: a tela inicial recarrega quando o SAP confirmar.
+      if (!ApiService.ultimoPedidoEmFila) widget.onPedidoCriado();
       final primeiroPedido = result.pedidos
           .where((p) => p.ok && p.numeroPedido != null)
           .map((p) => p.numeroPedido!)
@@ -443,6 +444,8 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
   /// "criando pedido", pra já voltar com o valor certo em vez de mostrar
   /// zero e corrigir depois.
   Future<void> _aguardarValorPedido() async {
+    // Pedido na fila: ainda não existe no SAP, nada para esperar aqui.
+    if (ApiService.ultimoPedidoEmFila) return;
     final hoje = DateTime.now();
     final criacaoHoje =
         '${hoje.year}${hoje.month.toString().padLeft(2, '0')}${hoje.day.toString().padLeft(2, '0')}';
