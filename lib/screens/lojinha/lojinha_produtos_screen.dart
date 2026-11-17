@@ -317,6 +317,7 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
     final result = await _api.adicionarAoCarrinho(
       material: p.material,
       quantidade: qtd,
+      centro: p.centro,
     );
     if (!mounted || result.ok) return;
     if (result.motivo == 'estoque_insuficiente') {

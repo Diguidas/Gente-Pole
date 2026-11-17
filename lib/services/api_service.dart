@@ -3348,6 +3348,7 @@ class ApiService {
   adicionarAoCarrinho({
     required String material,
     required int quantidade,
+    String? centro,
   }) async {
     final colaborador = colaboradorAtual!;
     try {
@@ -3357,6 +3358,7 @@ class ApiService {
           'colaborador_id': colaborador.id,
           'material': material,
           'quantidade': quantidade,
+          if (centro != null && centro.isNotEmpty) 'centro': centro,
         },
       );
       final data = res.data as Map<String, dynamic>;
