@@ -142,6 +142,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   Future<void> _carregar() async {
     setState(() => _carregando = true);
     await _api.restaurarBloqueioLojinha(_api.colaboradorAtual?.matricula);
+    // Confere no servidor (qualquer aparelho) em paralelo com o resto.
+    final bloqueioServidor = _api.consultarBloqueioLojinhaServidor();
     // Primeira abertura usa a pré-carga leve; recargas (ex.: depois de uma
     // compra) vão ao SAP de novo.
     _dados = await _api.buscarDadosFuncionarioLojinha(
@@ -162,6 +164,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       if (!liberada) liberada = exclusivosAgora > 0;
     } catch (_) {}
     await _carregarLimitePedidos();
+    await bloqueioServidor;
     if (!mounted) return;
     setState(() {
       _carregando = false;

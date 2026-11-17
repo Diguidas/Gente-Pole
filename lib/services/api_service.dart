@@ -3001,6 +3001,22 @@ class ApiService {
   }
 
   /// Ao abrir a Lojinha: reaplica o bloqueio de hoje, se houve, para esta pessoa.
+  /// Pergunta ao servidor se esta pessoa já pediu nas duas organizações de
+  /// vendas no período (vale para qualquer aparelho). Se sim, bloqueia o Novo
+  /// Pedido e lembra até o fim do dia.
+  Future<void> consultarBloqueioLojinhaServidor() async {
+    final colab = colaboradorAtual;
+    if (colab == null) return;
+    try {
+      final res = await _client.functions.invoke('lojinha-pedido',
+          body: {'acao': 'bloqueio', 'colaborador_id': colab.id});
+      final d = res.data;
+      if (d is Map && d['bloqueada'] == true) {
+        await _marcarBloqueioLojinha(colab.matricula);
+      }
+    } catch (_) {}
+  }
+
   Future<void> restaurarBloqueioLojinha(String? matricula) async {
     try {
       final prefs = await SharedPreferences.getInstance();
