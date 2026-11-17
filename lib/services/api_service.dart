@@ -2982,6 +2982,33 @@ class ApiService {
   /// Soma 1 a cada compra concluída.
   static int lojinhaVersaoCompras = 0;
 
+  static const _kBloqueioLojinha = 'lojinha_bloqueio_dia';
+
+  static String _hojeBloqueio() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  /// O servidor/SAP recusou por limite ou duplicata: bloqueia o Novo Pedido e
+  /// lembra disso até o fim do dia (sobrevive a recarregar a página/app).
+  Future<void> _marcarBloqueioLojinha(String? matricula) async {
+    lojinhaBloqueio.value = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _kBloqueioLojinha, '${matricula ?? ''}|${_hojeBloqueio()}');
+    } catch (_) {}
+  }
+
+  /// Ao abrir a Lojinha: reaplica o bloqueio de hoje, se houve, para esta pessoa.
+  Future<void> restaurarBloqueioLojinha(String? matricula) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      lojinhaBloqueio.value =
+          prefs.getString(_kBloqueioLojinha) == '${matricula ?? ''}|${_hojeBloqueio()}';
+    } catch (_) {}
+  }
+
   void invalidarCacheLojinha() {
     _funcCompleto = null;
     _funcCompletoCpf = null;
@@ -3520,7 +3547,9 @@ class ApiService {
           'itens': itensSap,
         }, chave);
         repetido = data['repetido'] == true;
-        if (data['bloqueio'] == true) lojinhaBloqueio.value = true;
+        if (data['bloqueio'] == true) {
+          await _marcarBloqueioLojinha(colaborador.matricula);
+        }
         ok = data['ok'] == true;
         retorno = (data['retorno'] ?? '').toString();
         final pedidosRaw = data['pedidos'] as List? ?? [];

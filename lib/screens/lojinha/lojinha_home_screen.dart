@@ -141,6 +141,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
+    await _api.restaurarBloqueioLojinha(_api.colaboradorAtual?.matricula);
     // Primeira abertura usa a pré-carga leve; recargas (ex.: depois de uma
     // compra) vão ao SAP de novo.
     _dados = await _api.buscarDadosFuncionarioLojinha(
@@ -168,6 +169,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       _liberadaGeral = liberadaGeral;
       _exclusivosLiberadosAgora = exclusivosAgora;
       _temExclusivos = temExclusivos;
+      // Recusa do servidor/SAP hoje: continua bloqueado depois de recarregar.
+      if (ApiService.lojinhaBloqueadaPeloServidor) _sapEsgotado = true;
     });
     // Pedidos do SAP em segundo plano; depois confere se algum veio zerado.
     _carregarPedidosSap().then((_) => _retentarSeValorZerado());
