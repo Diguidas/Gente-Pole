@@ -78,9 +78,11 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
 
   /// Limite em R$ disponível.
   bool get _ultrapassaValor =>
-      widget.limiteDisp != null &&
-      widget.limiteDisp! > 0 &&
-      _total > widget.limiteDisp!;
+      widget.limiteDisp != null && _total > widget.limiteDisp!;
+
+  /// Quanto passa do limite em R$ (0 se cabe).
+  double get _excedenteValor =>
+      _ultrapassaValor ? _total - widget.limiteDisp! : 0.0;
 
   bool get _temItemRegular => _itens.any((i) => !i.produto.isExclusivo);
   bool get _temItemExclusivo => _itens.any((i) => i.produto.isExclusivo);
@@ -95,7 +97,9 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
 
   List<String> get _avisos => [
         if (_ultrapassaValor)
-          'Ultrapassa o limite disponível de ${_moeda(widget.limiteDisp!)}',
+          widget.limiteDisp! <= 0
+              ? 'Seu limite disponível está ${widget.limiteDisp! < 0 ? 'negativo' : 'zerado'} (${_moeda(widget.limiteDisp!)}): não é possível fechar este pedido.'
+              : 'Ultrapassa o limite disponível de ${_moeda(widget.limiteDisp!)} em ${_moeda(_excedenteValor)}. Retire ou reduza itens; o que está em vermelho resolve se for retirado.',
         if (_ultrapassaLimiteItens)
           'Limite de itens do período: ${widget.itensRestantes ?? widget.limiteQtdGlobal} Pole'
               '${widget.limiteQtdExclusivo != null ? " e ${widget.itensRestantesExclusivo ?? widget.limiteQtdExclusivo} ovos" : ""}, a cada ${widget.periodoDiasGlobal} dias. Ajuste o carrinho.',
@@ -465,6 +469,11 @@ class _LojinhaCarrinhoScreenState extends State<LojinhaCarrinhoScreen> {
                                     const SizedBox(height: 12),
                                 itemBuilder: (_, i) => _CardItem(
                                   item: _itens[i],
+                                  // Retirar este item inteiro já faz o pedido
+                                  // caber no limite em R$.
+                                  destacar: _excedenteValor > 0 &&
+                                      _itens[i].subtotal + 0.005 >=
+                                          _excedenteValor,
                                   estoqueDisponivel:
                                       _disponivelPara(_itens[i].produto),
                                   onAdicionar: () =>
@@ -642,8 +651,10 @@ class _CardItem extends StatelessWidget {
   final int estoqueDisponivel;
   final VoidCallback onAdicionar;
   final VoidCallback onRemover;
+  final bool destacar;
 
   const _CardItem({
+    this.destacar = false,
     required this.item,
     required this.estoqueDisponivel,
     required this.onAdicionar,
@@ -661,8 +672,9 @@ class _CardItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: destacar ? Colors.red.withOpacity(0.06) : Colors.white,
         borderRadius: BorderRadius.circular(18),
+        border: destacar ? Border.all(color: Colors.red.shade600, width: 1.5) : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),

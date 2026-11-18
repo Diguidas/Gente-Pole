@@ -1,10 +1,86 @@
 import 'package:flutter/material.dart';
+import '../core/app_navigator.dart';
+import '../screens/lojinha/lojinha_home_screen.dart';
 import '../services/lojinha_fila_service.dart';
 
 /// Cartão flutuante: mostra que o pedido da Lojinha está sendo integrado ao SAP,
 /// o resultado quando termina, e o aviso se algo falhou (o DP reenvia).
 class LojinhaFilaCard extends StatelessWidget {
   const LojinhaFilaCard({super.key});
+
+  /// Pedido(s) que o DP reenviou e foram integrados: fica no cartão, com um
+  /// check por pedido, até a pessoa marcar "Entendi" (aí abre Meus Pedidos).
+  Widget _avisoReenvio(LojinhaFilaService s) {
+    const verde = Color(0xFF16A34A);
+    final pedidos = s.paraEntender;
+    final plural = pedidos.length > 1;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: verde.withOpacity(0.35)),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x26000000), blurRadius: 14, offset: Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(plural ? 'Pedidos integrados' : 'Pedido integrado',
+                style: const TextStyle(
+                    fontSize: 13.5, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(
+                'Pedimos desculpas pelo erro. O DP reenviou e '
+                '${plural ? 'seus pedidos foram integrados' : 'seu pedido foi integrado'} '
+                'ao SAP:',
+                style: const TextStyle(
+                    fontSize: 12, color: Color(0xFF64748B), height: 1.35)),
+            const SizedBox(height: 6),
+            for (final p in pedidos)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Row(children: [
+                  const Icon(Icons.check_circle_rounded, color: verde, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                      ((p['numero_pedido'] ?? '').toString().isNotEmpty)
+                          ? 'Pedido nº ${p['numero_pedido'].toString().replaceFirst(RegExp(r'^0+'), '')}'
+                          : 'Pedido integrado',
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: verde,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 8)),
+                onPressed: () {
+                  s.entendi();
+                  AppNavigator.navigatorKey.currentState?.push(
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            const LojinhaHomeScreen(abrirPedidos: true)),
+                  );
+                },
+                child: const Text('Entendi'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,20 +89,21 @@ class LojinhaFilaCard extends StatelessWidget {
       listenable: s,
       builder: (context, _) {
         if (!s.visivel) return const SizedBox.shrink();
-        final erro = !s.ativo && s.temErro && !s.mostrarConfirmado;
-        final ok = !s.ativo && s.mostrarConfirmado;
+        if (s.temAvisoReenvio && !s.ativoVisivel) return _avisoReenvio(s);
+        final erro = !s.ativoVisivel && s.temErro && !s.mostrarConfirmado;
+        final ok = !s.ativoVisivel && s.mostrarConfirmado;
         final cor = erro
             ? const Color(0xFFEA580C)
             : ok
                 ? const Color(0xFF16A34A)
                 : const Color(0xFF7C3AED);
         final titulo = erro
-            ? 'Não foi possível integrar o pedido'
+            ? 'Pedido NÃO realizado'
             : ok
                 ? 'Pedido confirmado'
                 : 'Pedido sendo integrado';
         final texto = erro
-            ? 'O DP já foi avisado e vai reenviar. Você não precisa pedir de novo.'
+            ? 'Pedimos desculpas: deu erro e o seu pedido não foi realizado. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.'
             : ok
                 ? ((s.numerosConfirmados ?? '').isNotEmpty
                     ? 'Pedido nº ${s.numerosConfirmados} confirmado no SAP.'

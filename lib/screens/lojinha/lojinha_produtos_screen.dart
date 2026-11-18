@@ -279,6 +279,24 @@ class _LojinhaProdutosScreenState extends State<LojinhaProdutosScreen> {
       ));
       return;
     }
+    // Avisa na hora de adicionar se o item passa do limite em R$ disponível
+    // (limite zerado também bloqueia; null = SAP não respondeu).
+    final limiteDisp = widget.dadosFuncionario?.limiteDisp;
+    if (limiteDisp != null && _totalValor + p.preco > limiteDisp + 0.005) {
+      final falta = _totalValor + p.preco - limiteDisp;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          limiteDisp <= 0
+              ? 'Seu limite disponível está zerado. Não é possível adicionar itens.'
+              : 'Limite insuficiente: faltam R\$ ${falta.toStringAsFixed(2)} para adicionar este item (disponível: R\$ ${limiteDisp.toStringAsFixed(2)}).',
+          style: GoogleFonts.poppins(color: Colors.white),
+        ),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      return;
+    }
     setState(() {
       _carrinho.containsKey(p.id)
           ? _carrinho[p.id]!.quantidade++

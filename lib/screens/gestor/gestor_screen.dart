@@ -8,12 +8,11 @@ import 'solicitacoes_gestor_screen.dart';
 import 'facilites_gestor_screen.dart';
 import 'exames_gestor_screen.dart';
 import 'candidaturas_gestor_screen.dart';
-import 'requisitantes_screen.dart';
 import '../performance/performance_gestor_screen.dart';
 
 class GestorScreen extends StatefulWidget {
   /// true quando quem abriu é só requisitante de vaga (sem ser gestor/líder
-  /// de verdade) — restringe o menu só ao "Aumento de Quadro", ignorando o
+  /// de verdade) — restringe o menu só à "Nova Vaga", ignorando o
   /// bloqueio granular de [_bloqueadas] (que é pra quem já tem acesso pleno).
   final bool apenasVagas;
 
@@ -123,7 +122,7 @@ class _GestorScreenState extends State<GestorScreen> {
                               if (!_bloqueadas.contains('vagas_gestor')) ...[
                                 _BotaoGestor(
                                   icone: Icons.work_outline_rounded,
-                                  titulo: 'Aumento de Quadro',
+                                  titulo: 'Nova Vaga',
                                   subtitulo:
                                       'Solicite vagas e acompanhe candidatos',
                                   cor: AppColors.laranja,
@@ -138,23 +137,6 @@ class _GestorScreenState extends State<GestorScreen> {
                               ],
 
                               if (!widget.apenasVagas) ...[
-                              // Igual ao web: Requisitantes não tem bloqueio
-                              // próprio nem some com o bloqueio de Vagas.
-                              _BotaoGestor(
-                                icone: Icons.person_pin_circle_outlined,
-                                titulo: 'Requisitantes de vaga',
-                                subtitulo:
-                                    'Defina quem pode requisitar vagas por função',
-                                cor: const Color(0xFF0EA5E9),
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const RequisitantesScreen(),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
                               if (!_bloqueadas
                                   .contains('minha_equipe_gestor')) ...[
                                 _BotaoGestor(

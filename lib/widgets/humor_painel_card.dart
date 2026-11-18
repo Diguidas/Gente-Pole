@@ -198,6 +198,29 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
   late final Future<List<Map<String, dynamic>>> _futuro =
       _api.buscarHumoresDoDiaDetalhado(widget.nivel);
   bool _soComMensagem = false;
+  double _arraste = 0;
+
+  /// Puxar a lista para baixo estando no topo fecha o modal. A lista rola e
+  /// "engole" o gesto, então o fechar-ao-arrastar padrão do sheet não chega.
+  /// Android emite OverscrollNotification; iOS (bounce) deixa o scroll negativo.
+  bool _aoRolar(ScrollNotification n) {
+    var fechar = false;
+    if (n is OverscrollNotification && n.overscroll < 0 && n.dragDetails != null) {
+      _arraste += -n.overscroll;
+      fechar = _arraste > 90;
+    } else if (n is ScrollUpdateNotification &&
+        n.dragDetails != null &&
+        n.metrics.pixels < -90) {
+      fechar = true;
+    } else if (n is ScrollEndNotification) {
+      _arraste = 0;
+    }
+    if (fechar) {
+      _arraste = 0;
+      Navigator.of(context).maybePop();
+    }
+    return false;
+  }
 
   String _hora(String? iso) {
     final d = DateTime.tryParse(iso ?? '')?.toLocal();
@@ -223,7 +246,9 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
           final comMensagem = todos.where(_temMensagem).length;
           final lista =
               todos.where((r) => !_soComMensagem || _temMensagem(r)).toList();
-          return ListView(
+          return NotificationListener<ScrollNotification>(
+            onNotification: _aoRolar,
+            child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
             children: [
               Center(
@@ -289,7 +314,7 @@ class _HumorDetalhesState extends State<_HumorDetalhes> {
               else
                 for (final r in lista) _pessoa(r),
             ],
-          );
+          ));
         },
       ),
     );

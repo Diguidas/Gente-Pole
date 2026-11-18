@@ -2133,7 +2133,23 @@ class ApiService {
     final hoje = DateTime(agora.year, agora.month, agora.day);
     final config = await buscarConfigGeralMassoterapia();
     final janelaDias = config['janela_dias'] as int? ?? 14;
-    final periodo = _periodoCicloMassoterapia(hoje, janelaDias);
+    var periodo = _periodoCicloMassoterapia(hoje, janelaDias);
+    // Abertura por dia e hora: o colaborador vê só a janela aberta pelo
+    // servidor (ex.: toda quinta abre a próxima semana, visível até a
+    // quinta seguinte, com as vagas consumidas).
+    if (config['abertura_dia_semana'] != null) {
+      try {
+        final r = await _client.rpc('massoterapia_periodo_aberto');
+        if (r is Map && r['ativo'] == true) {
+          final i = DateTime.parse(r['inicio'].toString());
+          final f = DateTime.parse(r['fim'].toString());
+          periodo = (
+            inicio: DateTime(i.year, i.month, i.day),
+            fim: DateTime(f.year, f.month, f.day),
+          );
+        }
+      } catch (_) {/* sem abertura: cai no período do calendário */}
+    }
 
     // Setor em grupo universal: os dias vêm do grupo (RPC), não de
     // filial/segmento/setor. Setor sem grupo não tem dias de massoterapia.
@@ -2273,8 +2289,9 @@ class ApiService {
       );
     }
     try {
+      // RPC do colaborador: respeita a abertura (só dias da janela aberta).
       final res = await _client.rpc(
-        'agendar_massoterapia_com_limite',
+        'agendar_massoterapia_colaborador',
         params: {
           'p_colaborador_id': colaborador.id,
           'p_data': data,
@@ -3164,8 +3181,8 @@ class ApiService {
         descontoCiclo += ((c['preco'] as num?)?.toDouble() ?? 0) *
             ((c['quantidade'] as num?)?.toInt() ?? 0);
       }
-      final limiteDispAjustado =
-          (dados.limiteDisp - descontoCiclo).clamp(0.0, double.infinity).toDouble();
+      // Sem clamp: limite negativo precisa continuar negativo (bloqueia a compra).
+      final limiteDispAjustado = dados.limiteDisp - descontoCiclo;
 
       return LojinhaFuncionarioModel(
         limiteTotal: dados.limiteTotal,
@@ -3542,6 +3559,17 @@ class ApiService {
       return [for (final e in d['itens'] as List) Map<String, dynamic>.from(e as Map)];
     }
     return [];
+  }
+
+  /// A pessoa marcou "Entendi" no aviso de pedido reenviado pelo DP e integrado.
+  Future<void> marcarFilaLojinhaVista(
+      String? colaboradorId, List<String> ids) async {
+    final id = '${colaboradorId ?? colaboradorAtual?.id ?? ''}';
+    if (id.isEmpty || ids.isEmpty) return;
+    try {
+      await _client.functions.invoke('lojinha-pedido',
+          body: {'acao': 'marcar_visto', 'colaborador_id': id, 'ids': ids});
+    } catch (_) {}
   }
 
   /// Ao abrir a Lojinha: se ficou um pedido "no ar" (queda, app fechado),
@@ -4875,6 +4903,21 @@ class ApiService {
     if (base == null) return null;
     final e = (empresa ?? '').trim();
     return (e.isEmpty || e == '5') ? base : '$e:$base';
+  }
+
+  /// Card "Prepare-se para o almoço" do feed: devolve título, texto e hora final
+  /// quando o servidor manda mostrar agora (aviso ligado, dentro do horário e
+  /// com cardápio da filial hoje); senão null.
+  Future<Map<String, dynamic>?> buscarAvisoCardapioHoje(String? filial) async {
+    if (filial == null || filial.trim().isEmpty) return null;
+    try {
+      final r = await _client
+          .rpc('cardapio_aviso_hoje', params: {'p_filial': filial.trim()});
+      if (r is Map && r['mostrar'] == true) {
+        return Map<String, dynamic>.from(r);
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<Map<String, String>> buscarCardapioDias(
@@ -6646,7 +6689,7 @@ class ApiService {
           onConflict: 'ciclo_id,colaborador_id',
           ignoreDuplicates: true,
         );
-    return await _client
+    final av = await _client
         .from('avaliacoes')
         .select(
           '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)',
@@ -6654,6 +6697,9 @@ class ApiService {
         .eq('ciclo_id', cicloId)
         .eq('colaborador_id', colaboradorId)
         .maybeSingle();
+    // Quem o RH tirou do ciclo não participa: some das pendências.
+    if (av != null && av['fora_do_ciclo'] == true) return null;
+    return av;
   }
 
   /// Libera as perguntas de uma avaliação pra o colaborador (autoavaliação)
@@ -6740,6 +6786,162 @@ class ApiService {
     return listarPerguntasFuncao(funcao, setor: setor);
   }
 
+  /// Acompanhamento do período de experiência para o GESTOR, em toda a
+  /// hierarquia abaixo dele (qualquer nível, não só a equipe direta): quem está
+  /// na janela dos 120 dias de casa (ou já tem avaliação), com setor, as
+  /// lideranças (todas, se houver mais de uma), se o líder já avaliou e se o
+  /// colaborador já respondeu a pesquisa. Cada item: id, nome, cargo, setor,
+  /// data_admissao, status ('nao_iniciada' | 'andamento' | 'concluida'),
+  /// colab_respondeu e lideres ([{id, nome, nivel}]).
+  Future<List<Map<String, dynamic>>> buscarAcompanhamentoExperiencia({
+    required List<String> setores,
+    required int responsavelId,
+  }) async {
+    final equipe = await buscarEquipeGestorMultiSetor(setores,
+        responsavelId: responsavelId);
+    if (equipe.isEmpty) return [];
+    final ids = [for (final c in equipe) (c['id'] as num).toInt()];
+
+    Future<List<Map<String, dynamic>>> emLotes(
+        Future<List<Map<String, dynamic>>> Function(List<int>) consulta,
+        List<int> todos) async {
+      final out = <Map<String, dynamic>>[];
+      for (var i = 0; i < todos.length; i += 150) {
+        out.addAll(await consulta(todos.sublist(
+            i, i + 150 > todos.length ? todos.length : i + 150)));
+      }
+      return out;
+    }
+
+    final avaliacoes = await emLotes(
+        (lote) async => List<Map<String, dynamic>>.from(await _client
+            .from('avaliacoes')
+            .select(
+                '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url, data_admissao)')
+            .eq('tipo', 'periodo_experiencia')
+            .inFilter('colaborador_id', lote) as List),
+        ids);
+    final statusAv = <int, String>{};
+    // A avaliação completa de cada pessoa (a concluída tem prioridade): é o que
+    // a Matriz 9Box usa, então ela também cobre toda a hierarquia.
+    final avaliacaoPorColab = <int, Map<String, dynamic>>{};
+    for (final a in avaliacoes) {
+      final id = (a['colaborador_id'] as num).toInt();
+      // Se houver mais de uma, vale a concluída.
+      if (a['status'] == 'concluida') {
+        statusAv[id] = 'concluida';
+      } else {
+        statusAv.putIfAbsent(id, () => 'andamento');
+      }
+      final atual = avaliacaoPorColab[id];
+      if (atual == null || (atual['gestor_em'] == null && a['gestor_em'] != null)) {
+        avaliacaoPorColab[id] = a;
+      }
+    }
+
+    final pesquisa = await _client
+        .from('pesquisas')
+        .select('id')
+        .eq('tipo', 'periodo_experiencia')
+        .order('criado_em', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    final respondentes = <int>{};
+    if (pesquisa != null) {
+      final r = await emLotes(
+          (lote) async => List<Map<String, dynamic>>.from(await _client
+              .from('pesquisa_respostas')
+              .select('colaborador_alvo_id')
+              .eq('pesquisa_id', pesquisa['id'])
+              .inFilter('colaborador_alvo_id', lote) as List),
+          ids);
+      for (final x in r) {
+        final id = (x['colaborador_alvo_id'] as num?)?.toInt();
+        if (id != null) respondentes.add(id);
+      }
+    }
+
+    final hierarquia = await emLotes(
+        (lote) async => List<Map<String, dynamic>>.from(await _client
+            .from('colaborador_hierarquia')
+            .select('colaborador_id, responsavel_id, nivel')
+            .inFilter('colaborador_id', lote) as List),
+        ids);
+    final liderIds = <int>{
+      for (final h in hierarquia) (h['responsavel_id'] as num).toInt()
+    }.toList();
+    final nomes = <int, String>{};
+    for (final n in await emLotes(
+        (lote) async => List<Map<String, dynamic>>.from(await _client
+            .from('colaboradores')
+            .select('id, nome')
+            .inFilter('id', lote) as List),
+        liderIds)) {
+      nomes[(n['id'] as num).toInt()] = '${n['nome']}';
+    }
+    final lideresPorColab = <int, List<Map<String, dynamic>>>{};
+    for (final h in hierarquia) {
+      final cid = (h['colaborador_id'] as num).toInt();
+      final rid = (h['responsavel_id'] as num).toInt();
+      final lista = lideresPorColab.putIfAbsent(cid, () => []);
+      if (lista.any((l) => l['id'] == rid)) continue;
+      lista.add({'id': rid, 'nome': nomes[rid] ?? '—', 'nivel': '${h['nivel'] ?? ''}'});
+    }
+
+    // Quem avalia: o líder DIRETO = responsável do nível mais próximo
+    // (líder → encarregado → supervisor → coordenador → gestor → gerente geral),
+    // pulando quem está bloqueado para avaliar experiência; empate: menor id.
+    // É a mesma regra que decide a lista "para você fazer".
+    const ordemNiveis = [
+      'lider', 'encarregado', 'supervisor', 'coordenador', 'gestor', 'gerente_geral'
+    ];
+    final bloqueadosRes = await _client
+        .from('gestor_permissoes')
+        .select('colaborador_id')
+        .eq('funcionalidade', 'avaliar_periodo_experiencia_gestor');
+    final bloqueados = {
+      for (final b in bloqueadosRes as List) (b['colaborador_id'] as num).toInt()
+    };
+    final diretoPorColab = <int, ({int rank, int id, String nivel})>{};
+    for (final h in hierarquia) {
+      final rank = ordemNiveis.indexOf('${h['nivel']}');
+      if (rank < 0) continue;
+      final cid = (h['colaborador_id'] as num).toInt();
+      final rid = (h['responsavel_id'] as num).toInt();
+      if (bloqueados.contains(rid)) continue;
+      final atual = diretoPorColab[cid];
+      if (atual == null || rank < atual.rank || (rank == atual.rank && rid < atual.id)) {
+        diretoPorColab[cid] = (rank: rank, id: rid, nivel: '${h['nivel']}');
+      }
+    }
+
+    final limite = DateTime.now().subtract(const Duration(days: 120));
+    final itens = <Map<String, dynamic>>[];
+    for (final c in equipe) {
+      final id = (c['id'] as num).toInt();
+      final adm = DateTime.tryParse('${c['data_admissao'] ?? ''}');
+      final naJanela = adm != null && adm.isAfter(limite);
+      final status = statusAv[id] ?? (naJanela ? 'nao_iniciada' : null);
+      if (status == null) continue;
+      final direto = diretoPorColab[id];
+      itens.add({
+        'avaliacao': avaliacaoPorColab[id],
+        'lider_direto': direto == null
+            ? null
+            : {'id': direto.id, 'nome': nomes[direto.id] ?? '—', 'nivel': direto.nivel},
+        'id': id,
+        'nome': c['nome'],
+        'cargo': c['cargo'],
+        'setor': c['setor'],
+        'data_admissao': c['data_admissao'],
+        'status': status,
+        'colab_respondeu': respondentes.contains(id),
+        'lideres': lideresPorColab[id] ?? <Map<String, dynamic>>[],
+      });
+    }
+    return itens;
+  }
+
   /// Todas as avaliações de período de experiência dos colaboradores dos
   /// setores informados — usado pelo gestor pra ver quem tem avaliação
   /// pendente na sua equipe. Porta de `listarPeriodoExperienciaGestor`.
@@ -6753,7 +6955,7 @@ class ApiService {
     final data = await _client
         .from('avaliacoes')
         .select(
-          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url)',
+          '*, colaboradores!avaliacoes_colaborador_id_fkey(nome, apelido, cargo, setor, foto_url, data_admissao)',
         )
         .eq('tipo', 'periodo_experiencia')
         .order('criado_em', ascending: false);
@@ -7185,7 +7387,9 @@ class ApiService {
         )
         .eq('avaliador_id', avaliadorId)
         .eq('respondido', false);
-    final lista = List<Map<String, dynamic>>.from(data as List);
+    final lista = List<Map<String, dynamic>>.from(data as List)
+      ..removeWhere(
+          (i) => (i['avaliacoes'] as Map?)?['fora_do_ciclo'] == true);
     // Prazo do ciclo (data_fim) de cada avaliação, para o colaborador ver
     // até quando pode responder.
     final cicloIds = <dynamic>{
@@ -7328,13 +7532,16 @@ class ApiService {
   static const diasLimitePeriodoExperiencia = 91;
 
   /// Janela em que o marco de [checkpoint] (45 ou 90 dias) está disponível:
-  /// de 10 dias antes até 30 dias depois do marco de 45; no de 90, só até o
-  /// limite de [diasLimitePeriodoExperiencia] dias de casa. Igual ao web.
+  /// o de 45 vai de 10 dias antes (dia 35) até 30 dias depois (dia 75); o de 90
+  /// abre onde o de 45 fecha (dia 76) e vai até o limite de
+  /// [diasLimitePeriodoExperiencia] dias de casa. Juntos formam uma janela
+  /// contínua do dia 35 ao 91, sem buraco no meio. Igual ao web.
   static bool dentroDaJanelaExperiencia(int checkpoint, int diasDesdeAdmissao) {
     final restantes = checkpoint - diasDesdeAdmissao;
     final minimo =
         checkpoint == 90 ? 90 - diasLimitePeriodoExperiencia : -30;
-    return restantes >= minimo && restantes <= 10;
+    final maximo = checkpoint == 90 ? 14 : 10;
+    return restantes >= minimo && restantes <= maximo;
   }
 
   /// Pesquisa "Período de Experiência" pendente pro colaborador: dispara pela
@@ -7664,7 +7871,8 @@ class ApiService {
       'ciclo': ciclo,
       'autoavaliacaoPendente':
           (ciclo['tipo_avaliacao'] != 'gestor') &&
-          (avaliacao?['autoavaliacao_em'] == null),
+          avaliacao != null &&
+          (avaliacao['autoavaliacao_em'] == null),
       'colegasPendentes': colegasPendentes.length,
     };
   }

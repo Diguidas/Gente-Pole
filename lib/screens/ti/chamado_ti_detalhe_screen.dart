@@ -274,12 +274,18 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
     final tipoSolicitacao = (info?['tipoSolicitacao'] as String?) ?? (chamado['tipo_solicitacao'] as String?);
     final departamento = (info?['departamento'] as String?) ?? (chamado['departamento'] as String?);
     final nivelUrgencia = (info?['nivelUrgencia'] as String?) ?? (chamado['nivel_urgencia'] as String?);
-    final concluido = estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído';
-    final etapaAtual = coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...');
+    // Card removido do board: vermelho, sem andamento nem avaliação.
+    final removido = (estado ?? '').toLowerCase() == 'removed';
+    final concluido = !removido && (estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído');
+    final etapaAtual = removido
+        ? 'Removido'
+        : (coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...'));
     final indice = _indiceEtapa(coluna, estado);
-    final progresso = (indice + 1) / _etapasBoard.length;
-    final semRetorno = tiSemRetorno(info);
-    final cor = semRetorno ? const Color(0xFFD97706) : _corEtapa(indice, concluido);
+    final progresso = removido ? 1.0 : (indice + 1) / _etapasBoard.length;
+    final semRetorno = !removido && tiSemRetorno(info);
+    final cor = removido
+        ? AppColors.erro
+        : (semRetorno ? const Color(0xFFD97706) : _corEtapa(indice, concluido));
 
     return Scaffold(
       appBar: AppBar(
@@ -316,7 +322,12 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                         const SizedBox(height: 18),
                         Row(
                           children: [
-                            Icon(concluido ? Icons.check_circle_rounded : Icons.autorenew_rounded, size: 16, color: cor),
+                            Icon(
+                                removido
+                                    ? Icons.cancel_rounded
+                                    : (concluido ? Icons.check_circle_rounded : Icons.autorenew_rounded),
+                                size: 16,
+                                color: cor),
                             const SizedBox(width: 6),
                             Text(etapaAtual, style: AppTextStyles.corpoMedio.copyWith(color: cor, fontWeight: FontWeight.w700)),
                           ],

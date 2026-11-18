@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../widgets/grid_9box.dart';
 import '../../widgets/seletor_nota_widget.dart';
 import '../../widgets/titulo_setor.dart';
+import 'acompanhamento_experiencia_gestor.dart';
 
 const _indigo = Color(0xFF6366F1);
 const _dimensoes = {'desempenho': 'Desempenho', 'potencial': 'Potencial'};
@@ -32,9 +33,16 @@ class _AvaliarPeriodoExperienciaGestorScreenState
   bool _loading = true;
   String? _erro;
   List<Map<String, dynamic>> _avaliacoes = [];
-  List<Map<String, dynamic>> _avaliadas = [];
   Map<int, Map<String, int>> _pesos = {};
   Map<String, String> _legendas = {};
+  // 0 = tela inicial (dois botões), 1 = Matriz 9Box, 2 = Acompanhamento.
+  int _tela = 0;
+  // Toda a hierarquia do gestor (alimenta o 9Box e o acompanhamento) e filtros
+  // de mês/setor/líder compartilhados pelas duas telas.
+  List<Map<String, dynamic>> _acomp = [];
+  Map<int, Map<String, dynamic>> _porColab = {};
+  int _meuId = 0;
+  final _filtro = FiltroExperiencia();
 
   @override
   void initState() {
@@ -87,7 +95,22 @@ class _AvaliarPeriodoExperienciaGestorScreenState
               responsavelId: col.id);
         }
       }
-      final avaliadas = todas.where((a) => a['gestor_em'] != null).toList();
+      // Toda a hierarquia abaixo do gestor (não só a equipe direta): vale para a
+      // Matriz 9Box e para o acompanhamento. Pendente só dentro da janela;
+      // avaliado (concluído) entra sempre.
+      final acomp = await _api.buscarAcompanhamentoExperiencia(
+          setores: setores, responsavelId: col.id);
+      final itens = acomp
+          .where((a) =>
+              a['status'] == 'concluida' ||
+              _temAvaliacaoConcluida(a) ||
+              _naJanelaData('${a['data_admissao'] ?? ''}'))
+          .toList();
+      final avaliadas = [
+        for (final a in itens)
+          if (_temAvaliacaoConcluida(a))
+            Map<String, dynamic>.from(a['avaliacao'] as Map)
+      ];
       final templateIds = avaliadas
           .map((a) => a['template_id'] as int?)
           .whereType<int>()
@@ -99,8 +122,12 @@ class _AvaliarPeriodoExperienciaGestorScreenState
       ]);
       if (!mounted) return;
       setState(() {
-        _avaliacoes = todas.where((a) => a['gestor_em'] == null).toList();
-        _avaliadas = avaliadas;
+        _avaliacoes = todas
+            .where((a) => a['gestor_em'] == null && _naJanela(a))
+            .toList();
+        _acomp = itens;
+        _porColab = {for (final a in itens) a['id'] as int: a};
+        _meuId = col.id;
         _pesos = extras[0] as Map<int, Map<String, int>>;
         _legendas = extras[1] as Map<String, String>;
         _loading = false;
@@ -324,6 +351,17 @@ class _AvaliarPeriodoExperienciaGestorScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Voltar (botão do sistema) numa das duas telas leva à tela inicial.
+    return PopScope(
+      canPop: _tela == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _tela = 0);
+      },
+      child: _scaffold(),
+    );
+  }
+
+  Widget _scaffold() {
     return Scaffold(
       body: Stack(
         children: [
@@ -393,20 +431,195 @@ class _AvaliarPeriodoExperienciaGestorScreenState
       color: _indigo,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-        children: [
-          _quadroFixo(),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-                _avaliacoes.isEmpty
-                    ? 'Nenhuma avaliação pendente no momento'
-                    : '${_avaliacoes.length} ${_avaliacoes.length == 1 ? 'avaliação pendente' : 'avaliações pendentes'}',
-                style: AppTextStyles.corpoMedio
-                    .copyWith(fontWeight: FontWeight.w600)),
+        children: switch (_tela) {
+          1 => _telaNineBox(),
+          2 => _telaAcompanhamento(),
+          _ => _telaInicial(),
+        },
+      ),
+    );
+  }
+
+  // ── Tela inicial: dois botões ───────────────────────────────────────────
+
+  List<Widget> _telaInicial() {
+    final avaliados = _acomp.where(_temAvaliacaoConcluida).length;
+    final paraFazer = _avaliacoes.length;
+    final pendentes = _acomp.where((a) => a['status'] != 'concluida').length;
+    return [
+      Text('Escolha o que você quer ver',
+          style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 16),
+      _botaoTela(
+        icone: Icons.grid_view_rounded,
+        titulo: 'Matriz 9Box',
+        descricao:
+            '$avaliados ${avaliados == 1 ? 'pessoa avaliada' : 'pessoas avaliadas'} na sua hierarquia',
+        onTap: () => setState(() => _tela = 1),
+      ),
+      const SizedBox(height: 14),
+      _botaoTela(
+        icone: Icons.fact_check_outlined,
+        titulo: 'Acompanhamento e pendências',
+        descricao: '$paraFazer para você avaliar · $pendentes pendentes na hierarquia',
+        destaque: paraFazer > 0,
+        onTap: () => setState(() => _tela = 2),
+      ),
+    ];
+  }
+
+  Widget _botaoTela({
+    required IconData icone,
+    required String titulo,
+    required String descricao,
+    required VoidCallback onTap,
+    bool destaque = false,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: destaque ? _indigo : const Color(0xFFE2E8F0),
+              width: destaque ? 1.5 : 1),
+          boxShadow: [
+            BoxShadow(
+              color: _indigo.withOpacity(0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _indigo.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icone, color: _indigo),
           ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(titulo,
+                  style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(descricao, style: AppTextStyles.corpoMinimo),
+            ]),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.cinzaTexto),
+        ]),
+      ),
+    );
+  }
+
+  Widget _cabecalhoTela(String titulo) => Row(children: [
+        InkWell(
+          onTap: () => setState(() => _tela = 0),
+          borderRadius: BorderRadius.circular(20),
+          child: const Padding(
+            padding: EdgeInsets.all(6),
+            child: Icon(Icons.arrow_back_rounded, size: 22),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(titulo,
+              style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w700)),
+        ),
+      ]);
+
+  // ── Tela 1: Matriz 9Box (toda a hierarquia, com filtros) ───────────────
+
+  bool _temAvaliacaoConcluida(Map<String, dynamic> a) =>
+      (a['avaliacao'] as Map?)?['gestor_em'] != null;
+
+  List<Widget> _telaNineBox() {
+    final base = _acomp.where(_temAvaliacaoConcluida).toList();
+    final avaliadas = [
+      for (final a in base)
+        if (_filtro.aplica(a)) Map<String, dynamic>.from(a['avaliacao'] as Map)
+    ];
+    return [
+      _cabecalhoTela('Matriz 9Box · Período de Experiência'),
+      const SizedBox(height: 14),
+      BarraFiltrosExperiencia(
+          itens: base,
+          meuId: _meuId,
+          filtro: _filtro,
+          onMudou: () => setState(() {})),
+      const SizedBox(height: 16),
+      _quadroFixo(avaliadas),
+    ];
+  }
+
+  // ── Tela 2: o que fazer + quem falta (toda a hierarquia, com filtros) ──
+
+  /// Aplica o filtro de mês/setor/líder também à avaliação da lista "para você
+  /// fazer" (usa os dados da hierarquia dessa pessoa).
+  bool _passaFiltro(Map<String, dynamic> avaliacao) {
+    final id = (avaliacao['colaborador_id'] as num).toInt();
+    final colab = avaliacao['colaboradores'] as Map?;
+    final item = _porColab[id] ??
+        {
+          'data_admissao': colab?['data_admissao'],
+          'setor': colab?['setor'],
+          'lideres': const [],
+        };
+    return _filtro.aplica(item);
+  }
+
+  List<Widget> _telaAcompanhamento() {
+    final paraFazer = _avaliacoes.where(_passaFiltro).toList();
+    return [
+      _cabecalhoTela('Acompanhamento e pendências'),
+      const SizedBox(height: 14),
+      BarraFiltrosExperiencia(
+          itens: _acomp,
+          meuId: _meuId,
+          filtro: _filtro,
+          onMudou: () => setState(() {})),
+      const SizedBox(height: 16),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(
+            paraFazer.isEmpty
+                ? 'Nenhuma avaliação para você fazer no momento'
+                : '${paraFazer.length} ${paraFazer.length == 1 ? 'avaliação para você fazer' : 'avaliações para você fazer'}',
+            style: AppTextStyles.corpoMedio.copyWith(fontWeight: FontWeight.w600)),
+      ),
+      ..._listaParaFazer(paraFazer),
+      const SizedBox(height: 20),
+      AcompanhamentoExperienciaGestor(
+          itens: _acomp, meuId: _meuId, filtro: _filtro),
+    ];
+  }
+
+  /// Só vale avaliar dentro da janela da experiência: de 10 dias antes dos 45
+  /// até o dia 91, sem buraco. Avaliação antiga em aberto fora disso (ex.: 106
+  /// dias de casa) não aparece mais.
+  bool _naJanelaData(String? admissao) {
+    final adm = DateTime.tryParse(admissao ?? '');
+    if (adm == null) return true;
+    final dias = DateTime.now().difference(adm).inDays;
+    return ApiService.dentroDaJanelaExperiencia(45, dias) ||
+        ApiService.dentroDaJanelaExperiencia(90, dias);
+  }
+
+  bool _naJanela(Map<String, dynamic> a) => _naJanelaData(
+      '${(a['colaboradores'] as Map?)?['data_admissao'] ?? ''}');
+
+  /// Lista "para você fazer" (agrupada por setor), já filtrada.
+  List<Widget> _listaParaFazer(List<Map<String, dynamic>> avaliacoes) {
+    return [
           ...intercalarSetores<Map<String, dynamic>>(
-                  _avaliacoes,
+                  avaliacoes,
                   (a) => (a['colaboradores'] as Map?)?['setor'] as String?)
               .map((item) {
           if (item is CabecalhoSetorItem) {
@@ -467,9 +680,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
             ),
           );
           }),
-        ],
-      ),
-    );
+    ];
   }
 
   void _abrirDetalhe(Map<String, dynamic> avaliacao) {
@@ -482,7 +693,7 @@ class _AvaliarPeriodoExperienciaGestorScreenState
 
   /// Matriz 9Box fixa no topo (igual à Matriz 9Box e à Avaliação de
   /// Desempenho) com quem o gestor já avaliou no período de experiência.
-  Widget _quadroFixo() {
+  Widget _quadroFixo(List<Map<String, dynamic>> avaliadas) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -498,13 +709,13 @@ class _AvaliarPeriodoExperienciaGestorScreenState
                   .copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           Text(
-              _avaliadas.isEmpty
-                  ? 'Nenhuma avaliação concluída ainda. Quando você avaliar, os colaboradores aparecem na matriz.'
+              avaliadas.isEmpty
+                  ? 'Nenhuma avaliação concluída nesta seleção. Quando houver, os colaboradores aparecem na matriz.'
                   : 'Toque num quadrante para ver a descrição e as pessoas.',
               style: AppTextStyles.corpoMinimo),
           const SizedBox(height: 14),
           Grid9Box(
-            avaliacoes: _avaliadas,
+            avaliacoes: avaliadas,
             pesos: _pesos,
             legendas: _legendas,
             onTapColaborador: _abrirDetalhe,

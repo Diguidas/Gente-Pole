@@ -285,7 +285,16 @@ class LojinhaFuncionarioModel {
 
   static double _parseDouble(dynamic v) {
     if (v == null) return 0.0;
-    return double.tryParse(v.toString().trim()) ?? 0.0;
+    // O SAP manda negativo com o sinal no final ("250.74-"): sem tratar isso
+    // o número virava 0 e o limite negativo passava como se fosse zero.
+    var s = v.toString().trim();
+    var neg = false;
+    if (s.endsWith('-')) {
+      neg = true;
+      s = s.substring(0, s.length - 1).trim();
+    }
+    final n = double.tryParse(s) ?? 0.0;
+    return neg ? -n : n;
   }
 }
 

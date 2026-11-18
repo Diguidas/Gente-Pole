@@ -234,12 +234,82 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   /// Bloqueio de 45 dias por 3 faltas consecutivas sem justificativa.
   bool get _estaBloqueado => _statusCiclo?['bloqueado'] == true;
 
+  /// Já usou o limite de agendamentos da janela exibida (1 por semana): a grade
+  /// fica desabilitada em vez de deixar escolher um horário e só então recusar.
+  bool get _limiteCicloAtingido => _statusCiclo?['limite_atingido'] == true;
+
   /// Se [data] ainda tem alguma vaga real pra agendar (considerando slots
   /// ocupados/passados e limite de setor) — usado pra pré-selecionar o
   /// primeiro dia com vaga de verdade, não só o primeiro dia do ciclo.
   bool _temVagaDisponivelEm(String data) => _vagasRestantesEm(data) > 0;
 
   // ── Ações ────────────────────────────────────────────────────────────────
+
+  /// Pop-up com as diretrizes de agendamento e cancelamento: só segue se a
+  /// pessoa confirmar que está ciente.
+  Future<bool> _confirmarCiencia() async {
+    Widget item(String t, {bool destaque = false}) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Icon(Icons.circle,
+                  size: 6,
+                  color: destaque ? Colors.red.shade700 : AppColors.laranja),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(t,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        height: 1.4,
+                        fontWeight: destaque ? FontWeight.w700 : FontWeight.w400,
+                        color: destaque ? Colors.red.shade700 : null))),
+          ]),
+        );
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Você está ciente das regras?',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 17)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Programa Bem na Pole — agendamento e cancelamento da massoterapia',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: AppColors.cinzaTexto)),
+              const SizedBox(height: 12),
+              item('Cada colaborador pode fazer apenas 1 agendamento por semana.'),
+              item('Os agendamentos e atendimentos ocorrem somente em dias úteis.'),
+              item('Você pode cancelar pelo sistema com pelo menos $_horasLimiteCancelamento horas de antecedência do horário. O horário volta para a agenda para outro colaborador.'),
+              item('Se não conseguir cancelar no prazo, apresente justificativa ao Sesmt.'),
+              item('Atenção: três faltas consecutivas sem justificativa impedem novos agendamentos por 45 dias.',
+                  destaque: true),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Voltar', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.laranja,
+                foregroundColor: Colors.white),
+            child: Text('Estou ciente, agendar',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
 
   Future<void> _agendar() async {
     if (_dataSelecionada == null || _horarioSelecionado == null) return;
@@ -302,6 +372,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
       if (confirmar != true) return;
     }
 
+    // Ciência das diretrizes (Programa Bem na Pole) antes de cada agendamento.
+    if (!await _confirmarCiencia()) return;
+
     setState(() => _salvando = true);
 
     final resultado = await _api.agendarMassoterapia(
@@ -342,7 +415,10 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     }
   }
 
-  static const _minutosLimiteCancelamento = 15;
+  /// Antecedência mínima (horas) para cancelar — vem da configuração do
+  /// servidor (padrão 36 h, diretrizes do Programa Bem na Pole).
+  int get _horasLimiteCancelamento =>
+      (_statusCiclo?['cancelamento_horas'] as num?)?.toInt() ?? 36;
 
   /// Combina data + horário do agendamento num DateTime (horário de Brasília).
   DateTime? _dataHoraAgendamento(MassoterapiaAgendamentoModel a) {
@@ -362,9 +438,8 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
   bool _podeCancelar(MassoterapiaAgendamentoModel a) {
     final dataHora = _dataHoraAgendamento(a);
     if (dataHora == null) return true;
-    final limite =
-        dataHora.subtract(const Duration(minutes: _minutosLimiteCancelamento));
-    return _brasilia().isBefore(limite);
+    final limite = dataHora.subtract(Duration(hours: _horasLimiteCancelamento));
+    return !_brasilia().isAfter(limite);
   }
 
   Future<void> _cancelar() async {
@@ -373,8 +448,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
 
     if (!_podeCancelar(agend)) {
       _mostrarErro(
-          'Cancelamento não permitido: só é possível cancelar até '
-          '$_minutosLimiteCancelamento minutos antes do horário.');
+          'Cancelamento não permitido: só é possível cancelar com pelo menos '
+          '$_horasLimiteCancelamento horas de antecedência. Se precisar, '
+          'apresente justificativa ao Sesmt.');
       return;
     }
 
@@ -770,7 +846,7 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           else if (a.status == 'AGENDADO')
             Tooltip(
               message:
-                  'Não é mais possível cancelar (menos de $_minutosLimiteCancelamento min para o horário).',
+                  'Não é mais possível cancelar (faltam menos de $_horasLimiteCancelamento h para o horário). Apresente justificativa ao Sesmt.',
               child: Icon(Icons.lock_clock_rounded,
                   color: Colors.white.withOpacity(0.7), size: 18),
             ),
@@ -962,7 +1038,14 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
         : restam == 1
         ? AppColors.magenta
         : AppColors.laranja;
-    final grupo = g['grupo']?.toString() ?? '';
+    final grupo = '';
+    final totalVagas = (g['vagas_grupo'] as num?)?.toInt() ?? 0;
+    final usadasVagas = (g['usadas'] as num?)?.toInt() ?? 0;
+    final consumo = '$usadasVagas de $totalVagas vagas consumidas';
+    final nomeAgrup = (g['subgrupo'] ?? g['grupo'] ?? '').toString();
+    final quem = nomeAgrup.isEmpty
+        ? 'Seu agrupamento'
+        : 'Você está no agrupamento $nomeAgrup';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -977,10 +1060,10 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
           Expanded(
             child: Text(
               restam == 0
-                  ? 'Não há mais vagas para seu grupo neste dia.'
+                  ? '$quem: as vagas acabaram neste dia ($consumo).'
                   : restam == 1
-                  ? 'Última vaga do seu grupo neste dia!'
-                  : '$restam vagas para seu grupo neste dia',
+                  ? '$quem: resta 1 vaga disponível neste dia! ($consumo)'
+                  : '$quem: $restam vagas disponíveis neste dia ($consumo).',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: cor,
@@ -1095,7 +1178,8 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     final passados = _slotsPassados;
     final temMeu =
         _meuAgendamento != null && _meuAgendamento!.status != 'CANCELADO';
-    final bloqueado = _setorLotado || temMeu || _estaBloqueado;
+    final bloqueado =
+        _setorLotado || temMeu || _estaBloqueado || _limiteCicloAtingido;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

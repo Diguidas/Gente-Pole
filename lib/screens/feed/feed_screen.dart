@@ -25,6 +25,7 @@ import 'package:gentepole/screens/ti/chamados_ti_screen.dart';
 import 'package:gentepole/services/api_service.dart';
 import 'package:gentepole/widgets/enquete_card.dart';
 import 'package:gentepole/widgets/humor_painel_card.dart';
+import 'package:gentepole/widgets/cardapio_aviso_card.dart';
 import 'package:gentepole/widgets/mencao.dart';
 import 'package:gentepole/widgets/texto_recolhivel.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1270,6 +1271,8 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_pesquisasPendentes.isNotEmpty) _buildPesquisasPendentesCard(),
       for (final a in _agendamentosSaude) _buildAgendamentoSaudeCard(a),
       if (_exameAgendado != null) _buildExameCard(_exameAgendado!),
+      // "Prepare-se para o almoço" (se a Nutrição ligou e estiver no horário).
+      const CardapioAvisoCard(),
       _InlineComposer(
         api: _api,
         onPublicado: () => _carregarFeed(reiniciar: true),

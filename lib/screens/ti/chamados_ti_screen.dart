@@ -107,7 +107,8 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
       final info = _status[workItemId.toString()] as Map<String, dynamic>?;
       final estado = info?['state'] as String?;
       final coluna = info?['boardColumn'] as String?;
-      final concluido = estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído';
+      final removido = (estado ?? '').toLowerCase() == 'removed';
+      final concluido = !removido && (estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído');
       if (concluido && !_avaliados.contains(workItemId)) return c;
     }
     return null;
@@ -248,12 +249,18 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                       final tipoSolicitacao = (info?['tipoSolicitacao'] as String?) ?? (c['tipo_solicitacao'] as String?);
                       final departamento = (info?['departamento'] as String?) ?? (c['departamento'] as String?);
                       final nivelUrgencia = (info?['nivelUrgencia'] as String?) ?? (c['nivel_urgencia'] as String?);
-                      final concluido = estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído';
-                      final etapaAtual = coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...');
+                      // Card removido do board: fica vermelho e sem avaliação/andamento.
+                      final removido = (estado ?? '').toLowerCase() == 'removed';
+                      final concluido = !removido && (estado == 'Closed' || _etapaLimpa(coluna ?? '') == 'Concluído');
+                      final etapaAtual = removido
+                          ? 'Removido'
+                          : (coluna != null ? _etapaLimpa(coluna) : (estado ?? 'Carregando...'));
                       final indiceEtapa = _indiceEtapa(coluna, estado);
-                      final progresso = (indiceEtapa + 1) / _etapasBoard.length;
-                      final semRetorno = tiSemRetorno(info);
-                      final corEtapa = semRetorno ? const Color(0xFFD97706) : _corEtapa(indiceEtapa, concluido);
+                      final progresso = removido ? 1.0 : (indiceEtapa + 1) / _etapasBoard.length;
+                      final semRetorno = !removido && tiSemRetorno(info);
+                      final corEtapa = removido
+                          ? AppColors.erro
+                          : (semRetorno ? const Color(0xFFD97706) : _corEtapa(indiceEtapa, concluido));
                       final pedeAvaliacao = concluido && !_avaliados.contains(workItemId);
                       final temNovidade = c['notificacao_pendente'] as bool? ?? false;
 
@@ -261,10 +268,12 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(
+                              color: removido ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
+                              width: removido ? 1.5 : 1),
                         ),
                         child: Material(
-                          color: Colors.white,
+                          color: removido ? const Color(0xFFFEF2F2) : Colors.white,
                           borderRadius: BorderRadius.circular(14),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(14),
@@ -311,7 +320,12 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
                                       children: [
                                         Row(
                                           children: [
-                                            Icon(concluido ? Icons.check_circle_rounded : Icons.autorenew_rounded, size: 15, color: corEtapa),
+                                            Icon(
+                                                removido
+                                                    ? Icons.cancel_rounded
+                                                    : (concluido ? Icons.check_circle_rounded : Icons.autorenew_rounded),
+                                                size: 15,
+                                                color: corEtapa),
                                             const SizedBox(width: 6),
                                             Expanded(
                                               child: Text(etapaAtual,

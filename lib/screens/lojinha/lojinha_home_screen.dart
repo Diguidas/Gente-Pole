@@ -10,7 +10,11 @@ import 'lojinha_pedidos_screen.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
 
 class LojinhaHomeScreen extends StatefulWidget {
-  const LojinhaHomeScreen({super.key});
+  /// Abre direto em "Meus Pedidos" (usado pelo "Entendi" do aviso de pedido
+  /// reenviado pelo DP e integrado).
+  final bool abrirPedidos;
+
+  const LojinhaHomeScreen({super.key, this.abrirPedidos = false});
 
   @override
   State<LojinhaHomeScreen> createState() => _LojinhaHomeScreenState();
@@ -82,6 +86,12 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     _carregarPreferenciaOcultar();
     _carregar();
     LojinhaFilaService.instance.confirmacoes.addListener(_aoConfirmarFila);
+    LojinhaFilaService.instance.addListener(_aoMudarFila);
+    if (widget.abrirPedidos) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _abrirPedidos();
+      });
+    }
   }
 
   /// Um pedido da fila foi confirmado no SAP: recarrega limite e pedidos.
@@ -89,9 +99,15 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     if (mounted) _carregar();
   }
 
+  /// A fila mudou (ex.: pedido com erro): redesenha os bloqueios.
+  void _aoMudarFila() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     LojinhaFilaService.instance.confirmacoes.removeListener(_aoConfirmarFila);
+    LojinhaFilaService.instance.removeListener(_aoMudarFila);
     super.dispose();
   }
 
@@ -450,7 +466,11 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             context,
                             icone: Icons.add_shopping_cart_rounded,
                             titulo: 'Novo Pedido',
-                            subtitulo: (_sapEsgotado && _exclusivoEsgotado)
+                            subtitulo: _pedidoComErro
+                                ? 'Pedido com erro: fale com o DP'
+                                : _semLimite
+                                ? 'Sem limite disponível'
+                                : (_sapEsgotado && _exclusivoEsgotado)
                                 ? 'Você já realizou a compra liberada deste período'
                                 : _limiteItensAtingido
                                     ? 'Você já realizou a compra liberada deste período'
@@ -821,20 +841,41 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   bool get _sapDisponivel => _liberadaGeral && !_sapEsgotado;
   bool get _exclusivoDisponivel =>
       !_exclusivoEsgotado && _exclusivosLiberadosAgora > 0;
-  bool get _nadaDisponivelAgora => !_sapDisponivel && !_exclusivoDisponivel;
+  /// Limite do SAP zerado ou negativo: não dá para comprar (só vale quando o
+  /// SAP respondeu; sem resposta o limite é desconhecido, não zero).
+  bool get _semLimite => _dados != null && _dados!.limiteDisp <= 0;
+
+  /// Pedido que deu erro e o DP ainda não resolveu (reenviar/cancelar): bloqueia
+  /// novas compras até o DP agir.
+  bool get _pedidoComErro => LojinhaFilaService.instance.temErroPendente;
+
+  bool get _nadaDisponivelAgora =>
+      _semLimite ||
+      _pedidoComErro ||
+      (!_sapDisponivel && !_exclusivoDisponivel);
 
   /// Explica, por tipo, por que não dá para comprar agora (já usou o pedido do
   /// período ou não está liberado neste momento). Nulo quando os dois tipos
   /// estão disponíveis.
   Widget? _avisoPedidosUsados() {
     final linhas = <String>[];
-    if (!_liberadaGeral) {
+    final geral = _pedidoComErro || _semLimite;
+    if (_pedidoComErro) {
+      linhas.add(
+          'Seu último pedido deu erro e não foi realizado. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.');
+    } else if (_semLimite) {
+      final v = _dados!.limiteDisp;
+      linhas.add(
+          'Seu limite disponível está ${v < 0 ? 'negativo' : 'zerado'} (${_moeda(v)}). Não é possível fazer novos pedidos.');
+    } else if (!_liberadaGeral) {
       linhas.add('Produtos Pole: não estão liberados neste momento.');
     } else if (_sapEsgotado) {
       linhas.add(
           'Produtos Pole: você já realizou o pedido liberado deste período.');
     }
-    if (_exclusivoEsgotado) {
+    if (geral) {
+      // o motivo geral já foi dito; sem avisos por tipo.
+    } else if (_exclusivoEsgotado) {
       linhas.add(
           'Produtos ovos: você já realizou o pedido liberado deste período.');
     } else if (_exclusivosLiberadosAgora == 0 && _temExclusivos) {

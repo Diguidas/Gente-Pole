@@ -96,7 +96,7 @@ class _VagasGestorScreenState extends State<VagasGestorScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Aumento de Quadro',
+                              'Nova Vaga',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
                                 fontSize: 20,
