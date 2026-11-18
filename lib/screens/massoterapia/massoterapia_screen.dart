@@ -288,7 +288,6 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
                       fontSize: 12, color: AppColors.cinzaTexto)),
               const SizedBox(height: 12),
               item('Cada colaborador pode fazer apenas 1 agendamento por semana.'),
-              item('Os agendamentos e atendimentos ocorrem somente em dias úteis.'),
               item('Você pode cancelar pelo sistema com pelo menos $_horasLimiteCancelamento horas de antecedência do horário. O horário volta para a agenda para outro colaborador.'),
               item('Se não conseguir cancelar no prazo, apresente justificativa ao Sesmt.'),
               item('Atenção: três faltas consecutivas sem justificativa impedem novos agendamentos por 45 dias.',
