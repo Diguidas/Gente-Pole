@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme.dart';
 import '../../services/api_service.dart';
+import '../../widgets/texto_recolhivel.dart';
 
 const _corTi = Color(0xFFE64A19);
 
@@ -346,7 +347,12 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                         if (descricao.isNotEmpty) ...[
                           Text('Descrição', style: AppTextStyles.corpoMenor.copyWith(fontWeight: FontWeight.w700, color: AppColors.dark)),
                           const SizedBox(height: 6),
-                          Text(descricao, style: AppTextStyles.corpoCinza.copyWith(height: 1.4)),
+                          // Só o começo; "Ver mais..." abre o texto inteiro.
+                          TextoRecolhivel(
+                            texto: descricao,
+                            corLink: _corTi,
+                            child: Text(descricao, style: AppTextStyles.corpoCinza.copyWith(height: 1.4)),
+                          ),
                           const SizedBox(height: 20),
                         ],
                         if (info != null) ...[
@@ -420,7 +426,26 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
                     top: false,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: semRetorno
+                      child: (concluido || removido)
+                          ? Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                  color: AppColors.cinzaClaro,
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: Row(children: [
+                                const Icon(Icons.lock_outline_rounded,
+                                    size: 18, color: AppColors.cinzaTexto),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                      removido
+                                          ? 'Este chamado foi removido. Não é possível comentar.'
+                                          : 'Este chamado foi concluído. Não é possível comentar. Se precisar, abra um novo chamado.',
+                                      style: AppTextStyles.corpoCinza),
+                                ),
+                              ]),
+                            )
+                          : semRetorno
                           ? _blocoSemRetorno()
                           : Column(
                         children: [

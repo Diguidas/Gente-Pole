@@ -984,8 +984,8 @@ class ApiService {
   }
 
   /// Comunicados em pop-up que devem aparecer agora para o colaborador: no
-  /// perÃ­odo (hoje entre popup_inicio e popup_fim), destinatÃ¡rio compatÃ­vel e
-  /// ainda sem "nÃ£o mostrar novamente". Do mais recente ao mais antigo.
+  /// período (hoje entre popup_inicio e popup_fim), destinatário compatível e
+  /// ainda sem "não mostrar novamente". Do mais recente ao mais antigo.
   Future<List<Map<String, dynamic>>> buscarPopupsComunicado() async {
     final colab = colaboradorAtual;
     if (colab == null) return [];
@@ -995,6 +995,7 @@ class ApiService {
     final data = await _client
         .from('comunicados')
         .select()
+        .neq('ativo', false)
         .eq('popup_ativo', true)
         .lte('popup_inicio', hoje)
         .gte('popup_fim', hoje)
@@ -1014,7 +1015,7 @@ class ApiService {
     return visiveis.where((m) => !ids.contains((m['id'] as num).toInt())).toList();
   }
 
-  /// "NÃ£o mostrar novamente": o pop-up nÃ£o aparece mais para este colaborador.
+  /// "Não mostrar novamente": o pop-up não aparece mais para este colaborador.
   Future<void> dispensarPopupComunicado(int comunicadoId) async {
     final colab = colaboradorAtual;
     if (colab == null) return;
@@ -1027,7 +1028,8 @@ class ApiService {
     final data = await _client
         .from('comunicados')
         .select()
-        .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra na lista
+        .neq('ativo', false)
+        .neq('exibir_no_feed', false) // 'só pop-up' não entra na lista
         .order('criado_em', ascending: false);
 
     final filtrados = await _filtrarDestinatarios(
@@ -1042,7 +1044,8 @@ class ApiService {
     final data = await _client
         .from('comunicados')
         .select()
-        .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra na lista
+        .neq('ativo', false)
+        .neq('exibir_no_feed', false) // 'só pop-up' não entra na lista
         .order('criado_em', ascending: false);
 
     final filtrados = await _filtrarDestinatarios(
@@ -1345,6 +1348,7 @@ class ApiService {
     final setoresComHierarquia = <String>{};
     final meus = <int>{};
     final lideresDiretos = <int, ({int rank, int responsavel})>{};
+    final filhosDe = <int, Set<int>>{};
     final bloqueados = (apenasLiderDireto && funcionalidade != null)
         ? await _colaboradoresComFuncionalidadeBloqueada(funcionalidade)
         : <int>{};
@@ -1363,8 +1367,25 @@ class ApiService {
             (rank == atual.rank && resp < atual.responsavel)) {
           lideresDiretos[colabId] = (rank: rank, responsavel: resp);
         }
-      } else if (h['responsavel_id'] == responsavelId) {
-        meus.add(h['colaborador_id'] as int);
+      } else {
+        filhosDe
+            .putIfAbsent(h['responsavel_id'] as int, () => <int>{})
+            .add(h['colaborador_id'] as int);
+      }
+    }
+    // Visão completa: tudo que está abaixo, em cadeia (liderados dos líderes
+    // do supervisor também entram), mesmo sem a linha direta supervisor→pessoa.
+    if (!apenasLiderDireto && responsavelId != null) {
+      final visitados = <int>{responsavelId};
+      final fila = <int>[responsavelId];
+      while (fila.isNotEmpty) {
+        final atual = fila.removeLast();
+        for (final f in filhosDe[atual] ?? const <int>{}) {
+          if (visitados.add(f)) {
+            meus.add(f);
+            fila.add(f);
+          }
+        }
       }
     }
     if (apenasLiderDireto) {
@@ -1387,11 +1408,12 @@ class ApiService {
   /// IDs da equipe sob [responsavelId] nesses setores, no modelo de líder
   /// direto. `null` = sem filtro.
   Future<Set<int>?> _idsEquipeDoResponsavel(
-      List<String> setores, int? responsavelId, String funcionalidade) async {
+      List<String> setores, int? responsavelId, String funcionalidade,
+      {bool apenasDireto = false}) async {
     if (responsavelId == null) return null;
     final equipe = await buscarEquipeGestorMultiSetor(setores,
         responsavelId: responsavelId,
-        apenasLiderDireto: true,
+        apenasLiderDireto: apenasDireto,
         funcionalidade: funcionalidade);
     return equipe.map((c) => c['id'] as int).toSet();
   }
@@ -2666,15 +2688,22 @@ class ApiService {
     return lista;
   }
 
-  /// "Minha Equipe": coordenador pra cima vê toda a equipe abaixo; supervisor,
-  /// encarregado e líder só a equipe direta.
+  /// "Minha Equipe": toda liderança (de gerente geral a líder) vê tudo que
+  /// está abaixo dela, em cadeia.
   Future<List<ColaboradorModel>> buscarMinhaEquipeVisao() async {
-    final id = colaboradorAtual?.id;
-    final veTudo = id == null ? true : await veTodaEquipeAbaixo(id);
-    return buscarMinhaEquipe(
-      apenasLiderDireto: !veTudo,
-      funcionalidade: 'minha_equipe_gestor',
-    );
+    return buscarMinhaEquipe(funcionalidade: 'minha_equipe_gestor');
+  }
+
+  /// Lideranças cadastradas (setor_hierarquia) dos setores informados — usado
+  /// em "Lideranças abaixo de você" na Minha Equipe agrupada por setor.
+  Future<List<Map<String, dynamic>>> listarHierarquiaDosSetores(
+      List<String> setores) async {
+    if (setores.isEmpty) return [];
+    final res = await _client
+        .from('setor_hierarquia')
+        .select('setor, nivel, colaborador_id, colaboradores(id, nome)')
+        .inFilter('setor', setores);
+    return List<Map<String, dynamic>>.from(res as List);
   }
 
   /// Hierarquia já resolvida de UM colaborador (nível + nome do responsável)
@@ -2829,17 +2858,45 @@ class ApiService {
   /// regra do tipo 'geral' — sem isso, fica só consulta (ver histórico),
   /// sem catálogo pra comprar. [branch] é `ColaboradorModel.branch`. Regra
   /// 'geral' também respeita dia/horário, igual as de exclusivo.
-  Future<bool> lojinhaLiberadaParaFilial(String? branch) async {
-    if (branch == null || branch.isEmpty) return false;
-    final data = await _client
-        .from('lojinha_regras')
-        .select('filiais, dias_semana, hora_inicio, hora_fim, horarios_dia')
-        .eq('tipo', 'geral');
+  ///
+  /// Com [colaboradorId], a regra também pode liberar a PESSOA (além da filial):
+  /// quem está listado em alguma regra segue só as regras em que foi incluído,
+  /// e a filial de origem dele deixa de valer. Regra só de colaboradores (com
+  /// `colaboradores` e sem `filiais`) não vale para ninguém por filial.
+  Future<bool> lojinhaLiberadaParaFilial(String? branch,
+      {int? colaboradorId}) async {
+    List<Map<String, dynamic>> regras;
+    try {
+      regras = List<Map<String, dynamic>>.from(await _client
+          .from('lojinha_regras')
+          .select(
+              'filiais, dias_semana, hora_inicio, hora_fim, horarios_dia, colaboradores')
+          .eq('tipo', 'geral') as List);
+    } catch (_) {
+      // Coluna `colaboradores` ainda não existe (migration pendente): segue só
+      // por filial, como era antes.
+      regras = List<Map<String, dynamic>>.from(await _client
+          .from('lojinha_regras')
+          .select('filiais, dias_semana, hora_inicio, hora_fim, horarios_dia')
+          .eq('tipo', 'geral') as List);
+    }
     final agora = DateTime.now();
-    for (final r in data as List) {
+    bool colabNaRegra(Map<String, dynamic> r) =>
+        colaboradorId != null &&
+        ((r['colaboradores'] as List?) ?? const [])
+            .any((e) => (e as num).toInt() == colaboradorId);
+
+    final dele = regras.where(colabNaRegra).toList();
+    if (dele.isNotEmpty) {
+      return dele.any((r) => _regraGeralDisponivelAgora(r, agora));
+    }
+    if (branch == null || branch.isEmpty) return false;
+    for (final r in regras) {
+      final colabs = (r['colaboradores'] as List?) ?? const [];
       final filiais = (r['filiais'] as List?)?.cast<String>() ?? [];
+      if (colabs.isNotEmpty && filiais.isEmpty) continue; // só de colaboradores
       if (filiais.isNotEmpty && !filiais.contains(branch)) continue;
-      if (_regraGeralDisponivelAgora(r as Map<String, dynamic>, agora)) return true;
+      if (_regraGeralDisponivelAgora(r, agora)) return true;
     }
     return false;
   }
@@ -3070,6 +3127,7 @@ class ApiService {
     _ultimoAquecimentoLojinha = agora;
     final liberada = await lojinhaLiberadaParaFilial(
       chaveFilialCardapio(empresa: col.empresa, branch: col.branch),
+      colaboradorId: col.id,
     );
     if (!liberada || _funcionarioEmAndamento != null) return;
     _descartarAquecimento = false;
@@ -5550,7 +5608,8 @@ class ApiService {
       final comData = await _client
           .from('comunicados')
           .select()
-          .neq('exibir_no_feed', false) // 'sÃ³ pop-up' nÃ£o entra no feed
+          .neq('ativo', false)
+          .neq('exibir_no_feed', false) // 'só pop-up' não entra no feed
           .gte('criado_em', _corteFeedIso())
           .order('criado_em', ascending: false)
           .limit(100);
@@ -6510,6 +6569,62 @@ class ApiService {
     ];
   }
 
+  // ── Quem pode abrir ciclo (configuração feita no admin) ──────────────────
+
+  /// Da maior para a menor liderança (mesma ordem do admin).
+  static const _niveisHierarquiaSetor = [
+    'gerente_geral',
+    'gestor',
+    'coordenador',
+    'supervisor',
+    'encarregado',
+    'lider',
+  ];
+
+  /// Nível mínimo da hierarquia que pode abrir ciclo para o próprio setor.
+  /// 'lider' (padrão) = todas as lideranças.
+  Future<String> buscarNivelMinimoAbrirCiclo() async {
+    try {
+      final r = await _client
+          .from('avaliacao_config')
+          .select('nivel_minimo_abrir_ciclo')
+          .eq('id', 1)
+          .maybeSingle();
+      final n = r?['nivel_minimo_abrir_ciclo'] as String?;
+      return (n != null && _niveisHierarquiaSetor.contains(n)) ? n : 'lider';
+    } catch (_) {
+      return 'lider';
+    }
+  }
+
+  /// Dos [setores], quais o colaborador pode abrir ciclo: com o nível mínimo
+  /// padrão ('lider') são todos; mais restrito, só os setores onde ele tem
+  /// atribuição na hierarquia no nível mínimo ou acima.
+  Future<List<String>> setoresOndePodeAbrirCiclo(
+      int colaboradorId, List<String> setores) async {
+    if (setores.isEmpty) return setores;
+    final minimo = await buscarNivelMinimoAbrirCiclo();
+    if (minimo == 'lider') return setores;
+    final limite = _niveisHierarquiaSetor.indexOf(minimo);
+    final res = await _client
+        .from('setor_hierarquia')
+        .select('setor, nivel')
+        .eq('colaborador_id', colaboradorId)
+        .inFilter('setor', setores);
+    final permitidos = <String>{};
+    for (final r in res as List) {
+      final idx = _niveisHierarquiaSetor.indexOf(r['nivel'] as String);
+      if (idx >= 0 && idx <= limite) permitidos.add(r['setor'] as String);
+    }
+    return setores.where(permitidos.contains).toList();
+  }
+
+  /// Ciclo aberto (vigente) que já vale para o setor — do próprio setor ou
+  /// geral do RH — ou null. Enquanto existir, não se abre outro para o setor.
+  /// (Este app não mantém cache de ciclos: a consulta é sempre ao vivo.)
+  Future<Map<String, dynamic>?> cicloVigenteDoSetor(String setor) =>
+      buscarCicloAbertoParaSetor(setor);
+
   /// Cria um ciclo (o gestor abre só para o próprio setor; pesos devem somar
   /// 100). Porta de `criarCicloAvaliacao` do gentepole_admin.
   Future<int> criarCicloAvaliacao({
@@ -6534,6 +6649,16 @@ class ApiService {
     if (dataInicio != null && dataFim != null && dataFim.isBefore(dataInicio)) {
       throw ArgumentError(
           'A data de fim não pode ser anterior à data de início.');
+    }
+    // Ciclo de gestor (por setor): enquanto o setor tiver um ciclo em
+    // andamento, não abre outro.
+    if (setor != null) {
+      final vigente = await cicloVigenteDoSetor(setor);
+      if (vigente != null) {
+        throw StateError(
+            'O setor já tem um ciclo em andamento ("${vigente['nome']}"). '
+            'Só dá para abrir outro depois que ele terminar.');
+      }
     }
     final res = await _client
         .from('avaliacao_ciclos')
@@ -8108,7 +8233,8 @@ class ApiService {
     // Aviso pro gestor: só a equipe sob ele (líder direto).
     final idsEquipe = (paraGestor && setores != null)
         ? await _idsEquipeDoResponsavel(setores, colaboradorAtual?.id,
-            'avaliar_periodo_experiencia_gestor')
+            'avaliar_periodo_experiencia_gestor',
+            apenasDireto: true)
         : null;
     for (final c in List<Map<String, dynamic>>.from(data as List)) {
       if (idsEquipe != null && !idsEquipe.contains(c['id'])) continue;

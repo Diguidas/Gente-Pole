@@ -17,6 +17,8 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
   late Future<List<ColaboradorModel>> _futureEquipe;
   final _buscaCtrl = TextEditingController();
   String _busca = '';
+  List<Map<String, dynamic>> _hierarquiaSetores = [];
+  List<String> _setoresAcesso = [];
 
   @override
   void initState() {
@@ -39,7 +41,12 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
     try {
       final setores = await _api.buscarSetoresEfetivosDoGestor();
       if (setores.isEmpty) throw 'Nenhum setor associado a este gestor.';
-      return await _api.buscarMinhaEquipeVisao();
+      _setoresAcesso = setores;
+      final equipe = await _api.buscarMinhaEquipeVisao();
+      try {
+        _hierarquiaSetores = await _api.listarHierarquiaDosSetores(setores);
+      } catch (_) {/* sem lideranças: só a lista de colaboradores */}
+      return equipe;
     } catch (e) {
       if (e is String) rethrow;
       throw 'Erro ao carregar equipe: $e';
@@ -295,36 +302,117 @@ class _MinhaEquipeScreenState extends State<MinhaEquipeScreen> {
     return 'Faltam $dias dias p/ aniversário';
   }
 
-  Widget _tituloSetor(String setor, int qtd, {bool primeiro = false}) => Padding(
-        padding: EdgeInsets.only(top: primeiro ? 0 : 10, bottom: 8),
-        child: Row(children: [
-          const Icon(Icons.business_outlined, size: 15, color: AppColors.cinzaTexto),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(setor,
-                style: GoogleFonts.poppins(
-                    fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.dark)),
-          ),
-          Text('$qtd',
-              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.cinzaTexto)),
-        ]),
-      );
+  static const _rotuloNivel = {
+    'gerente_geral': 'Gerente Geral',
+    'gestor': 'Gestor',
+    'coordenador': 'Coordenador',
+    'supervisor': 'Supervisor',
+    'encarregado': 'Encarregado',
+    'lider': 'Líder',
+  };
 
-  /// Quem lidera mais de um setor vê a equipe separada por setor; com um
-  /// setor só, a lista segue corrida como sempre.
+  /// Lideranças do setor que estão abaixo de mim (chips nível: nome).
+  Widget _liderancasDoSetor(String setor, Set<int> idsEquipe) {
+    final itens = _hierarquiaSetores
+        .where((h) =>
+            h['setor'] == setor &&
+            h['colaboradores'] is Map &&
+            idsEquipe.contains((h['colaborador_id'] as num?)?.toInt()))
+        .toList();
+    if (itens.isEmpty) return const SizedBox.shrink();
+    const ordem = [
+      'gerente_geral', 'gestor', 'coordenador', 'supervisor', 'encarregado', 'lider'
+    ];
+    itens.sort((a, b) => ordem
+        .indexOf(a['nivel'] as String)
+        .compareTo(ordem.indexOf(b['nivel'] as String)));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Lideranças abaixo de você',
+                style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.cinzaTexto)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              for (final h in itens)
+                Chip(
+                  backgroundColor: AppColors.laranja.withOpacity(0.08),
+                  side: BorderSide.none,
+                  label: Text(
+                      '${_rotuloNivel[h['nivel']] ?? h['nivel']}: ${(h['colaboradores'] as Map)['nome']}',
+                      style: GoogleFonts.poppins(fontSize: 11)),
+                ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Quem lidera mais de um setor vê a equipe agrupada por setor (expansível,
+  /// com as lideranças abaixo dele); com um setor só, a lista segue corrida.
   List<Widget> _cardsPorSetor(List<ColaboradorModel> equipe) {
     final grupos = <String, List<ColaboradorModel>>{};
     for (final c in equipe) {
       final s = (c.setor ?? '').trim();
       grupos.putIfAbsent(s.isEmpty ? 'Sem setor' : s, () => []).add(c);
     }
+    // Setores com acesso mas sem ninguém na cadeia também aparecem (vazios).
+    if (_busca.trim().isEmpty) {
+      for (final s in _setoresAcesso) {
+        grupos.putIfAbsent(s, () => []);
+      }
+    }
     if (grupos.length <= 1) return equipe.map(_cardColaborador).toList();
     final nomes = grupos.keys.toList()..sort();
+    final buscando = _busca.trim().isNotEmpty;
+    final idsEquipe = {for (final c in equipe) c.id};
     return [
-      for (var i = 0; i < nomes.length; i++) ...[
-        _tituloSetor(nomes[i], grupos[nomes[i]]!.length, primeiro: i == 0),
-        ...grupos[nomes[i]]!.map(_cardColaborador),
-      ],
+      for (final setor in nomes)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          // Material (não Container com cor): o ListTile do ExpansionTile
+          // pinta fundo e splash no Material mais próximo.
+          child: Material(
+            color: Colors.white,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                // ValueKey (nunca PageStorageKey: colide com a rolagem interna).
+                key: ValueKey('equipe_$setor$buscando'),
+                initiallyExpanded: buscando,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                title: Text(setor,
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark)),
+                subtitle: Text(
+                    grupos[setor]!.isEmpty
+                        ? 'Ninguém na sua equipe neste setor'
+                        : '${grupos[setor]!.length} ${grupos[setor]!.length == 1 ? 'colaborador' : 'colaboradores'}',
+                    style: GoogleFonts.poppins(
+                        fontSize: 11, color: AppColors.cinzaTexto)),
+                children: [
+                  _liderancasDoSetor(setor, idsEquipe),
+                  ...grupos[setor]!.map(_cardColaborador),
+                ],
+              ),
+            ),
+          ),
+        ),
     ];
   }
 

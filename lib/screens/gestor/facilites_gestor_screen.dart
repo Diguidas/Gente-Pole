@@ -53,8 +53,7 @@ class _FacilitesGestorScreenState extends State<FacilitesGestorScreen> {
         });
         return;
       }
-      final equipe = await _api.buscarMinhaEquipe(
-          apenasLiderDireto: true, funcionalidade: 'facilites_gestor');
+      final equipe = await _api.buscarMinhaEquipe();
       final todas = await _api.listarSolicitacoes(abertoPorId: gestor.id);
       if (!mounted) return;
       setState(() {

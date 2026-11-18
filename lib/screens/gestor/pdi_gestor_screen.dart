@@ -92,8 +92,7 @@ class _PdiGestorScreenState extends State<PdiGestorScreen> {
       _erro = null;
     });
     try {
-      final equipe = await _api.buscarMinhaEquipe(
-          apenasLiderDireto: true, funcionalidade: 'pdi_gestor');
+      final equipe = await _api.buscarMinhaEquipe();
       final pdis = await _api.listarPdisDaEquipe(equipe.map((c) => c.id).toList());
       if (!mounted) return;
       setState(() {

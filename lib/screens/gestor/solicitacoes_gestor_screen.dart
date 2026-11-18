@@ -64,8 +64,7 @@ class _SolicitacoesGestorScreenState extends State<SolicitacoesGestorScreen> {
       setState(() => _loading = false);
       return;
     }
-    final equipe = await _api.buscarMinhaEquipe(
-        apenasLiderDireto: true, funcionalidade: 'solicitacoes_gestor');
+    final equipe = await _api.buscarMinhaEquipe();
     // Junta o que precisa da aprovação dele (gestorId) com o que ele mesmo
     // abriu direto (Móveis, Swile, Uber, Adiantamento de 13º).
     final results = await Future.wait([

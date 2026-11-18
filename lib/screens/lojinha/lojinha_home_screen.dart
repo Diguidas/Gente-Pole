@@ -182,6 +182,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
         empresa: _api.colaboradorAtual?.empresa,
         branch: _api.colaboradorAtual?.branch,
       ),
+      colaboradorId: _api.colaboradorAtual?.id,
     );
     var liberada = liberadaGeral;
     var exclusivosAgora = 0;

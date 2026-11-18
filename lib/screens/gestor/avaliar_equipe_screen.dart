@@ -30,6 +30,10 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
   bool _loading = true;
   String? _erro;
   String? _meuSetor;
+  List<String> _setoresGestor = [];
+  List<Map<String, dynamic>> _ciclos = [];
+  Map<int, List<Map<String, dynamic>>> _avalPorCiclo = {};
+  int? _cicloSelId;
   Map<String, dynamic>? _ciclo;
   List<Map<String, dynamic>> _avaliacoes = [];
 
@@ -59,16 +63,21 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       // Todos os setores sob responsabilidade do gestor (próprio + atribuídos
       // + hierarquia), não só o setor em que ele está lotado.
       final setores = await _api.buscarSetoresEfetivosDoGestor();
-      Map<String, dynamic>? ciclo;
-      final avaliacoes = <Map<String, dynamic>>[];
-      final idsVistos = <Object?>{};
+      _setoresGestor = [...setores]..sort();
+      // Um ciclo por entrada, cada um com as avaliações da equipe dele; o
+      // gestor com vários setores escolhe qual quer ver.
+      final ciclosMap = <int, Map<String, dynamic>>{};
+      final avalPorCiclo = <int, List<Map<String, dynamic>>>{};
+      final idsPorCiclo = <int, Set<Object?>>{};
       // Ciclos direcionados a colaboradores específicos têm prioridade sobre o
       // ciclo do setor; só aparecem pra quem lidera algum dos participantes.
       final ciclosPorParticipante =
           await _api.listarCiclosAbertosPorParticipantes();
       for (final setor in setores) {
         final cicloDoSetor = await _api.buscarCicloAbertoParaSetor(setor);
-        if (cicloDoSetor != null) ciclo ??= cicloDoSetor;
+        if (cicloDoSetor != null) {
+          ciclosMap.putIfAbsent(cicloDoSetor['id'] as int, () => cicloDoSetor);
+        }
         for (final cicloSetor in [
           ...ciclosPorParticipante,
           if (cicloDoSetor != null) cicloDoSetor,
@@ -78,24 +87,26 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
             setor: setor,
             tipoAvaliacao: cicloSetor['tipo_avaliacao'] as String?,
           );
-          if (doSetor.isNotEmpty) ciclo ??= cicloSetor;
+          final cid = cicloSetor['id'] as int;
+          if (doSetor.isNotEmpty) ciclosMap.putIfAbsent(cid, () => cicloSetor);
           for (final a in doSetor) {
-            if (idsVistos.add(a['id'])) avaliacoes.add(a);
+            if ((idsPorCiclo[cid] ??= <Object?>{}).add(a['id'])) {
+              (avalPorCiclo[cid] ??= []).add(a);
+            }
           }
         }
       }
       if (!mounted) return;
-      if (ciclo == null) {
-        setState(() {
-          _ciclo = null;
-          _avaliacoes = [];
-          _loading = false;
-        });
-        return;
-      }
+      final ids = ciclosMap.keys.toList();
+      final selId = ids.contains(_cicloSelId)
+          ? _cicloSelId
+          : (ids.isEmpty ? null : ids.first);
       setState(() {
-        _ciclo = ciclo;
-        _avaliacoes = avaliacoes;
+        _ciclos = [for (final id in ids) ciclosMap[id]!];
+        _avalPorCiclo = avalPorCiclo;
+        _cicloSelId = selId;
+        _ciclo = selId == null ? null : ciclosMap[selId];
+        _avaliacoes = selId == null ? [] : (avalPorCiclo[selId] ?? []);
         _loading = false;
       });
     } catch (e) {
@@ -108,22 +119,107 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
   }
 
   Future<void> _abrirCicloDoSetor() async {
-    final setor = _meuSetor;
-    if (setor == null) return;
-    final nomeCtrl = TextEditingController(text: 'Avaliação — $setor');
+    // Setores que o gestor lidera (o de lotação é só o padrão).
+    final todos = _setoresGestor.isNotEmpty
+        ? _setoresGestor
+        : [if (_meuSetor != null) _meuSetor!];
+    if (todos.isEmpty) return;
+    // Configuração "quem pode abrir ciclo" (feita no admin): só os setores
+    // onde o nível dele está permitido.
+    final colabId = _api.colaboradorAtual?.id;
+    final opcoes = colabId == null
+        ? todos
+        : await _api.setoresOndePodeAbrirCiclo(colabId, todos);
+    if (!mounted) return;
+    if (opcoes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('O seu nível não tem permissão para abrir ciclo de avaliação.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    // Setor com ciclo em andamento não abre outro até ele terminar.
+    final vigentes = <String, String>{};
+    for (final s in opcoes) {
+      final c = await _api.cicloVigenteDoSetor(s);
+      if (c != null) vigentes[s] = '${c['nome']}';
+    }
+    if (!mounted) return;
+    final livres = opcoes.where((s) => !vigentes.containsKey(s)).toList();
+    if (livres.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(opcoes.length == 1
+            ? 'O setor já tem um ciclo em andamento ("${vigentes[opcoes.first]}"). Só dá para abrir outro depois que ele terminar.'
+            : 'Todos os seus setores já têm ciclo em andamento. Só dá para abrir outro depois que terminar.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    // Vários setores de uma vez: cria um ciclo por setor marcado.
+    final escolhidos = <String>{
+      (_meuSetor != null && livres.contains(_meuSetor)) ? _meuSetor! : livres.first
+    };
+    const nomePadrao = 'Avaliação';
+    final nomeCtrl = TextEditingController(text: nomePadrao);
     String tipoAvaliacao = 'gestor';
     final criar = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setStateDialog) {
         return AlertDialog(
-          title: Text('Abrir ciclo para o meu setor',
+          title: Text('Abrir ciclo de avaliação',
               style: AppTextStyles.tituloPequeno),
           content: SizedBox(
             width: 360,
-            child: Column(
+            child: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (opcoes.length > 1) ...[
+                  Row(children: [
+                    Expanded(
+                      child: Text('Setores (pode marcar vários)',
+                          style: AppTextStyles.corpoMinimo
+                              .copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                    TextButton(
+                      onPressed: () => setStateDialog(() {
+                        if (escolhidos.length == livres.length) {
+                          escolhidos.clear();
+                        } else {
+                          escolhidos.addAll(livres);
+                        }
+                      }),
+                      child: Text(
+                          escolhidos.length == livres.length
+                              ? 'Limpar'
+                              : 'Marcar todos',
+                          style: AppTextStyles.corpoMinimo),
+                    ),
+                  ]),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: opcoes.map((s) {
+                      final emAndamento = vigentes.containsKey(s);
+                      return FilterChip(
+                        label: Text(emAndamento ? '$s (em andamento)' : s,
+                            style: AppTextStyles.corpoMinimo),
+                        selected: escolhidos.contains(s),
+                        selectedColor: AppColors.laranja.withOpacity(0.15),
+                        // Setor com ciclo em andamento fica bloqueado.
+                        onSelected: emAndamento
+                            ? null
+                            : (v) => setStateDialog(() {
+                                  v ? escolhidos.add(s) : escolhidos.remove(s);
+                                }),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 TextField(
                   controller: nomeCtrl,
                   decoration: const InputDecoration(hintText: 'Nome do ciclo'),
@@ -148,39 +244,54 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
                 ),
               ],
             ),
+            ),
           ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancelar')),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed:
+                  escolhidos.isEmpty ? null : () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.laranja),
-              child: const Text('Abrir', style: TextStyle(color: Colors.white)),
+              child: Text(
+                  escolhidos.length > 1
+                      ? 'Abrir ${escolhidos.length} ciclos'
+                      : 'Abrir',
+                  style: const TextStyle(color: Colors.white)),
             ),
           ],
         );
       }),
     );
-    if (criar == true && nomeCtrl.text.trim().isNotEmpty) {
+    if (criar == true &&
+        nomeCtrl.text.trim().isNotEmpty &&
+        escolhidos.isNotEmpty) {
       try {
-        await _api.criarCicloAvaliacao(
-          nome: nomeCtrl.text.trim(),
-          setor: setor,
-          criadoPor: _api.colaboradorAtual?.id.toString(),
-          tipoAvaliacao: tipoAvaliacao,
-          // Gestor não escolhe pesos: usa o padrão do tipo.
-          pesoGestor:
-              tipoAvaliacao == '360' ? 50 : tipoAvaliacao == '180' ? 70 : 100,
-          pesoColaborador:
-              tipoAvaliacao == '360' ? 30 : tipoAvaliacao == '180' ? 30 : 0,
-          pesoEquipe: tipoAvaliacao == '360' ? 20 : 0,
-        );
+        final base = nomeCtrl.text.trim();
+        // Nome com o setor quando é o padrão ou quando são vários ciclos.
+        final comSetor = escolhidos.length > 1 || base == nomePadrao;
+        for (final setor in opcoes.where(escolhidos.contains)) {
+          await _api.criarCicloAvaliacao(
+            nome: comSetor ? '$base — $setor' : base,
+            setor: setor,
+            criadoPor: _api.colaboradorAtual?.id.toString(),
+            tipoAvaliacao: tipoAvaliacao,
+            // Gestor não escolhe pesos: usa o padrão do tipo.
+            pesoGestor:
+                tipoAvaliacao == '360' ? 50 : tipoAvaliacao == '180' ? 70 : 100,
+            pesoColaborador:
+                tipoAvaliacao == '360' ? 30 : tipoAvaliacao == '180' ? 30 : 0,
+            pesoEquipe: tipoAvaliacao == '360' ? 20 : 0,
+          );
+        }
         _carregar();
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro ao abrir ciclo: $e'),
+          content: Text(e is StateError
+              ? e.message
+              : 'Erro ao abrir ciclo: $e'),
           backgroundColor: AppColors.erro,
           behavior: SnackBarBehavior.floating,
         ));
@@ -205,8 +316,46 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
 
   /// Cabeçalho do ciclo efetivo com os botões de abrir/fechar o ciclo do
   /// próprio setor (porta de `_cabecalhoCiclo` do web).
+  void _selecionarCiclo(int id) {
+    setState(() {
+      _cicloSelId = id;
+      _ciclo = _ciclos.firstWhere((c) => c['id'] == id);
+      _avaliacoes = _avalPorCiclo[id] ?? [];
+    });
+  }
+
+  /// Escolha do ciclo a visualizar (aparece quando há mais de um).
+  Widget _seletorCiclo() {
+    if (_ciclos.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Ciclo que você quer ver',
+              style: AppTextStyles.corpoMinimo
+                  .copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            for (final c in _ciclos)
+              ChoiceChip(
+                label: Text(
+                    '${c['nome']} · ${(c['setor'] as String?)?.isNotEmpty == true ? c['setor'] : 'Geral'}'
+                    ' (${(_avalPorCiclo[c['id']] ?? []).length})',
+                    style: AppTextStyles.corpoMinimo),
+                selected: _cicloSelId == c['id'],
+                selectedColor: AppColors.laranja.withOpacity(0.15),
+                onSelected: (_) => _selecionarCiclo(c['id'] as int),
+              ),
+          ]),
+        ],
+      ),
+    );
+  }
+
   Widget _cabecalhoCiclo() {
-    final ehCicloDoMeuSetor = _ciclo != null && _ciclo!['setor'] == _meuSetor;
+    final ehCicloDoMeuSetor =
+        _ciclo != null && _setoresGestor.contains(_ciclo!['setor']);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(14),
@@ -228,7 +377,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
             _ciclo == null
                 ? 'Abra um ciclo para o seu setor ou aguarde o RH abrir um ciclo geral.'
                 : ehCicloDoMeuSetor
-                    ? 'Ciclo aberto por você, exclusivo para o setor $_meuSetor.'
+                    ? 'Ciclo aberto por você, exclusivo para o setor ${_ciclo!['setor']}.'
                     : 'Ciclo geral, aberto pelo RH.',
             style: AppTextStyles.corpoMinimo,
           ),
@@ -238,7 +387,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
             ElevatedButton.icon(
               onPressed: _abrirCicloDoSetor,
               icon: const Icon(Icons.lock_open_rounded, size: 15),
-              label: Text('Abrir ciclo do meu setor',
+              label: Text('Abrir ciclo de setor',
                   style: AppTextStyles.corpoMinimo),
               style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.laranja,
@@ -639,6 +788,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       return ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
+          _seletorCiclo(),
           _cabecalhoCiclo(),
           const Matriz9BoxEquipeCard(),
           Padding(
@@ -653,6 +803,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       return ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
+          _seletorCiclo(),
           _cabecalhoCiclo(),
           const Matriz9BoxEquipeCard(),
           Padding(
@@ -670,6 +821,7 @@ class _AvaliarEquipeScreenState extends State<AvaliarEquipeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
         children: [
+          _seletorCiclo(),
           _cabecalhoCiclo(),
           const Matriz9BoxEquipeCard(),
           ..._avaliacoesPorSetor().map((avaliacao) {
