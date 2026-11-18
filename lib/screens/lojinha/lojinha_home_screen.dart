@@ -31,6 +31,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
   // Regra "geral" (produtos SAP) aberta agora. A Lojinha também abre só com
   // exclusivos abertos (dia + horário + filial), independente da geral.
   bool _liberadaGeral = true;
+  // Carência de novos admitidos: dias que faltam (null = sem carência).
+  int? _carenciaRestante;
+  int _carenciaDias = 0;
   // Exclusivos abertos agora (dia + horário + filial) e se existe algum
   // exclusivo cadastrado para a filial.
   int _exclusivosLiberadosAgora = 0;
@@ -177,13 +180,18 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     // compra) vão ao SAP de novo.
     _dados = await _api.buscarDadosFuncionarioLojinha(
         comPedidos: false, forcarAtualizar: _dados != null);
-    final liberadaGeral = await _api.lojinhaLiberadaParaFilial(
-      ApiService.chaveFilialCardapio(
-        empresa: _api.colaboradorAtual?.empresa,
-        branch: _api.colaboradorAtual?.branch,
-      ),
-      colaboradorId: _api.colaboradorAtual?.id,
-    );
+    // Carência de novos admitidos (ex.: 45 dias; recontratado não tem).
+    final carencia = await _api
+        .carenciaLojinhaDoColaborador(_api.colaboradorAtual?.id ?? 0);
+    final emCarencia = carencia['bloqueado'] == true;
+    final liberadaGeral = !emCarencia &&
+        await _api.lojinhaLiberadaParaFilial(
+          ApiService.chaveFilialCardapio(
+            empresa: _api.colaboradorAtual?.empresa,
+            branch: _api.colaboradorAtual?.branch,
+          ),
+          colaboradorId: _api.colaboradorAtual?.id,
+        );
     var liberada = liberadaGeral;
     var exclusivosAgora = 0;
     var temExclusivos = false;
@@ -191,7 +199,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       final excl = await _api.buscarExclusivosLojinha();
       temExclusivos = excl.isNotEmpty;
       exclusivosAgora = excl.where((p) => p.disponivelHoje).length;
-      if (!liberada) liberada = exclusivosAgora > 0;
+      if (!liberada && !emCarencia) liberada = exclusivosAgora > 0;
     } catch (_) {}
     await _carregarLimitePedidos();
     await bloqueioServidor;
@@ -200,6 +208,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
       _carregando = false;
       _liberadaParaCompra = liberada;
       _liberadaGeral = liberadaGeral;
+      _carenciaRestante =
+          emCarencia ? (carencia['dias_restantes'] as num?)?.toInt() : null;
+      _carenciaDias = (carencia['dias'] as num?)?.toInt() ?? 0;
       _exclusivosLiberadosAgora = exclusivosAgora;
       _temExclusivos = temExclusivos;
       // Recusa do servidor/SAP hoje: continua bloqueado depois de recarregar.
@@ -781,7 +792,10 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                 Icon(Icons.storefront_outlined, size: 20, color: AppColors.cinzaTexto),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Lojinha não disponível para compra, só consulta',
+                  child: Text(
+                      _carenciaRestante != null
+                          ? 'Faltam $_carenciaRestante ${_carenciaRestante == 1 ? 'dia' : 'dias'} para você ser efetivado'
+                          : 'Lojinha não disponível para compra, só consulta',
                       style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -791,8 +805,11 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-                'A Lojinha ainda não foi liberada pra compra na sua filial. '
-                'Você pode consultar seus pedidos anteriores em "Meus Pedidos".',
+                _carenciaRestante != null
+                    ? 'As compras da Lojinha abrem depois de $_carenciaDias dias de empresa. '
+                        'Você pode consultar seus pedidos anteriores em "Meus Pedidos".'
+                    : 'A Lojinha ainda não foi liberada pra compra na sua filial. '
+                        'Você pode consultar seus pedidos anteriores em "Meus Pedidos".',
                 style: GoogleFonts.poppins(
                     fontSize: 12.5, color: AppColors.cinzaTexto, height: 1.4)),
           ],

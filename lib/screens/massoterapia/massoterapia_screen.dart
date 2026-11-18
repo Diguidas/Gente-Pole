@@ -86,8 +86,12 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
       final vagasGrupo = <String, Map<String, dynamic>>{
         for (var i = 0; i < futurosDias.length; i++) futurosDias[i]: vagasLista[i],
       };
+      // Sem dias: informa quando as marcações abrem.
+      final proxAbertura =
+          dias.isEmpty ? await _api.proximaAberturaMassoterapia() : null;
       if (!mounted) return;
       setState(() {
+        _proximaAbertura = proxAbertura;
         _vagasGrupo = vagasGrupo;
         _diasDisponiveis = resultados[0] as List<String>;
         _agendamentos = resultados[1] as List<MassoterapiaAgendamentoModel>;
@@ -711,8 +715,19 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
     );
   }
 
+  DateTime? _proximaAbertura;
+
+  String _textoAbertura(DateTime d) {
+    const dias = [
+      'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'
+    ];
+    String p(int n) => n.toString().padLeft(2, '0');
+    return '${dias[d.weekday - 1]}, ${p(d.day)}/${p(d.month)} às ${p(d.hour)}:${p(d.minute)}';
+  }
+
   Widget _buildSemMassoterapiaHoje() {
     final proxima = _diasDisponiveis.isNotEmpty ? _diasDisponiveis.first : null;
+    final abertura = _proximaAbertura;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -734,7 +749,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'Hoje não tem massoterapia',
+              abertura != null
+                  ? 'As marcações estão fechadas'
+                  : 'Hoje não tem massoterapia',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 17,
@@ -744,7 +761,9 @@ class _MassoterapiaScreenState extends State<MassoterapiaScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              proxima != null
+              abertura != null
+                  ? 'As próximas vagas abrem ${_textoAbertura(abertura)}.'
+                  : proxima != null
                   ? 'A próxima sessão será em\n${_formatarData(proxima)}'
                   : 'Nenhuma sessão agendada no momento.',
               textAlign: TextAlign.center,

@@ -59,7 +59,7 @@ class _ServicosScreenState extends State<ServicosScreen> {
       _api.colaboradorEhLiderAutorizado(),
       _api.verificarSeEhIntegracao(),
       _api.gamificacaoAtiva(),
-      _api.filialTemMassoterapiaConfigurada(filial),
+      _api.setorTemMassoterapia(_api.colaboradorAtual?.setor),
       _api.filialTemNutricaoConfigurada(filial),
       _api.folhaContrachequeAtiva(),
       _api.verificarSeEhRequisitanteDeVaga(),

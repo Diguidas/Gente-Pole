@@ -174,7 +174,7 @@ Future<List<AtalhoDef>> atalhosVisiveis() async {
   final api = ApiService();
   final filial = api.colaboradorAtual?.filialEfetiva;
   final resultados = await Future.wait([
-    api.filialTemMassoterapiaConfigurada(filial),
+    api.setorTemMassoterapia(api.colaboradorAtual?.setor),
     api.filialTemNutricaoConfigurada(filial),
   ]);
   final massoterapiaDisponivel = resultados[0];

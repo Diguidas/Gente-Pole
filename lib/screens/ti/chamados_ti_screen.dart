@@ -56,12 +56,31 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
     _carregar(silencioso: cache != null);
   }
 
+  // Quando a lista foi atualizada pela última vez, e se algo mudou no detalhe
+  // (comentário, reabertura): sem mudança e com dados recentes, voltar do
+  // detalhe não recarrega tudo de novo.
+  DateTime? _carregadoEm;
+  bool _mudouNoDetalhe = false;
+  static const _validadeLista = Duration(minutes: 2);
+
+  bool get _listaVelha =>
+      _carregadoEm == null ||
+      DateTime.now().difference(_carregadoEm!) > _validadeLista;
+
   Future<void> _carregar({bool silencioso = false}) async {
-    if (!silencioso) setState(() => _loading = true);
+    // Com a lista já na tela, atualiza por baixo (sem o spinner de tela cheia).
+    final emSilencio = silencioso || _chamados.isNotEmpty;
+    if (!emSilencio) setState(() => _loading = true);
     final chamados = await _api.listarMeusChamadosTI();
     final ids = chamados.map((c) => c['azure_work_item_id'] as int).toList();
-    final status = await _api.buscarStatusChamadosAzure(ids);
-    final avaliados = await _api.listarChamadosTIAvaliados(ids);
+    // Status (Azure) e avaliações não dependem um do outro: juntos.
+    final r = await Future.wait<Object?>([
+      _api.buscarStatusChamadosAzure(ids),
+      _api.listarChamadosTIAvaliados(ids),
+    ]);
+    final status = r[0] as Map<String, dynamic>;
+    final avaliados = r[1] as Set<int>;
+    _carregadoEm = DateTime.now();
     final colabId = _api.colaboradorAtual?.id.toString();
     if (colabId != null) {
       _api.guardarChamadosTiCache(ChamadosTiSnapshot(
@@ -194,9 +213,16 @@ class _ChamadosTiScreenState extends State<ChamadosTiScreen> {
     final nome = _api.colaboradorAtual?.nome ?? '';
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ChamadoTiDetalheScreen(chamado: chamado, solicitanteNome: nome)),
+      MaterialPageRoute(
+          builder: (_) => ChamadoTiDetalheScreen(
+              chamado: chamado,
+              solicitanteNome: nome,
+              onMudou: () => _mudouNoDetalhe = true)),
     );
-    _carregar();
+    // Só recarrega se algo mudou no detalhe ou se a lista está velha.
+    final recarregar = _mudouNoDetalhe || _listaVelha;
+    _mudouNoDetalhe = false;
+    if (recarregar && mounted) _carregar(silencioso: true);
   }
 
   @override

@@ -1341,10 +1341,20 @@ class ApiService {
   Future<({Set<String> setoresComHierarquia, Set<int> meus})>
       _vinculosDoResponsavel(List<String> setores, int? responsavelId,
           {bool apenasLiderDireto = false, String? funcionalidade}) async {
-    final hierarquia = await _client
-        .from('colaborador_hierarquia')
-        .select('setor, colaborador_id, responsavel_id, nivel')
-        .inFilter('setor', setores);
+    // Paginado: o Supabase devolve no máximo 1000 linhas por consulta e quem
+    // lidera muitos setores passa disso — sem paginar, o final era cortado.
+    final hierarquia = <Map<String, dynamic>>[];
+    for (var de = 0;; de += 1000) {
+      final pagina = await _client
+          .from('colaborador_hierarquia')
+          .select('setor, colaborador_id, responsavel_id, nivel')
+          .inFilter('setor', setores)
+          .order('colaborador_id')
+          .order('responsavel_id')
+          .range(de, de + 999) as List;
+      hierarquia.addAll(pagina.cast<Map<String, dynamic>>());
+      if (pagina.length < 1000) break;
+    }
     final setoresComHierarquia = <String>{};
     final meus = <int>{};
     final lideresDiretos = <int, ({int rank, int responsavel})>{};
@@ -2156,13 +2166,17 @@ class ApiService {
     final config = await buscarConfigGeralMassoterapia();
     final janelaDias = config['janela_dias'] as int? ?? 14;
     var periodo = _periodoCicloMassoterapia(hoje, janelaDias);
+    var janelaPorAbertura = false;
     // Abertura por dia e hora: o colaborador vê só a janela aberta pelo
     // servidor (ex.: toda quinta abre a próxima semana, visível até a
     // quinta seguinte, com as vagas consumidas).
     if (config['abertura_dia_semana'] != null) {
       try {
         final r = await _client.rpc('massoterapia_periodo_aberto');
+        // Regra recém-ativada e ainda sem a 1ª abertura: nada para marcar.
+        if (r is Map && r['aguardando'] == true) return <String>[];
         if (r is Map && r['ativo'] == true) {
+          janelaPorAbertura = true;
           final i = DateTime.parse(r['inicio'].toString());
           final f = DateTime.parse(r['fim'].toString());
           periodo = (
@@ -2218,7 +2232,39 @@ class ApiService {
         dias.add(str);
       }
     }
+    // Com abertura por dia/hora: acabou a última sessão (17:00) do último dia
+    // liberado para o grupo, a semana some até a próxima abertura.
+    if (janelaPorAbertura && dias.isNotEmpty) {
+      final u = DateTime.parse(dias.last);
+      final fimUltimoDia = DateTime.utc(u.year, u.month, u.day, 17);
+      if (!agora.isBefore(fimUltimoDia)) return <String>[];
+    }
     return dias;
+  }
+
+  /// Quando abrem as marcações da massoterapia (null se não há abertura por
+  /// dia/hora configurada ou a informação não está disponível).
+  Future<DateTime?> proximaAberturaMassoterapia() async {
+    try {
+      final r = await _client.rpc('massoterapia_periodo_aberto');
+      final p = r is Map ? r['proxima_abertura'] : null;
+      return p == null ? null : DateTime.tryParse(p.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// O colaborador tem massoterapia se o SETOR dele está num grupo ativo com
+  /// ao menos um dia liberado. A regra antiga por filial não vale mais.
+  Future<bool> setorTemMassoterapia(String? setor) async {
+    if (setor == null || setor.isEmpty) return false;
+    try {
+      final r = await _client
+          .rpc('massoterapia_dias_do_setor', params: {'p_setor': setor});
+      return r is List && r.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Últimas faltas (não veio) do colaborador logado, com a situação da
@@ -2863,6 +2909,22 @@ class ApiService {
   /// quem está listado em alguma regra segue só as regras em que foi incluído,
   /// e a filial de origem dele deixa de valer. Regra só de colaboradores (com
   /// `colaboradores` e sem `filiais`) não vale para ninguém por filial.
+  /// Situação do colaborador na carência da Lojinha (função do banco, a mesma
+  /// que a função de pedido usa): {bloqueado, dias, dias_restantes,
+  /// efetivacao, recontratado}. Falha = sem bloqueio.
+  Future<Map<String, dynamic>> carenciaLojinhaDoColaborador(
+      int colaboradorId) async {
+    try {
+      final r = await _client
+          .rpc('lojinha_carencia', params: {'p_colaborador_id': colaboradorId});
+      return r is Map
+          ? Map<String, dynamic>.from(r)
+          : {'bloqueado': false, 'dias_restantes': 0};
+    } catch (_) {
+      return {'bloqueado': false, 'dias_restantes': 0};
+    }
+  }
+
   Future<bool> lojinhaLiberadaParaFilial(String? branch,
       {int? colaboradorId}) async {
     List<Map<String, dynamic>> regras;
@@ -4075,6 +4137,23 @@ class ApiService {
         .order('data', ascending: false)
         .limit(1)
         .maybeSingle();
+  }
+
+  /// Anotação do humor (passo 2): grava o texto no registro do dia. Chamar só
+  /// depois de criar o post de moderação do mesmo texto.
+  Future<bool> adicionarAnotacaoHumor({required String motivo}) async {
+    final meuId = colaboradorAtual?.id;
+    if (meuId == null) return false;
+    try {
+      await _client
+          .from('humor_registros')
+          .update({'motivo': motivo})
+          .eq('colaborador_id', meuId)
+          .eq('data', diaDoHumor(DateTime.now()));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Salva o humor do dia. Retorna false se já registrado ou erro.

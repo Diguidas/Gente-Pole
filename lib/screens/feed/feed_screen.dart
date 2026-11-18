@@ -394,91 +394,107 @@ class _FeedScreenState extends State<FeedScreen> {
     const labels = ['Péssimo', 'Ruim', 'Ok', 'Bem', 'Ótimo(a)'];
     final label = labels[nivel - 1];
 
-    // Dialog perguntando o motivo
+    // Passo 1: grava só a carinha, na hora.
+    final ok = await _api.registrarHumor(nivel: nivel);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Erro ao registrar humor.'),
+        backgroundColor: AppColors.erro,
+      ));
+      return;
+    }
+    // Atualiza o card imediatamente sem esperar o DB
+    setState(() => _humorHoje = {'nivel': nivel});
+    _carregarHumor(); // sincroniza com DB em background
+
+    // Passo 2: anotação opcional (só aparece depois que o endomkt aprovar).
     final motivoCtrl = TextEditingController();
-    final confirmou = await showDialog<bool>(
+    final enviar = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Como você está?', style: AppTextStyles.tituloMedio),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Você selecionou: $label', style: AppTextStyles.corpoNormal),
-            const SizedBox(height: 12),
-            TextField(
-              controller: motivoCtrl,
-              maxLines: 3,
-              style: AppTextStyles.corpoNormal,
-              decoration: InputDecoration(
-                hintText: 'Por que você está assim? (opcional)',
-                hintStyle: GoogleFonts.poppins(
-                  color: AppColors.cinzaTexto.withOpacity(0.6),
-                  fontSize: 13,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.all(12),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Humor registrado!', style: AppTextStyles.tituloMedio),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Você está: $label', style: AppTextStyles.corpoNormal),
+              const SizedBox(height: 4),
+              Text(
+                'Quer deixar uma anotação? Ela só aparece depois que o endomkt aprovar.',
+                style: AppTextStyles.corpoCinza,
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoCtrl,
+                maxLines: 3,
+                onChanged: (_) => setStateDialog(() {}),
+                style: AppTextStyles.corpoNormal,
+                decoration: InputDecoration(
+                  hintText: 'Conte o que está acontecendo (opcional)',
+                  hintStyle: GoogleFonts.poppins(
+                    color: AppColors.cinzaTexto.withOpacity(0.6),
+                    fontSize: 13,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Agora não', style: AppTextStyles.corpoCinza),
+            ),
+            ElevatedButton(
+              onPressed: motivoCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.magenta,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: Text('Enviar anotação', style: AppTextStyles.botaoPrimario),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancelar', style: AppTextStyles.corpoCinza),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.magenta,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            child: Text('OK', style: AppTextStyles.botaoPrimario),
-          ),
-        ],
       ),
     );
-
-    if (confirmou != true || !mounted) return;
-
-    final motivo = motivoCtrl.text.trim();
-    final ok = await _api.registrarHumor(
-      nivel: nivel,
-      motivo: motivo.isNotEmpty ? motivo : null,
-    );
+    final motivo = enviar == true ? motivoCtrl.text.trim() : '';
     if (!mounted) return;
 
-    if (ok) {
-      // Atualiza o card imediatamente sem esperar o DB
-      if (mounted) setState(() => _humorHoje = {'nivel': nivel});
-      _carregarHumor(); // sincroniza com DB em background
+    // Cria post automático no feed. *nome* entre asteriscos é o mesmo
+    // padrão usado nos posts de aniversário — o _PostCard reconhece e
+    // destaca automaticamente.
+    // Mesmo texto do web: nome normalizado (apelido ou primeiro nome, sem
+    // CAIXA ALTA) e o nível em minúsculas no meio da frase.
+    final colab = _api.colaboradorAtual;
+    final nome = colab == null ? 'Alguém' : nomeCurto(colab.nome, colab.apelido);
+    final nivelTxt = label.toLowerCase();
+    final conteudo = motivo.isNotEmpty
+        ? '*$nome* está se sentindo $nivelTxt\n\n$motivo'
+        : '*$nome* está se sentindo $nivelTxt';
 
-      // Cria post automático no feed. *nome* entre asteriscos é o mesmo
-      // padrão usado nos posts de aniversário — o _PostCard reconhece e
-      // destaca automaticamente.
-      // Mesmo texto do web: nome normalizado (apelido ou primeiro nome, sem
-      // CAIXA ALTA) e o nível em minúsculas no meio da frase.
-      final colab = _api.colaboradorAtual;
-      final nome = colab == null ? 'Alguém' : nomeCurto(colab.nome, colab.apelido);
-      final nivelTxt = label.toLowerCase();
-      final conteudo = motivo.isNotEmpty
-          ? '*$nome* está se sentindo $nivelTxt\n\n$motivo'
-          : '*$nome* está se sentindo $nivelTxt';
-
-      await _api.criarPost(
-        conteudo: conteudo,
-        destinatario: 'todos',
-        tipo: 'humor',
-        temTextoLivre: motivo.isNotEmpty,
-      );
-      _carregarFeed(reiniciar: true);
-      await _mostrarBannerHumor(nivel);
+    await _api.criarPost(
+      conteudo: conteudo,
+      destinatario: 'todos',
+      tipo: 'humor',
+      temTextoLivre: motivo.isNotEmpty,
+    );
+    // A anotação só entra no registro DEPOIS de o post de moderação existir
+    // (assim ela nunca fica visível sem passar pelo endomkt).
+    if (motivo.isNotEmpty) {
+      await _api.adicionarAnotacaoHumor(motivo: motivo);
     }
+    _carregarFeed(reiniciar: true);
+    await _mostrarBannerHumor(nivel);
   }
 
   /// Mensagem de apoio configurada para o nível de humor escolhido (igual ao

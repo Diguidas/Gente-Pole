@@ -43,7 +43,11 @@ const _etapasBoard = [
 class ChamadoTiDetalheScreen extends StatefulWidget {
   final Map<String, dynamic> chamado;
   final String solicitanteNome;
-  const ChamadoTiDetalheScreen({super.key, required this.chamado, required this.solicitanteNome});
+  /// Avisa a lista que algo mudou (comentário enviado, card reaberto) para ela
+  /// recarregar ao voltar; sem mudança, a lista não recarrega.
+  final VoidCallback? onMudou;
+  const ChamadoTiDetalheScreen(
+      {super.key, required this.chamado, required this.solicitanteNome, this.onMudou});
 
   @override
   State<ChamadoTiDetalheScreen> createState() => _ChamadoTiDetalheScreenState();
@@ -163,6 +167,7 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
         _anexos.clear();
         _enviando = false;
       });
+      widget.onMudou?.call();
     } catch (e) {
       if (!mounted) return;
       setState(() => _enviando = false);
@@ -184,6 +189,7 @@ class _ChamadoTiDetalheScreenState extends State<ChamadoTiDetalheScreen> {
         _info = {...?_info, 'state': r.estado, 'boardColumn': r.estado, 'tags': r.tags};
         _reabrindo = false;
       });
+      widget.onMudou?.call();
     } catch (e) {
       if (!mounted) return;
       setState(() => _reabrindo = false);
