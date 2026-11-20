@@ -307,14 +307,32 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
 
   // ─── Aba 2: Mensagens ────────────────────────────────────────────────────────
 
-  Widget _buildAbaMensagens() {
-    final aniv = _meuAniversario();
-    final ehAniversarioHoje =
-        aniv != null &&
-        DateTime.now().day == aniv.dia &&
-        DateTime.now().month == aniv.mes;
+  /// Por quantos meses depois do aniversário os recados continuam na aba Mensagens (a Home mostra só no dia).
+  static const int _mesesRecadosAniversario = 3;
 
-    if (!ehAniversarioHoje) return _buildAguardarSeuDia();
+  /// Data (sem hora) do aniversário mais recente: o de hoje, o deste ano que já passou, ou o do ano passado.
+  DateTime? _ultimoAniversario() {
+    final aniv = _meuAniversario();
+    if (aniv == null || aniv.dia == 0 || aniv.mes == 0) return null;
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    var d = DateTime(agora.year, aniv.mes, aniv.dia);
+    if (d.isAfter(hoje)) d = DateTime(agora.year - 1, aniv.mes, aniv.dia);
+    return d;
+  }
+
+  Widget _buildAbaMensagens() {
+    final ultimo = _ultimoAniversario();
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final ehAniversarioHoje = ultimo != null && ultimo == hoje;
+    final fimJanela = ultimo == null
+        ? null
+        : DateTime(ultimo.year, ultimo.month + _mesesRecadosAniversario, ultimo.day);
+    final dentroDaJanela = ultimo != null && !hoje.isAfter(fimJanela!);
+
+    if (!dentroDaJanela) return _buildAguardarSeuDia();
+    final desde = ultimo;
 
     return RefreshIndicator(
       color: AppColors.magenta,
@@ -332,8 +350,12 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           }
 
           final msgEmpresa = snap.data?[0] as Map<String, dynamic>?;
-          final mensagens =
+          final todasMensagens =
               (snap.data?[1] as List<Map<String, dynamic>>?) ?? [];
+          final mensagens = todasMensagens.where((m) {
+            final d = DateTime.tryParse('${m['criado_em']}')?.toLocal();
+            return d != null && !d.isBefore(desde);
+          }).toList();
           final nome = _api.colaboradorAtual?.primeiroNome ?? '';
 
           return CustomScrollView(
@@ -352,7 +374,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
                   child: Text(
-                    'Os Polevalentes desejam:',
+                    ehAniversarioHoje
+                        ? 'Os Polevalentes desejam:'
+                        : 'Recados do seu aniversário (${desde.day.toString().padLeft(2, '0')}/${desde.month.toString().padLeft(2, '0')}):',
                     style: AppTextStyles.labelSecao,  
                   ),
                 ),
@@ -373,7 +397,9 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
                         border: Border.all(color: AppColors.magentaOp18),
                       ),
                       child: Text(
-                        'As mensagens dos seus colegas aparecerão aqui ao longo do dia.',
+                        ehAniversarioHoje
+                            ? 'As mensagens dos seus colegas aparecerão aqui ao longo do dia.'
+                            : 'Você não recebeu recados no seu último aniversário.',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.corpoMenor.copyWith(
                           color: AppColors.magenta,
