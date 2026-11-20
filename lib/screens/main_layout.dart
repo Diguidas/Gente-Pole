@@ -25,6 +25,10 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   int _selectedIndex = 0;
+  // Home (Feed): ao voltar para ela vindo de outra aba, o Feed é refeito (dados novos), desde que tenha ficado
+  // fora há mais de 15 s. A chave nova faz o Flutter recriar a tela.
+  int _feedVersao = 0;
+  DateTime? _feedSaiuEm;
   final Set<int> _visitadas = {0};
   Timer? _timerAcesso;
   bool _encerrando = false;
@@ -125,6 +129,11 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
     }
     // Tocar na Home estando nela: volta ao topo do feed.
     if (index == 0 && _selectedIndex == 0) feedTopoSinal.value++;
+    if (_selectedIndex == 0 && index != 0) _feedSaiuEm = DateTime.now();
+    if (index == 0 && _selectedIndex != 0) {
+      final saiu = _feedSaiuEm;
+      if (saiu == null || DateTime.now().difference(saiu) > const Duration(seconds: 15)) _feedVersao++;
+    }
     setState(() {
       _selectedIndex = index;
       _visitadas.add(index);
@@ -136,7 +145,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
     switch (index) {
       case 0:
-        return const FeedScreen();
+        return FeedScreen(key: ValueKey('feed_$_feedVersao'));
       case 1:
         return const AniversariantesScreen();
       case 2:
