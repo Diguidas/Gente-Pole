@@ -454,6 +454,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                               cor: AppColors.magenta,
                               bloqueado: false,
                               onTap: _abrirPedidos,
+                              tag: textoPeriodoPedidos(dados?.pedidos ?? const []),
                             ),
                           ] else ...[
                           // ── Alerta de bloqueio ───────────────────────
@@ -525,6 +526,7 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                             cor: AppColors.magenta,
                             bloqueado: false,
                             onTap: dados == null ? null : _abrirPedidos,
+                            tag: textoPeriodoPedidos(dados?.pedidos ?? const []),
                           ),
 
                           const SizedBox(height: 28),
@@ -973,13 +975,15 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     required Color cor,
     required bool bloqueado,
     required VoidCallback? onTap,
+    String? tag,
   }) {
     final desabilitado = bloqueado && titulo == 'Novo Pedido';
     return GestureDetector(
       onTap: desabilitado ? null : onTap,
       child: Opacity(
         opacity: desabilitado ? 0.5 : 1,
-        child: Container(
+        child: Stack(children: [
+         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1021,7 +1025,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                   color: AppColors.cinzaTexto, size: 22),
             ],
           ),
-        ),
+         ),
+         if (tag != null) Positioned(top: 8, right: 12, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: cor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)), child: Text(tag, style: GoogleFonts.poppins(fontSize: 10.5, fontWeight: FontWeight.w600, color: cor)))),
+        ]),
       ),
     );
   }

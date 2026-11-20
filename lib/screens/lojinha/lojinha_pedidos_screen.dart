@@ -8,6 +8,21 @@ import 'lojinha_pedido_detalhe_screen.dart';
 
 enum _Filtro { cobradoAgora, aCobrar, historico }
 
+/// "Últimos X meses · desde dd/mm/aaaa": a lista só traz os pedidos de uma janela de tempo; mostra desde quando.
+String? textoPeriodoPedidos(List<LojinhaPedidoResumoModel> lista) {
+  if (lista.isEmpty) return null;
+  var mais = lista.first.dataOrdenacao;
+  for (final p in lista) {
+    if (p.dataOrdenacao.isBefore(mais)) mais = p.dataOrdenacao;
+  }
+  final meses = (DateTime.now().difference(mais).inDays / 30).round();
+  final d = mais.day.toString().padLeft(2, '0');
+  final m = mais.month.toString().padLeft(2, '0');
+  final desde = '$d/$m/${mais.year}';
+  if (meses < 1) return 'Pedidos desde $desde';
+  return 'Últimos ${meses == 1 ? '1 mês' : '$meses meses'} · desde $desde';
+}
+
 class LojinhaPedidosScreen extends StatefulWidget {
   final List<LojinhaPedidoResumoModel> pedidos;
 
@@ -50,20 +65,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
     super.dispose();
   }
 
-  /// "Últimos X meses · desde dd/mm/aaaa": a lista só traz os pedidos de uma janela de tempo; mostra desde quando.
-  String? get _textoPeriodo {
-    if (_lista.isEmpty) return null;
-    var mais = _lista.first.dataOrdenacao;
-    for (final p in _lista) {
-      if (p.dataOrdenacao.isBefore(mais)) mais = p.dataOrdenacao;
-    }
-    final meses = (DateTime.now().difference(mais).inDays / 30).round();
-    final d = mais.day.toString().padLeft(2, '0');
-    final m = mais.month.toString().padLeft(2, '0');
-    final desde = '$d/$m/${mais.year}';
-    if (meses < 1) return 'Pedidos desde $desde';
-    return 'Últimos ${meses == 1 ? '1 mês' : '$meses meses'} · desde $desde';
-  }
+  String? get _textoPeriodo => textoPeriodoPedidos(_lista);
 
   final _ativos = <_Filtro>{_Filtro.cobradoAgora, _Filtro.aCobrar, _Filtro.historico};
 
