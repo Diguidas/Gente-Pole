@@ -98,13 +98,16 @@ class LojinhaFilaCard extends StatelessWidget {
             : ok
                 ? (comCortes ? const Color(0xFFD97706) : const Color(0xFF16A34A))
                 : const Color(0xFF7C3AED);
+        final parcial = erro ? s.numerosParciais : null;
         final titulo = erro
-            ? 'Pedido NÃO realizado'
+            ? (parcial != null ? 'Parte do pedido foi realizada' : s.tituloFalha)
             : ok
-                ? (comCortes ? 'Pedido confirmado com ajustes' : 'Pedido confirmado')
+                ? (comCortes ? 'Pedido realizado com ajustes' : 'Pedido realizado com sucesso')
                 : 'Pedido sendo integrado';
         final texto = erro
-            ? 'Pedimos desculpas: deu erro e o seu pedido não foi realizado. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.'
+            ? (parcial != null
+                ? 'O pedido nº ${parcial.replaceAll(' / ', ' e ')} foi realizado com sucesso, mas parte do seu pedido não foi realizada. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.'
+                : s.mensagemFalha)
             : ok
                 ? ((s.numerosConfirmados ?? '').isNotEmpty
                     ? ((s.numerosConfirmados!.contains(' / ')

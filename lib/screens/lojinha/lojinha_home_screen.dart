@@ -5,6 +5,7 @@ import '../../core/app_theme.dart';
 import '../../models/lojinha_model.dart';
 import '../../services/api_service.dart';
 import '../../services/lojinha_fila_service.dart';
+import '../../widgets/lojinha_fila_card.dart';
 import 'lojinha_produtos_screen.dart';
 import 'lojinha_pedidos_screen.dart';
 import 'lojinha_pedido_detalhe_screen.dart';
@@ -361,7 +362,8 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
     final dados = _dados;
 
     return Scaffold(
-      body: Column(
+      body: Stack(children: [
+       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ── Banner imagem ────────────────────────────────────────────────
@@ -580,6 +582,9 @@ class _LojinhaHomeScreenState extends State<LojinhaHomeScreen> {
                 ),
               ],
             ),
+       // Aviso do pedido (em integração / realizado / com erro) também dentro da Lojinha.
+       const Positioned(left: 16, right: 16, bottom: 16, child: LojinhaFilaCard()),
+      ]),
     );
   }
 

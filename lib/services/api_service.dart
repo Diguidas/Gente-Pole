@@ -3026,6 +3026,23 @@ class ApiService {
     return horaAgora.compareTo(horaInicio) >= 0 && horaAgora.compareTo(horaFim) <= 0;
   }
 
+  /// Título e texto (configurados no painel, tela Fila de integração) mostrados quando NENHUMA parte do pedido da
+  /// Lojinha foi realizada. Ficam em textos_portal; sem registro, null (vale o texto padrão do app).
+  Future<({String? titulo, String? texto})> mensagemErroPedidoLojinha() async {
+    final r = await _client
+        .from('textos_portal')
+        .select('tag, texto')
+        .inFilter('tag', ['lojinha_erro_pedido_titulo', 'lojinha_erro_pedido_texto']);
+    String? t, x;
+    for (final e in r as List) {
+      final v = (e['texto'] as String?)?.trim();
+      if (v == null || v.isEmpty) continue;
+      if (e['tag'] == 'lojinha_erro_pedido_titulo') t = v;
+      if (e['tag'] == 'lojinha_erro_pedido_texto') x = v;
+    }
+    return (titulo: t, texto: x);
+  }
+
   Future<Map<String, dynamic>> buscarConfigLojinha() async {
     final data = await _client
         .from('lojinha_config')
@@ -3818,7 +3835,7 @@ class ApiService {
             ultimoPedidoEmFila = true;
             // Exclusivos e controle de limite ficam com o servidor.
             repetido = true;
-            LojinhaFilaService.instance.iniciar('${colaborador.id}');
+            LojinhaFilaService.instance.iniciar('${colaborador.id}', true);
             consultarBloqueioLojinhaServidor();
           }
         } else {
