@@ -173,7 +173,7 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     children: [
                       _Chip(
-                        label: 'Sendo cobrado',
+                        label: 'Sendo descontado',
                         icone: Icons.radio_button_checked_rounded,
                         cor: Colors.green.shade600,
                         ativo: _ativos.contains(_Filtro.cobradoAgora),
