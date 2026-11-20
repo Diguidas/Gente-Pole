@@ -50,6 +50,21 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
     super.dispose();
   }
 
+  /// "Últimos X meses · desde dd/mm/aaaa": a lista só traz os pedidos de uma janela de tempo; mostra desde quando.
+  String? get _textoPeriodo {
+    if (_lista.isEmpty) return null;
+    var mais = _lista.first.dataOrdenacao;
+    for (final p in _lista) {
+      if (p.dataOrdenacao.isBefore(mais)) mais = p.dataOrdenacao;
+    }
+    final meses = (DateTime.now().difference(mais).inDays / 30).round();
+    final d = mais.day.toString().padLeft(2, '0');
+    final m = mais.month.toString().padLeft(2, '0');
+    final desde = '$d/$m/${mais.year}';
+    if (meses < 1) return 'Pedidos desde $desde';
+    return 'Últimos ${meses == 1 ? '1 mês' : '$meses meses'} · desde $desde';
+  }
+
   final _ativos = <_Filtro>{_Filtro.cobradoAgora, _Filtro.aCobrar, _Filtro.historico};
 
   int _desc(LojinhaPedidoResumoModel a, LojinhaPedidoResumoModel b) =>
@@ -129,6 +144,19 @@ class _LojinhaPedidosScreenState extends State<LojinhaPedidosScreen> {
                               style: GoogleFonts.poppins(
                                   color: Colors.white.withOpacity(0.8),
                                   fontSize: 12)),
+                          if (_textoPeriodo != null) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(_textoPeriodo!,
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                            ),
+                          ],
                         ],
                       ),
                     ],
