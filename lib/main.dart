@@ -21,7 +21,7 @@ void main() {
     await Supabase.initialize(
       url: 'https://jebjtpmugcnpxxkdexyg.supabase.co',
       anonKey:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplYmp0cG11Z2NucHh4a2RleHlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5MDUxNDEsImV4cCI6MjEwNDQ4MTE0MX0.8hUBMXaBJvKMWywd6xRQ0t_UvJoKaCkyjhkjZW0Bknk',
+          'sb_publishable_uQRFJLXHwlO2WYBlmdaf0Q_F2Wd2-vb',
     );
 
     Object? erroFirebase;
@@ -32,7 +32,16 @@ void main() {
       ErrorReporter.report(e, s, contexto: 'Falha ao inicializar Firebase');
     }
 
-    final sessaoAtiva = await ApiService().restaurarSessao();
+    // Qualquer falha ao restaurar a sessão (rede, servidor, permissão) cai na tela de login:
+    // uma exceção aqui, antes do runApp(), deixaria o app em branco para sempre.
+    var sessaoAtiva = false;
+    try {
+      sessaoAtiva = await ApiService()
+          .restaurarSessao()
+          .timeout(const Duration(seconds: 20), onTimeout: () => false);
+    } catch (e, s) {
+      ErrorReporter.report(e, s, contexto: 'Falha ao restaurar a sessão');
+    }
 
     if (sessaoAtiva && !defaultTargetPlatform.name.contains('iOS')) {
       // Best-effort: falha aqui (ex: SERVICE_NOT_AVAILABLE do FCM em

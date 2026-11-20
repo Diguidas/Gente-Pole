@@ -17,6 +17,7 @@ class LojinhaFilaService extends ChangeNotifier {
   Timer? _timer;
   DateTime? _mostrarConfirmadoAte;
   String? _numerosConfirmados;
+  String? _cortesConfirmados;
   bool _consultando = false;
 
   static const _ativos = {'na_fila', 'processando'};
@@ -51,6 +52,9 @@ class LojinhaFilaService extends ChangeNotifier {
       _mostrarConfirmadoAte != null &&
       DateTime.now().isBefore(_mostrarConfirmadoAte!);
   String? get numerosConfirmados => _numerosConfirmados;
+
+  /// Itens que o SAP tirou ou reduziu por falta de estoque no último pedido confirmado (null = nenhum).
+  String? get cortesConfirmados => _cortesConfirmados;
   /// Em integração E visível: um pedido que o DP reenviou não mostra nada
   /// enquanto não for integrado (a pessoa já foi avisada do erro e não precisa
   /// de outro aviso até haver resultado). Se falhar de novo, volta o aviso de erro.
@@ -85,6 +89,7 @@ class LojinhaFilaService extends ChangeNotifier {
     try {
       final rows = await ApiService().minhaFilaLojinha(_colabId);
       final confirmadosAgora = <String>[];
+      final cortesAgora = <String>[];
       for (final r in rows) {
         final id = '${r['id']}';
         final antes = _ultimoStatus[id];
@@ -92,6 +97,17 @@ class LojinhaFilaService extends ChangeNotifier {
         if (antes != null && _ativos.contains(antes) && agora == 'confirmado') {
           confirmadosAgora.add(
               '${r['numero_pedido'] ?? ''}'.replaceFirst(RegExp(r'^0+'), ''));
+          final cs = r['cortes'];
+          if (cs is List) {
+            for (final c in cs) {
+              if (c is! Map) continue;
+              final nome = '${c['descricao'] ?? c['produto'] ?? ''}'.trim();
+              final saiu = num.tryParse('${c['atendido']}') ?? 0;
+              cortesAgora.add(saiu > 0
+                  ? '$nome (pediu ${c['solicitado']}, saiu $saiu)'
+                  : '$nome (sem estoque, tirado do pedido)');
+            }
+          }
         }
         _ultimoStatus[id] = agora;
       }
@@ -99,7 +115,10 @@ class LojinhaFilaService extends ChangeNotifier {
       if (confirmadosAgora.isNotEmpty) {
         _numerosConfirmados =
             confirmadosAgora.where((n) => n.isNotEmpty).join(' / ');
-        _mostrarConfirmadoAte = DateTime.now().add(const Duration(seconds: 14));
+        _cortesConfirmados = cortesAgora.isEmpty ? null : cortesAgora.join('; ');
+        // Com itens cortados o aviso fica mais tempo na tela.
+        _mostrarConfirmadoAte =
+            DateTime.now().add(Duration(seconds: cortesAgora.isEmpty ? 14 : 60));
         ApiService().invalidarCacheLojinha();
         confirmacoes.value++;
       }

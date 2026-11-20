@@ -46,6 +46,51 @@ class ColaboradorModel {
     this.origemRequisitante = false,
   });
 
+  /// Cópia com a data de nascimento preenchida (ela fica numa tabela privada e
+  /// é buscada à parte, pelo servidor).
+  ColaboradorModel comNascimento(String? nascimento) => ColaboradorModel(
+        id: id,
+        matricula: matricula,
+        nome: nome,
+        setor: setor,
+        cargo: cargo,
+        cpf: cpf,
+        dataNascimento: nascimento ?? dataNascimento,
+        dataAdmissao: dataAdmissao,
+        supervisorId: supervisorId,
+        fotoUrl: fotoUrl,
+        apelido: apelido,
+        clienteSap: clienteSap,
+        codCentro: codCentro,
+        empresa: empresa,
+        ehGestor: ehGestor,
+        branch: branch,
+        demitido: demitido,
+        origemRequisitante: origemRequisitante,
+      );
+
+  /// Cópia com o CPF preenchido (a coluna é privada: o app lê o do próprio pelo servidor).
+  ColaboradorModel comCpf(String? novoCpf) => ColaboradorModel(
+        id: id,
+        matricula: matricula,
+        nome: nome,
+        setor: setor,
+        cargo: cargo,
+        cpf: novoCpf ?? cpf,
+        dataNascimento: dataNascimento,
+        dataAdmissao: dataAdmissao,
+        supervisorId: supervisorId,
+        fotoUrl: fotoUrl,
+        apelido: apelido,
+        clienteSap: clienteSap,
+        codCentro: codCentro,
+        empresa: empresa,
+        ehGestor: ehGestor,
+        branch: branch,
+        demitido: demitido,
+        origemRequisitante: origemRequisitante,
+      );
+
   factory ColaboradorModel.fromJson(Map<String, dynamic> json) {
     return ColaboradorModel(
       id: json['id'] as int,

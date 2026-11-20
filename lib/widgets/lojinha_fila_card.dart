@@ -92,22 +92,24 @@ class LojinhaFilaCard extends StatelessWidget {
         if (s.temAvisoReenvio && !s.ativoVisivel) return _avisoReenvio(s);
         final erro = !s.ativoVisivel && s.temErro && !s.mostrarConfirmado;
         final ok = !s.ativoVisivel && s.mostrarConfirmado;
+        final comCortes = ok && s.cortesConfirmados != null;
         final cor = erro
             ? const Color(0xFFEA580C)
             : ok
-                ? const Color(0xFF16A34A)
+                ? (comCortes ? const Color(0xFFD97706) : const Color(0xFF16A34A))
                 : const Color(0xFF7C3AED);
         final titulo = erro
             ? 'Pedido NÃO realizado'
             : ok
-                ? 'Pedido confirmado'
+                ? (comCortes ? 'Pedido confirmado com ajustes' : 'Pedido confirmado')
                 : 'Pedido sendo integrado';
         final texto = erro
             ? 'Pedimos desculpas: deu erro e o seu pedido não foi realizado. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.'
             : ok
                 ? ((s.numerosConfirmados ?? '').isNotEmpty
                     ? 'Pedido nº ${s.numerosConfirmados} confirmado no SAP.'
-                    : 'Seu pedido foi confirmado no SAP.')
+                    : 'Seu pedido foi confirmado no SAP.') +
+                    (comCortes ? '\nFaltou estoque: ${s.cortesConfirmados}.' : '')
                 : 'Estamos enviando seu pedido ao SAP. Pode continuar usando o app.';
         return Material(
           color: Colors.transparent,

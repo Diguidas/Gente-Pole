@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'lojinha_fila_service.dart';
+import 'sessao_servidor.dart';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
@@ -28,6 +29,15 @@ int chavePesoCiclo(int cicloId) => -cicloId;
 
 /// Serviço central de API.
 /// TODA comunicação com o banco passa por aqui.
+/// Anexos sensíveis ficam em buckets PRIVADOS: o link guardado é assinado (5 anos), não público.
+const int _kValidadeAnexo = 60 * 60 * 24 * 365 * 5;
+
+/// Colunas de `colaboradores` que o app pode ler (cpf, email e fcm_token são privados; vêm de app_contato_de()).
+const String kColabCols =
+    'id, matricula, nome, setor, data_nascimento, data_admissao, cargo, supervisor_id, foto_url, atualizado_em, '
+    'cliente_sap, supervisor_nome, cod_centro, empresa, demitido, eh_gestor, branch, horario_trabalho, '
+    'setor_origem_externo, codigo_secao, codigo_cargo, codigo_horario, apelido';
+
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
@@ -70,6 +80,7 @@ class ApiService {
 
   Future<void> limparSessao() async {
     colaboradorAtual = null;
+    await SessaoServidor.encerrar();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kMatriculaKey);
     await prefs.remove(_kEmpresaKey);
@@ -110,9 +121,16 @@ class ApiService {
     final empresa = prefs.getString(_kEmpresaKey);
     if (matricula == null || empresa == null) return false;
 
+    // Sem sessão válida no servidor (login antigo, expirada ou revogada), pede
+    // o login de novo. Sem rede, não derruba quem já estava logado.
+    if (await SessaoServidor.restaurar() == EstadoSessao.invalida) {
+      await prefs.remove(_kMatriculaKey);
+      await prefs.remove(_kEmpresaKey);
+      return false;
+    }
+
     final data = await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .eq('matricula', matricula)
         .eq('empresa', empresa)
         .maybeSingle();
@@ -121,7 +139,10 @@ class ApiService {
       await prefs.remove(_kEmpresaKey);
       return false;
     }
-    colaboradorAtual = ColaboradorModel.fromJson(data);
+    final atual = ColaboradorModel.fromJson(data);
+    // A data de nascimento fica numa tabela privada: busca a do próprio.
+    final nasc = await carregarNascimentos([atual.id]);
+    colaboradorAtual = (await _comCpfProprio(atual)).comNascimento(nasc[atual.id]);
     return true;
   }
 
@@ -132,40 +153,32 @@ class ApiService {
   ) async {
     final cpfLimpo = cpf.replaceAll(RegExp(r'[^0-9]'), '');
 
-    final resultColaborador = await _client
-        .from('colaboradores')
-        .select()
-        .eq('cpf', cpfLimpo)
-        .order('demitido', ascending: true, nullsFirst: true).order('data_admissao', ascending: false).limit(1).maybeSingle();
+    // Antes do login ainda não há sessão: o servidor identifica o dono do CPF e
+    // devolve só o necessário (sem data de nascimento nem e-mail).
+    final identificado = await _client.rpc('app_identificar_cpf', params: {'p_cpf': cpfLimpo});
 
-    if (resultColaborador == null) {
+    if (identificado == null) {
       // Verifica se é um fornecedor cadastrado em usuarios_app (por CPF)
-      final resultFornecedor = await _client
-          .from('usuarios_app')
-          .select('id')
-          .eq('cpf', cpfLimpo)
-          .eq('ativo', true)
-          .maybeSingle();
-      if (resultFornecedor != null) {
+      final ehFornecedor = await _client.rpc('app_cpf_e_fornecedor', params: {'p_cpf': cpfLimpo});
+      if (ehFornecedor == true) {
         return (status: 'FORNECEDOR', colaborador: null);
       }
       return (status: 'NAO_ENCONTRADO', colaborador: null);
     }
 
-    final colaborador = ColaboradorModel.fromJson(resultColaborador);
+    final colaborador =
+        ColaboradorModel.fromJson(Map<String, dynamic>.from(identificado as Map));
     if (!await acessoLiberado(colaborador.matricula, colaborador.empresa ?? '')) {
       return (status: 'SEM_ACESSO', colaborador: null);
     }
     colaboradorAtual = colaborador;
 
-    final resultAuth = await _client
-        .from('usuarios_auth')
-        .select('id')
-        .eq('matricula', colaborador.matricula)
-        .eq('empresa', colaborador.empresa!)
-        .maybeSingle();
+    final temConta = await _client.rpc('app_tem_conta', params: {
+      'p_matricula': colaborador.matricula,
+      'p_empresa': colaborador.empresa!,
+    });
 
-    return resultAuth == null
+    return temConta != true
         ? (status: 'PRIMEIRO_ACESSO', colaborador: colaborador)
         : (status: 'CADASTRADO', colaborador: colaborador);
   }
@@ -179,27 +192,23 @@ class ApiService {
     if (empresa == null) return false;
     if (!await acessoLiberado(matricula, empresa)) return false;
     try {
-      // Confere a data de nascimento digitada (AAAA-MM-DD) com o cadastro antes
-      // de criar a senha — igual ao web. (A trava definitiva precisa existir
-      // também dentro da função criar_usuario_auth, no banco.)
-      final colab = await _client
-          .from('colaboradores')
-          .select('data_nascimento')
-          .eq('matricula', matricula)
-          .eq('empresa', empresa)
-          .maybeSingle();
-      final nascBd = (colab?['data_nascimento'] as String? ?? '');
-      if (dataNascimento.isEmpty ||
-          nascBd.isEmpty ||
-          !nascBd.startsWith(dataNascimento)) {
-        return false;
-      }
+      // A data de nascimento (AAAA-MM-DD) é conferida no servidor, dentro de
+      // criar_usuario_auth (o app nem consegue mais ler a data de nascimento
+      // antes do login).
+      if (dataNascimento.isEmpty) return false;
       await _client.rpc('criar_usuario_auth', params: {
         'p_matricula': matricula,
         'p_empresa': empresa,
         'p_senha_hash': _hash(senha),
         'p_data_nascimento': dataNascimento,
       });
+      // Conta recém-criada: já abre a sessão com a senha que a pessoa definiu.
+      final entrou = await SessaoServidor.entrar(
+        matricula: matricula,
+        empresa: empresa,
+        senhaHash: _hash(senha),
+      );
+      if (entrou) await _recarregarColaboradorAtual(matricula, empresa);
       return true;
     } catch (e, st) {
       debugPrint('criarConta ERRO matricula=$matricula empresa=$empresa: $e');
@@ -213,15 +222,45 @@ class ApiService {
     required String empresa,
     required String senha,
   }) async {
-    final data = await _client
-        .from('usuarios_auth')
-        .select('senha_hash')
-        .eq('matricula', matricula)
-        .eq('empresa', empresa)
-        .maybeSingle();
-    if (data == null) return false;
-    if (data['senha_hash'] != _hash(senha)) return false;
-    return acessoLiberado(matricula, empresa);
+    // A senha é conferida no servidor (com limite de tentativas); o hash
+    // nunca volta para o aparelho. O servidor devolve uma sessão, que passa a
+    // acompanhar as consultas ao banco.
+    final ok = await SessaoServidor.entrar(
+      matricula: matricula,
+      empresa: empresa,
+      senhaHash: _hash(senha),
+    );
+    if (!ok) return false;
+    // Agora que há sessão, recarrega o cadastro completo (a identificação antes
+    // do login traz só o básico).
+    await _recarregarColaboradorAtual(matricula, empresa);
+    return true;
+  }
+
+  /// O CPF fica fora do alcance das consultas diretas: o do próprio vem pelo servidor.
+  Future<ColaboradorModel> _comCpfProprio(ColaboradorModel c) async {
+    try {
+      final r = await _client.rpc('app_contato_de', params: {'p_ids': [c.id]}) as List;
+      if (r.isNotEmpty) return c.comCpf(r.first['cpf'] as String?);
+    } catch (_) {}
+    return c;
+  }
+
+  Future<void> _recarregarColaboradorAtual(String matricula, String empresa) async {
+    try {
+      final data = await _client
+          .from('colaboradores').select(kColabCols)
+          .eq('matricula', matricula)
+          .eq('empresa', empresa)
+          .maybeSingle();
+      if (data != null) {
+        final c = ColaboradorModel.fromJson(data);
+        final nasc = await carregarNascimentos([c.id]);
+        colaboradorAtual = (await _comCpfProprio(c)).comNascimento(nasc[c.id]);
+      }
+    } catch (_) {
+      // mantém o cadastro básico; as telas recarregam o que precisam
+    }
   }
 
   /// Reseta a senha de quem já tem conta, mediante confirmação da data de
@@ -234,28 +273,15 @@ class ApiService {
     required String novaSenha,
   }) async {
     try {
-      final colaborador = await _client
-          .from('colaboradores')
-          .select('data_nascimento')
-          .eq('matricula', matricula)
-          .eq('empresa', empresa)
-          .maybeSingle();
-      if (colaborador == null) return false;
-      final nascBd = (colaborador['data_nascimento'] as String? ?? '');
-      if (dataNascimento.isEmpty ||
-          nascBd.isEmpty ||
-          !nascBd.startsWith(dataNascimento)) {
-        return false;
-      }
-      if (!await acessoLiberado(matricula, empresa)) return false;
-
-      final auth = await _client
-          .from('usuarios_auth')
-          .update({'senha_hash': _hash(novaSenha)})
-          .eq('matricula', matricula)
-          .eq('empresa', empresa)
-          .select('id');
-      return auth.isNotEmpty;
+      if (dataNascimento.isEmpty) return false;
+      // A data de nascimento é conferida no servidor, com limite de tentativas.
+      final ok = await _client.rpc('app_redefinir_senha', params: {
+        'p_matricula': matricula,
+        'p_empresa': empresa,
+        'p_data_nascimento': dataNascimento,
+        'p_nova_senha_hash': _hash(novaSenha),
+      });
+      return ok == true;
     } catch (e, st) {
       debugPrint('resetarSenhaEsquecida ERRO matricula=$matricula empresa=$empresa: $e');
       ErrorReporter.report(e, st, contexto: 'Resetar senha esquecida');
@@ -888,8 +914,7 @@ class ApiService {
 
   Future<ColaboradorModel?> buscarSupervisor(int supervisorId) async {
     final data = await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .eq('id', supervisorId)
         .maybeSingle();
     if (data == null) return null;
@@ -906,8 +931,7 @@ class ApiService {
     if (meuSetor == null || meuSetor.isEmpty) return [];
 
     final data = await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .eq('setor', meuSetor)
         .eq('demitido', false)
         .neq('id', colaboradorAtual!.id) // exclui o próprio usuário
@@ -1067,18 +1091,15 @@ class ApiService {
     final empresa = colaboradorAtual?.empresa;
     if (matricula == null || empresa == null) return false;
 
-    // Verifica senha atual
-    final ok = await validarLogin(
-        matricula: matricula, empresa: empresa, senha: senhaAtual);
-    if (!ok) return false;
-
     try {
-      await _client
-          .from('usuarios_auth')
-          .update({'senha_hash': _hash(novaSenha)})
-          .eq('matricula', matricula)
-          .eq('empresa', empresa);
-      return true;
+      // A senha atual é conferida e a nova gravada no servidor.
+      final ok = await _client.rpc('app_alterar_senha', params: {
+        'p_matricula': matricula,
+        'p_empresa': empresa,
+        'p_senha_atual_hash': _hash(senhaAtual),
+        'p_nova_senha_hash': _hash(novaSenha),
+      });
+      return ok == true;
     } catch (_) {
       return false;
     }
@@ -1253,8 +1274,7 @@ class ApiService {
     if (!incluirDemitidos) return ativos;
 
     var demitidos = List<Map<String, dynamic>>.from(await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .inFilter('setor', setores)
         .eq('demitido', true)
         .not('cargo', 'ilike', 'PRESTADOR%') as List);
@@ -1286,8 +1306,7 @@ class ApiService {
       {bool apenasLiderDireto = false, String? funcionalidade}) async {
     if (responsavelId == null) {
       final data = await _client
-          .from('colaboradores')
-          .select()
+          .from('colaboradores').select(kColabCols)
           .inFilter('setor', setores)
           .eq('demitido', false)
           .order('nome');
@@ -1305,8 +1324,7 @@ class ApiService {
 
     if (idsPermitidos.isNotEmpty) {
       final data = await _client
-          .from('colaboradores')
-          .select()
+          .from('colaboradores').select(kColabCols)
           .inFilter('id', idsPermitidos.toList())
           .eq('demitido', false);
       for (final c in (data as List)) {
@@ -1315,8 +1333,7 @@ class ApiService {
     }
     if (setoresSemHierarquia.isNotEmpty) {
       final data = await _client
-          .from('colaboradores')
-          .select()
+          .from('colaboradores').select(kColabCols)
           .inFilter('setor', setoresSemHierarquia)
           .eq('demitido', false);
       for (final c in (data as List)) {
@@ -1998,14 +2015,11 @@ class ApiService {
 
   /// Acompanhamento da admissão de um candidato aprovado
   Future<Map<String, dynamic>?> buscarStatusAdmissao(int candidaturaId) async {
+    // A tabela de admissões (RG, PIS, banco...) é restrita à equipe de admissão: quem
+    // acompanha a candidatura recebe só estes campos, pelo servidor.
     final data = await _client
-        .from('admissoes')
-        .select(
-          'status, cargo_admitido, setor_admitido, data_inicio, salario_acordado',
-        )
-        .eq('candidatura_id', candidaturaId)
-        .maybeSingle();
-    return data;
+        .rpc('app_status_admissao', params: {'p_candidatura_id': candidaturaId});
+    return data == null ? null : Map<String, dynamic>.from(data as Map);
   }
 
   // ─── Lojinha ──────────────────────────────────────────────────────────────────
@@ -2737,7 +2751,25 @@ class ApiService {
   /// "Minha Equipe": toda liderança (de gerente geral a líder) vê tudo que
   /// está abaixo dela, em cadeia.
   Future<List<ColaboradorModel>> buscarMinhaEquipeVisao() async {
-    return buscarMinhaEquipe(funcionalidade: 'minha_equipe_gestor');
+    final equipe = await buscarMinhaEquipe(funcionalidade: 'minha_equipe_gestor');
+    // A data de nascimento fica numa tabela privada: o líder recebe a da equipe dele.
+    final nasc = await carregarNascimentos([for (final c in equipe) c.id]);
+    return [for (final c in equipe) c.comNascimento(nasc[c.id])];
+  }
+
+  /// Datas de nascimento (id do colaborador -> 'AAAA-MM-DD'). O servidor só
+  /// devolve a do próprio, as da equipe (líder) e, para RH/DP/admin, as de qualquer um.
+  Future<Map<int, String>> carregarNascimentos(List<int> ids) async {
+    if (ids.isEmpty) return {};
+    try {
+      final res = await _client.rpc('app_nascimento_de', params: {'p_ids': ids});
+      return {
+        for (final r in List<Map<String, dynamic>>.from(res as List))
+          (r['id'] as num).toInt(): '${r['data_nascimento']}',
+      };
+    } catch (_) {
+      return {};
+    }
   }
 
   /// Lideranças cadastradas (setor_hierarquia) dos setores informados — usado
@@ -2770,10 +2802,16 @@ class ApiService {
       int colaboradorId) async {
     final res = await _client
         .from('colaboradores')
-        .select('email, horario_trabalho')
+        .select('horario_trabalho')
         .eq('id', colaboradorId)
         .maybeSingle();
-    return res == null ? null : Map<String, dynamic>.from(res);
+    if (res == null) return null;
+    final mapa = Map<String, dynamic>.from(res);
+    try {
+      final r = await _client.rpc('app_contato_de', params: {'p_ids': [colaboradorId]}) as List;
+      if (r.isNotEmpty) mapa['email'] = r.first['email'];
+    } catch (_) {}
+    return mapa;
   }
 
   /// Exames agendados pelo SESMT pra equipe do gestor, ainda aguardando
@@ -3924,8 +3962,7 @@ class ApiService {
     String empresa,
   ) async {
     final data = await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .eq('matricula', matricula)
         .eq('empresa', empresa)
         .maybeSingle();
@@ -3951,7 +3988,7 @@ class ApiService {
             upsert: true,
           ),
         );
-    return _client.storage.from('assinaturas-massoterapia').getPublicUrl(path);
+    return await _client.storage.from('assinaturas-massoterapia').createSignedUrl(path, _kValidadeAnexo);
   }
 
   /// Login pelo CPF do fornecedor (massoterapeuta/nutricionista).
@@ -3961,15 +3998,18 @@ class ApiService {
     required String senha,
   }) async {
     final cpfLimpo = cpf.replaceAll(RegExp(r'[^0-9]'), '');
-    final senhaHash = _hash(senha);
-    final res = await _client
-        .from('usuarios_app')
-        .select()
-        .eq('cpf', cpfLimpo)
-        .eq('senha_hash', senhaHash)
-        .eq('ativo', true)
-        .maybeSingle();
-    return res;
+    // A senha é conferida no servidor (com limite de tentativas); o hash não
+    // volta para o aparelho.
+    final res = await _client.rpc('app_login_fornecedor', params: {
+      'p_cpf': cpfLimpo,
+      'p_senha_hash': _hash(senha),
+    });
+    if (res == null) return null;
+    final dados = Map<String, dynamic>.from(res as Map);
+    // O fornecedor também ganha sessão: as telas dele passam a depender dela.
+    final token = dados.remove('_token') as String?;
+    if (token != null) await SessaoServidor.usarToken(token);
+    return dados;
   }
 
   // ─── Foto de perfil ──────────────────────────────────────────────────────────
@@ -5343,7 +5383,7 @@ class ApiService {
             upsert: true,
           ),
         );
-    return _client.storage.from('assinaturas-massoterapia').getPublicUrl(path);
+    return await _client.storage.from('assinaturas-massoterapia').createSignedUrl(path, _kValidadeAnexo);
   }
 
   // ─── Fisioterapia ────────────────────────────────────────────────────────────
@@ -6334,8 +6374,7 @@ class ApiService {
         final responsavelId = porNivel[nivel];
         if (responsavelId == null) continue;
         final data = await _client
-            .from('colaboradores')
-            .select()
+            .from('colaboradores').select(kColabCols)
             .eq('id', responsavelId)
             .eq('demitido', false)
             .maybeSingle();
@@ -6357,8 +6396,7 @@ class ApiService {
         .toList();
     if (matriculasGestores.isEmpty) return null;
     final colabs = await _client
-        .from('colaboradores')
-        .select()
+        .from('colaboradores').select(kColabCols)
         .inFilter('matricula', matriculasGestores)
         .eq('empresa', empresa)
         .eq('setor', setor)
@@ -6420,7 +6458,7 @@ class ApiService {
         await _client.storage
             .from('ouvidoria-anexos')
             .uploadBinary(path, anexoBytes);
-        anexoUrl = _client.storage.from('ouvidoria-anexos').getPublicUrl(path);
+        anexoUrl = await _client.storage.from('ouvidoria-anexos').createSignedUrl(path, _kValidadeAnexo);
       }
       await _client.from('ouvidoria').insert({
         'colaborador_id': colaborador.id,
@@ -7224,7 +7262,7 @@ class ApiService {
     await _client.storage
         .from('curriculos-indicacoes')
         .uploadBinary(path, bytes);
-    return _client.storage.from('curriculos-indicacoes').getPublicUrl(path);
+    return await _client.storage.from('curriculos-indicacoes').createSignedUrl(path, _kValidadeAnexo);
   }
 
   /// Indica alguém para o Banco de Talentos sem que essa pessoa tenha se
@@ -7298,7 +7336,7 @@ class ApiService {
       Uint8List bytes, String nomeArquivo) async {
     final path = '${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
     await _client.storage.from('solicitacoes-anexos').uploadBinary(path, bytes);
-    return _client.storage.from('solicitacoes-anexos').getPublicUrl(path);
+    return await _client.storage.from('solicitacoes-anexos').createSignedUrl(path, _kValidadeAnexo);
   }
 
   Future<void> criarSolicitacao({
@@ -7942,7 +7980,7 @@ class ApiService {
           bytes,
           fileOptions: const FileOptions(upsert: true),
         );
-    final url = _client.storage.from('pdi-termos').getPublicUrl(path);
+    final url = await _client.storage.from('pdi-termos').createSignedUrl(path, _kValidadeAnexo);
     await _client.from('pdi_termos_compromisso').insert({
       'pdi_grupo_id': pdiGrupoId,
       'arquivo_url': url,
@@ -8036,7 +8074,7 @@ class ApiService {
           bytes,
           fileOptions: const FileOptions(upsert: true),
         );
-    final url = _client.storage.from('pdi-anexos').getPublicUrl(path);
+    final url = await _client.storage.from('pdi-anexos').createSignedUrl(path, _kValidadeAnexo);
     await _client
         .from('pdi_acoes')
         .update({'anexo_url': url, 'anexo_nome': nomeArquivo})
