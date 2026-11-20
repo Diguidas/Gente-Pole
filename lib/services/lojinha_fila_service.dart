@@ -63,6 +63,14 @@ class LojinhaFilaService extends ChangeNotifier {
   bool get visivel =>
       ativoVisivel || temErro || mostrarConfirmado || temAvisoReenvio;
 
+  /// Fecha o aviso de pedido confirmado (o "X" ou o toque que leva a Meus Pedidos).
+  void dispensarConfirmado() {
+    _mostrarConfirmadoAte = null;
+    _numerosConfirmados = null;
+    _cortesConfirmados = null;
+    notifyListeners();
+  }
+
   void dispensarErro() {
     for (final i in itens) {
       if (i['status'] == 'erro') _erroDispensado.add('${i['id']}');
@@ -113,12 +121,21 @@ class LojinhaFilaService extends ChangeNotifier {
       }
       itens = rows;
       if (confirmadosAgora.isNotEmpty) {
-        _numerosConfirmados =
-            confirmadosAgora.where((n) => n.isNotEmpty).join(' / ');
-        _cortesConfirmados = cortesAgora.isEmpty ? null : cortesAgora.join('; ');
+        // Os pedidos de um mesmo envio (uma linha por organização) confirmam em momentos diferentes:
+        // se o aviso anterior ainda está na tela, junta os números e os cortes em vez de trocar.
+        final anteriores = mostrarConfirmado
+            ? (_numerosConfirmados ?? '').split(' / ').where((n) => n.isNotEmpty).toList()
+            : <String>[];
+        final numeros = <String>{...anteriores, ...confirmadosAgora.where((n) => n.isNotEmpty)};
+        _numerosConfirmados = numeros.join(' / ');
+        final cortesAnteriores = mostrarConfirmado && _cortesConfirmados != null
+            ? <String>[_cortesConfirmados!]
+            : <String>[];
+        final todosCortes = [...cortesAnteriores, ...cortesAgora];
+        _cortesConfirmados = todosCortes.isEmpty ? null : todosCortes.join('; ');
         // Com itens cortados o aviso fica mais tempo na tela.
         _mostrarConfirmadoAte =
-            DateTime.now().add(Duration(seconds: cortesAgora.isEmpty ? 14 : 60));
+            DateTime.now().add(Duration(seconds: todosCortes.isEmpty ? 14 : 60));
         ApiService().invalidarCacheLojinha();
         confirmacoes.value++;
       }

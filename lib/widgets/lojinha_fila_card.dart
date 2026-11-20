@@ -107,13 +107,27 @@ class LojinhaFilaCard extends StatelessWidget {
             ? 'Pedimos desculpas: deu erro e o seu pedido não foi realizado. O DP já foi avisado: entre em contato com o DP. Novos pedidos ficam bloqueados até o DP resolver.'
             : ok
                 ? ((s.numerosConfirmados ?? '').isNotEmpty
-                    ? 'Pedido nº ${s.numerosConfirmados} confirmado no SAP.'
-                    : 'Seu pedido foi confirmado no SAP.') +
+                    ? ((s.numerosConfirmados!.contains(' / ')
+                            ? 'Pedidos nº ${s.numerosConfirmados!.replaceAll(' / ', ' e ')} confirmados no SAP.'
+                            : 'Pedido nº ${s.numerosConfirmados} confirmado no SAP.')) +
+                        ' Toque para ver em Meus Pedidos.'
+                    : 'Seu pedido foi confirmado no SAP. Toque para ver em Meus Pedidos.') +
                     (comCortes ? '\nFaltou estoque: ${s.cortesConfirmados}.' : '')
                 : 'Estamos enviando seu pedido ao SAP. Pode continuar usando o app.';
+        void abrirPedidos() {
+          s.dispensarConfirmado();
+          AppNavigator.navigatorKey.currentState?.push(
+            MaterialPageRoute(
+                builder: (_) => const LojinhaHomeScreen(abrirPedidos: true)),
+          );
+        }
+
         return Material(
           color: Colors.transparent,
-          child: Container(
+          child: InkWell(
+           borderRadius: BorderRadius.circular(16),
+           onTap: ok ? abrirPedidos : null,
+           child: Container(
             constraints: const BoxConstraints(maxWidth: 360),
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
             decoration: BoxDecoration(
@@ -156,9 +170,9 @@ class LojinhaFilaCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (erro)
+                if (erro || ok)
                   InkWell(
-                    onTap: s.dispensarErro,
+                    onTap: erro ? s.dispensarErro : s.dispensarConfirmado,
                     child: const Padding(
                       padding: EdgeInsets.all(4),
                       child: Icon(Icons.close_rounded, size: 18, color: Color(0xFF94A3B8)),
@@ -166,6 +180,7 @@ class LojinhaFilaCard extends StatelessWidget {
                   ),
               ],
             ),
+           ),
           ),
         );
       },

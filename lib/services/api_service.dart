@@ -3175,6 +3175,14 @@ class ApiService {
     } catch (_) {}
   }
 
+  Future<void> _limparBloqueioLojinha() async {
+    lojinhaBloqueio.value = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kBloqueioLojinha);
+    } catch (_) {}
+  }
+
   /// Ao abrir a Lojinha: reaplica o bloqueio de hoje, se houve, para esta pessoa.
   /// Pergunta ao servidor se esta pessoa já pediu nas duas organizações de
   /// vendas no período (vale para qualquer aparelho). Se sim, bloqueia o Novo
@@ -3188,6 +3196,9 @@ class ApiService {
       final d = res.data;
       if (d is Map && d['bloqueada'] == true) {
         await _marcarBloqueioLojinha(colab.matricula);
+      } else if (d is Map && d['bloqueada'] == false) {
+        // O servidor liberou (ex.: o DP cancelou o pedido com erro): tira a marca guardada no aparelho.
+        await _limparBloqueioLojinha();
       }
     } catch (_) {}
   }
