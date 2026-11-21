@@ -146,6 +146,17 @@ class ColaboradorModel {
       ? apelido!.trim()
       : nome.split(' ').first;
 
+  /// Anos completos de empresa, a partir de [dataAdmissao] (mesma regra do painel web).
+  int? get anosDeEmpresa {
+    if (dataAdmissao == null) return null;
+    final d = DateTime.tryParse(dataAdmissao!);
+    if (d == null) return null;
+    final now = DateTime.now();
+    var anos = now.year - d.year;
+    if (now.month < d.month || (now.month == d.month && now.day < d.day)) anos--;
+    return anos < 0 ? 0 : anos;
+  }
+
   /// Formata data de admissão para exibição (yyyy-mm-dd → dd/mm/yyyy)
   String? get dataAdmissaoFormatada {
     if (dataAdmissao == null) return null;

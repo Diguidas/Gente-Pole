@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../core/app_theme.dart';
+import '../core/nivel_tempo_casa.dart';
 import '../core/nome_foto.dart';
 import '../models/colaborador_model.dart';
 import '../services/api_service.dart';
@@ -322,6 +323,7 @@ class _PessoasScreenState extends State<PessoasScreen> {
                                 style: AppTextStyles.corpoCinza,
                               ),
                             ),
+                          _seloTempoCasa(c),
                           _campoApelido(c),
                           const SizedBox(height: 16),
                           const Divider(height: 1, color: Color(0xFFF1F5F9)),
@@ -670,6 +672,32 @@ class _PessoasScreenState extends State<PessoasScreen> {
       url: c.fotoUrl,
       nome: c.nome,
       child: AvatarColaborador(fotoUrl: c.fotoUrl, nome: c.nome, raio: raio),
+    );
+  }
+
+  /// Selo de tempo de casa, igual ao do painel web: bronze (5+), prata (10+), ouro (15+), diamante (20+).
+  /// Quem tem menos de 5 anos de empresa não mostra selo.
+  Widget _seloTempoCasa(ColaboradorModel c) {
+    final anos = c.anosDeEmpresa;
+    if (anos == null) return const SizedBox.shrink();
+    final nivel = NivelTempoCasa.deCategoria(NivelTempoCasa.categoriaDeAnos(anos));
+    if (nivel == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: nivel.cor.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: nivel.cor.withOpacity(0.5)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(nivel.icone, size: 18, color: nivel.cor),
+          const SizedBox(width: 6),
+          Text('${nivel.label} · $anos anos de casa',
+              style: AppTextStyles.corpoMenor.copyWith(color: nivel.cor, fontWeight: FontWeight.w700)),
+        ]),
+      ),
     );
   }
 
