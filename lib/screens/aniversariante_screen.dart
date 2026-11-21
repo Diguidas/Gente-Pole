@@ -361,7 +361,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
           return CustomScrollView(
             slivers: [
               // ── Card Gente & Cultura sempre no topo ───────────────────────
-              if (msgEmpresa != null)
+              if (msgEmpresa != null && ehAniversarioHoje)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -434,7 +434,7 @@ class _AniversariantesScreenState extends State<AniversariantesScreen>
   Widget _cardEmpresa(Map<String, dynamic> msgEmpresa, String nome) {
     final titulo =
         (msgEmpresa['titulo'] as String? ?? '').replaceAll('{nome}', nome);
-    final corpo = msgEmpresa['corpo'] as String? ?? '';
+    final corpo = (msgEmpresa['corpo'] as String? ?? '').replaceAll('{nome}', nome);
 
     return Container(
       padding: const EdgeInsets.all(18),
